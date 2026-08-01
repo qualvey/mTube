@@ -15,8 +15,6 @@ COPY packages/client/package.json ./packages/client/
 RUN pnpm install --filter client...
 
 COPY packages/client ./packages/client
-COPY src ./src
-COPY index.html vite.config.js ./
 
 # Build client production bundle
 RUN pnpm --filter client build
