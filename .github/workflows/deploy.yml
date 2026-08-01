@@ -145,10 +145,14 @@ jobs:
             if [ "${{ needs.build-and-push.outputs.admin }}" == "true" ]; then SERVICES="$SERVICES admin"; fi
             
             if [ -n "$SERVICES" ]; then
+              echo "🚀 Cleaning old unused image caches on low-disk VPS..."
+              docker image prune -af || true
               echo "🚀 Target incremental update services: $SERVICES"
               (docker compose pull $SERVICES || docker-compose pull $SERVICES)
               (docker compose up -d $SERVICES || docker-compose up -d $SERVICES)
+              docker image prune -f || true
             else
+
               echo "✨ No service changes detected. Skipping VPS update."
             fi
 
