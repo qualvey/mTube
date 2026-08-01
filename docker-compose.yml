@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Node.js Express Backend API & SQLite Database
+  server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    container_name: streamvip-server
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/db.sqlite:/app/packages/server/src/db.sqlite
+      - ./data/uploads:/app/packages/server/public/uploads
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    networks:
+      - streamvip-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/v1/videos || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Vue 3 Client (C端视频流主站)
+  client:
+    build:
+      context: .
+      dockerfile: packages/client/Dockerfile
+    container_name: streamvip-client
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - streamvip-net
+
+  # Vue 3 Admin (B端管理控制台)
+  admin:
+    build:
+      context: .
+      dockerfile: packages/admin/Dockerfile
+    container_name: streamvip-admin
+    restart: always
+    ports:
+      - "5174:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - streamvip-net
+
+networks:
+  streamvip-net:
+    driver: bridge

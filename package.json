@@ -1,0 +1,14 @@
+{
+  "name": "mobile-paywall-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:client": "pnpm --filter client dev",
+    "dev:admin": "pnpm --filter admin dev",
+    "dev:server": "pnpm --filter server dev",
+    "dev": "pnpm --parallel --filter ./packages/* dev",
+    "build:client": "pnpm --filter client build",
+    "build:admin": "pnpm --filter admin build",
+    "build": "pnpm -r build"
+  }
+}
