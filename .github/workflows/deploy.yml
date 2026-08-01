@@ -7,9 +7,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_SERVER: ghcr.io/${{ github.repository }}/server
-  IMAGE_CLIENT: ghcr.io/${{ github.repository }}/client
-  IMAGE_ADMIN: ghcr.io/${{ github.repository }}/admin
+  IMAGE_SERVER: ghcr.io/qualvey/mtube/server
+  IMAGE_CLIENT: ghcr.io/qualvey/mtube/client
+  IMAGE_ADMIN: ghcr.io/qualvey/mtube/admin
+
 
 jobs:
   build-and-push:
