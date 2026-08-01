@@ -10,5 +10,12 @@
     "build:client": "pnpm --filter client build",
     "build:admin": "pnpm --filter admin build",
     "build": "pnpm -r build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "core-js",
+      "better-sqlite3"
+    ]
   }
 }
+

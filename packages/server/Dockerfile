@@ -7,7 +7,8 @@ RUN apk add --no-cache python3 make g++ sqlite-dev
 WORKDIR /app
 
 # Enable Corepack & pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
 
 # Copy monorepo configuration files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
