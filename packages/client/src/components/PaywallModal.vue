@@ -182,7 +182,7 @@
               <input 
                 v-model="restoreOrderInput"
                 type="text"
-                placeholder="例如：ORD-1785434488800"
+                placeholder="例如：ORD-1785..."
                 class="w-full px-4 py-3 bg-zinc-950 border border-zinc-700 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-yellow-500 transition-colors"
               />
             </div>
@@ -214,7 +214,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 const emit = defineEmits(['close', 'vip-unlocked'])
 
@@ -262,38 +262,6 @@ const getOrCreateDeviceId = () => {
   return id
 }
 
-// Auto generate Crypto QR Code & USDT Order when tab or plan changes
-const generateCryptoOrderIfNeeded = async () => {
-  if (activePayTab.value === 'crypto') {
-    try {
-      const res = await fetch('/api/v1/paywall/crypto/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planId: selectedPlanId.value,
-          deviceId: deviceId.value
-        })
-      })
-      const json = await res.json()
-      if (json.data) {
-        cryptoOrderInfo.value = json.data
-        if (json.data.orderId) {
-          createdOrderId.value = json.data.orderId
-          localStorage.setItem('mp_latest_order_id', json.data.orderId)
-        }
-      }
-    } catch (e) {
-      console.warn('Crypto order auto generation failed:', e)
-    }
-  }
-}
-
-watch([activePayTab, selectedPlanId], () => {
-  if (activePayTab.value === 'crypto') {
-    generateCryptoOrderIfNeeded()
-  }
-})
-
 let vipPollTimer = null
 
 const checkVipStatus = async () => {
@@ -335,14 +303,8 @@ onMounted(async () => {
   } catch (e) {
     console.warn('Failed to load live paywall plans:', e)
   }
-
-  // Pre-generate crypto order if starting on crypto tab
-  if (activePayTab.value === 'crypto') {
-    generateCryptoOrderIfNeeded()
-  }
 })
 
-import { onUnmounted } from 'vue'
 onUnmounted(() => {
   if (vipPollTimer) clearInterval(vipPollTimer)
 })

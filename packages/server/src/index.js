@@ -745,7 +745,8 @@ app.post('/api/v1/analytics/track', (req, res) => {
     path: path || '/',
     videoId,
     action: action || 'PV',
-    deviceId
+    deviceId,
+    headers: req.headers
   })
 
   sendResponse(res, result)

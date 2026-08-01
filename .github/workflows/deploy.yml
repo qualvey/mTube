@@ -4,6 +4,19 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '选择需要部署的服务模块 (Select service to deploy)'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - all
+          - server
+          - client
+          - admin
 
 env:
   REGISTRY: ghcr.io
@@ -19,15 +32,16 @@ jobs:
       packages: write
 
     outputs:
-      server: ${{ steps.filter.outputs.server }}
-      client: ${{ steps.filter.outputs.client }}
-      admin: ${{ steps.filter.outputs.admin }}
+      server: ${{ steps.set-targets.outputs.server }}
+      client: ${{ steps.set-targets.outputs.client }}
+      admin: ${{ steps.set-targets.outputs.admin }}
+      compose: ${{ steps.set-targets.outputs.compose }}
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 路径精准感知过滤器
+      # 路径精准感知过滤器（精准区分各模块的独立改动）
       - name: Path Filter (Detect Changed Modules)
         uses: dorny/paths-filter@v3
         id: filter
@@ -38,34 +52,70 @@ jobs:
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
-              - '.github/workflows/deploy.yml'
-              - 'docker-compose.yml'
             client:
               - 'packages/client/**'
               - 'src/**'
+              - 'index.html'
+              - 'vite.config.js'
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
-              - '.github/workflows/deploy.yml'
-              - 'docker-compose.yml'
             admin:
               - 'packages/admin/**'
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
-              - '.github/workflows/deploy.yml'
+            compose:
               - 'docker-compose.yml'
+              - 'nginx-production-example.conf'
+
+      # 结合路径检测与手动触发输入确定目标服务
+      - name: Determine Target Services
+        id: set-targets
+        run: |
+          TARGET="${{ github.event.inputs.target }}"
+          FILTER_SERVER="${{ steps.filter.outputs.server }}"
+          FILTER_CLIENT="${{ steps.filter.outputs.client }}"
+          FILTER_ADMIN="${{ steps.filter.outputs.admin }}"
+          FILTER_COMPOSE="${{ steps.filter.outputs.compose }}"
+
+          BUILD_SERVER="false"
+          BUILD_CLIENT="false"
+          BUILD_ADMIN="false"
+          BUILD_COMPOSE="false"
+
+          if [ "$TARGET" == "all" ]; then
+            BUILD_SERVER="true"
+            BUILD_CLIENT="true"
+            BUILD_ADMIN="true"
+          elif [ "$TARGET" == "server" ]; then
+            BUILD_SERVER="true"
+          elif [ "$TARGET" == "client" ]; then
+            BUILD_CLIENT="true"
+          elif [ "$TARGET" == "admin" ]; then
+            BUILD_ADMIN="true"
+          else
+            BUILD_SERVER="$FILTER_SERVER"
+            BUILD_CLIENT="$FILTER_CLIENT"
+            BUILD_ADMIN="$FILTER_ADMIN"
+            BUILD_COMPOSE="$FILTER_COMPOSE"
+          fi
+
+          echo "server=$BUILD_SERVER" >> $GITHUB_OUTPUT
+          echo "client=$BUILD_CLIENT" >> $GITHUB_OUTPUT
+          echo "admin=$BUILD_ADMIN" >> $GITHUB_OUTPUT
+          echo "compose=$BUILD_COMPOSE" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
-        if: steps.filter.outputs.server == 'true' || steps.filter.outputs.client == 'true' || steps.filter.outputs.admin == 'true'
+        if: steps.set-targets.outputs.server == 'true' || steps.set-targets.outputs.client == 'true' || steps.set-targets.outputs.admin == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: steps.filter.outputs.server == 'true' || steps.filter.outputs.client == 'true' || steps.filter.outputs.admin == 'true'
+        if: steps.set-targets.outputs.server == 'true' || steps.set-targets.outputs.client == 'true' || steps.set-targets.outputs.admin == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry (GHCR)
-        if: steps.filter.outputs.server == 'true' || steps.filter.outputs.client == 'true' || steps.filter.outputs.admin == 'true'
+        if: steps.set-targets.outputs.server == 'true' || steps.set-targets.outputs.client == 'true' || steps.set-targets.outputs.admin == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -74,7 +124,7 @@ jobs:
 
       # 1. 仅当 server 模块受变更影响时编译推送
       - name: Build and Push Server Image
-        if: steps.filter.outputs.server == 'true'
+        if: steps.set-targets.outputs.server == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -86,7 +136,7 @@ jobs:
 
       # 2. 仅当 client 模块受变更影响时编译推送
       - name: Build and Push Client Image
-        if: steps.filter.outputs.client == 'true'
+        if: steps.set-targets.outputs.client == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -98,7 +148,7 @@ jobs:
 
       # 3. 仅当 admin 模块受变更影响时编译推送
       - name: Build and Push Admin Image
-        if: steps.filter.outputs.admin == 'true'
+        if: steps.set-targets.outputs.admin == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -111,7 +161,7 @@ jobs:
   deploy-to-vps:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && (needs.build-and-push.outputs.server == 'true' || needs.build-and-push.outputs.client == 'true' || needs.build-and-push.outputs.admin == 'true')
+    if: github.ref == 'refs/heads/main' && (needs.build-and-push.outputs.server == 'true' || needs.build-and-push.outputs.client == 'true' || needs.build-and-push.outputs.admin == 'true' || needs.build-and-push.outputs.compose == 'true')
 
     steps:
       - name: Checkout Code
@@ -151,10 +201,13 @@ jobs:
               (docker compose pull $SERVICES || docker-compose pull $SERVICES)
               (docker compose up -d $SERVICES || docker-compose up -d $SERVICES)
               docker image prune -f || true
+            elif [ "${{ needs.build-and-push.outputs.compose }}" == "true" ]; then
+              echo "⚙️ Only docker-compose / configuration changed. Reloading containers..."
+              (docker compose up -d || docker-compose up -d)
             else
-
               echo "✨ No service changes detected. Skipping VPS update."
             fi
+
 
 
 

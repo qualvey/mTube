@@ -225,9 +225,7 @@ const seedDatabaseIfEmpty = () => {
 
   const orders = (initialData && initialData.orders && initialData.orders.length > 0)
     ? initialData.orders
-    : [
-      { id: 'ORD-1785434488800', planId: 'plan-2', planName: '季卡 VIP', amount: 89, payType: 'alipay', status: 'PAID', createdAt: '2026-07-30T18:01:28.800Z' }
-    ]
+    : []
 
   const insertOrder = database.prepare(`
     INSERT INTO orders (id, planId, planName, amount, payType, status, createdAt)
@@ -260,7 +258,9 @@ const parseTags = (raw) => {
   }
 }
 
-export const getIpLocation = (ip) => {
+const ipCache = new Map()
+
+export const getIpLocation = (ip, reqHeaders = {}) => {
   if (!ip) return '未知位置'
   const cleanIp = String(ip).replace(/^::ffff:/, '').trim()
   if (cleanIp === '127.0.0.1' || cleanIp === '::1' || cleanIp === 'localhost') {
@@ -269,19 +269,21 @@ export const getIpLocation = (ip) => {
   if (cleanIp.startsWith('192.168.') || cleanIp.startsWith('10.') || cleanIp.startsWith('172.16.') || cleanIp.startsWith('172.31.')) {
     return '局域网 / 内网 IP'
   }
-  if (cleanIp.startsWith('114.') || cleanIp.startsWith('218.') || cleanIp.startsWith('183.') || cleanIp.startsWith('120.') || cleanIp.startsWith('119.')) {
-    return '中国 广东 广州'
+
+  // 1. 从内存缓存中获取已查询过的真实 IP 地理位置
+  if (ipCache.has(cleanIp)) {
+    return ipCache.get(cleanIp)
   }
-  if (cleanIp.startsWith('180.') || cleanIp.startsWith('222.') || cleanIp.startsWith('116.')) {
-    return '中国 北京'
+
+  // 2. 优先检查 CDN / Proxy 请求头 (如 Cloudflare)
+  const cfCountry = reqHeaders['cf-ipcountry']
+  const cfCity = reqHeaders['cf-ipcity']
+  if (cfCountry) {
+    const loc = cfCity ? `${cfCountry} ${decodeURIComponent(cfCity)}` : `Cloudflare (${cfCountry})`
+    return loc
   }
-  if (cleanIp.startsWith('101.') || cleanIp.startsWith('112.') || cleanIp.startsWith('139.')) {
-    return '中国 浙江 杭州'
-  }
-  if (cleanIp.startsWith('8.') || cleanIp.startsWith('1.1.1.') || cleanIp.startsWith('172.69.')) {
-    return '美国 Cloudflare CDN'
-  }
-  return '中国 (公网 IP)'
+
+  return '公网 IP'
 }
 
 const formatVideoRow = (row) => {
@@ -622,12 +624,17 @@ export const db = {
     const revRow = database.prepare('SELECT SUM(amount) as sum FROM orders').get()
     const totalRevenue = revRow && revRow.sum ? revRow.sum : 0
 
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+    const todayViewsRow = database.prepare("SELECT COUNT(*) as c FROM access_logs WHERE createdAt >= ?").get(todayStart)
+    const todayViews = todayViewsRow ? todayViewsRow.c : 0
+
     return {
       totalVideos,
       vipVideos,
       totalOrders,
       totalRevenue,
-      todayViews: 14208
+      todayViews
     }
   },
 
@@ -666,8 +673,9 @@ export const db = {
   },
 
   recordAccess(data = {}) {
-    const ip = data.ip || '127.0.0.1'
-    const location = getIpLocation(ip)
+    const rawIp = data.ip || '127.0.0.1'
+    const ip = String(rawIp).replace(/^::ffff:/, '').trim()
+    const location = getIpLocation(ip, data.headers)
     const createdAt = new Date().toISOString()
     const action = data.action || 'PV'
 
@@ -676,7 +684,7 @@ export const db = {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(
+    const res = stmt.run(
       ip,
       location,
       data.userAgent || '',
@@ -687,6 +695,31 @@ export const db = {
       data.deviceId || null,
       createdAt
     )
+
+    const logId = res.lastInsertRowid
+
+    // 异步在线查询真实 IP 地理位置并后台更新 DB 记录与 LRU 缓存 (0ms 无阻塞)
+    if (logId && ip && !ipCache.has(ip) && ip !== '127.0.0.1' && ip !== '::1' && !ip.startsWith('192.168.') && !ip.startsWith('10.')) {
+      fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`, { signal: AbortSignal.timeout(3000) })
+        .then(r => r.json())
+        .then(info => {
+          if (info && info.status === 'success') {
+            const parts = [info.country, info.regionName, info.city].filter(Boolean)
+            const realLoc = parts.join(' ')
+            if (realLoc) {
+              ipCache.set(ip, realLoc)
+              if (ipCache.size > 5000) {
+                const firstKey = ipCache.keys().next().value
+                ipCache.delete(firstKey)
+              }
+              try {
+                database.prepare('UPDATE access_logs SET location = ? WHERE id = ?').run(realLoc, logId)
+              } catch (e) { }
+            }
+          }
+        })
+        .catch(() => { })
+    }
 
     if (action === 'VIDEO_CLICK' && data.videoId) {
       try {

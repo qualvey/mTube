@@ -14,17 +14,17 @@
 
       <el-form :model="loginForm" label-position="top" @keyup.enter="handleLogin">
         <el-form-item label="管理员账号">
-          <el-input v-model="loginForm.username" placeholder="admin" prefix-icon="User" />
+          <el-input v-model="loginForm.username" placeholder="请输入管理员账号" prefix-icon="User" />
         </el-form-item>
         <el-form-item label="密码">
-          <el-input v-model="loginForm.password" type="password" placeholder="admin123" show-password prefix-icon="Lock" />
+          <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" show-password prefix-icon="Lock" />
         </el-form-item>
         <el-button type="warning" class="w-full mt-4 font-bold text-base py-3 rounded-xl shadow-lg" :loading="loginLoading" @click="handleLogin">
           安全登录
         </el-button>
       </el-form>
       <div class="text-center mt-4 text-xs text-slate-500">
-        默认测试账号：admin / admin123
+        账号密码可在 docker-compose.yml 环境变量配置
       </div>
     </el-card>
   </div>
@@ -1001,7 +1001,7 @@ const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 const isLoggedIn = ref(false)
 const loginLoading = ref(false)
-const loginForm = ref({ username: 'admin', password: 'admin123' })
+const loginForm = ref({ username: '', password: '' })
 
 const activeTab = ref('dashboard')
 const tabTitles = {
