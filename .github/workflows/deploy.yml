@@ -50,9 +50,6 @@ jobs:
               - 'pnpm-lock.yaml'
             client:
               - 'packages/client/**'
-              - 'src/**'
-              - 'index.html'
-              - 'vite.config.js'
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
