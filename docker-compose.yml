@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Node.js Express Backend API & SQLite Database
   server:
@@ -12,11 +10,12 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data/db.sqlite:/app/packages/server/src/db.sqlite
+      - ./data:/app/packages/server/data
       - ./data/uploads:/app/packages/server/public/uploads
     environment:
       - NODE_ENV=production
       - PORT=3000
+
     networks:
       - streamvip-net
     healthcheck:

@@ -4,10 +4,15 @@ import { fileURLToPath } from 'url'
 import { DatabaseSync } from 'node:sqlite'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DB_SQLITE_PATH = path.join(__dirname, 'db.sqlite')
-const DB_JSON_PATH = path.join(__dirname, 'db.json')
+const dataDir = process.env.DATA_DIR || path.resolve(__dirname, '../data')
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true })
+}
+const DB_SQLITE_PATH = path.join(dataDir, 'db.sqlite')
+const DB_JSON_PATH = path.join(dataDir, 'db.json')
 
 // Initialize SQLite database instance
+
 const database = new DatabaseSync(DB_SQLITE_PATH)
 
 // Initialize Tables
