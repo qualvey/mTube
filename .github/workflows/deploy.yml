@@ -198,7 +198,7 @@ jobs:
   # 汇总部署任务：在所有并行构建完成后执行增量 VPS 部署
   deploy-to-vps:
     needs: [detect-changes, build-server, build-client, build-admin]
-    if: !cancelled() && !failed() && github.ref == 'refs/heads/main' && (needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.client == 'true' || needs.detect-changes.outputs.admin == 'true' || needs.detect-changes.outputs.compose == 'true')
+    if: "always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.ref == 'refs/heads/main' && (needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.client == 'true' || needs.detect-changes.outputs.admin == 'true' || needs.detect-changes.outputs.compose == 'true')"
     runs-on: ubuntu-latest
 
     steps:
