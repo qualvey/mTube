@@ -96,12 +96,12 @@ database.exec(`
   );
 `)
 
-try { database.exec("ALTER TABLE orders ADD COLUMN deviceId TEXT DEFAULT NULL;"); } catch (e) {}
-try { database.exec("ALTER TABLE orders ADD COLUMN restoredCount INTEGER DEFAULT 0;"); } catch (e) {}
-try { database.exec("ALTER TABLE orders ADD COLUMN tradeNo TEXT DEFAULT NULL;"); } catch (e) {}
-try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAddress TEXT DEFAULT NULL;"); } catch (e) {}
-try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAmount REAL DEFAULT 0;"); } catch (e) {}
-try { database.exec("ALTER TABLE videos ADD COLUMN views INTEGER DEFAULT 0;"); } catch (e) {}
+try { database.exec("ALTER TABLE orders ADD COLUMN deviceId TEXT DEFAULT NULL;"); } catch (e) { }
+try { database.exec("ALTER TABLE orders ADD COLUMN restoredCount INTEGER DEFAULT 0;"); } catch (e) { }
+try { database.exec("ALTER TABLE orders ADD COLUMN tradeNo TEXT DEFAULT NULL;"); } catch (e) { }
+try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAddress TEXT DEFAULT NULL;"); } catch (e) { }
+try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAmount REAL DEFAULT 0;"); } catch (e) { }
+try { database.exec("ALTER TABLE videos ADD COLUMN views INTEGER DEFAULT 0;"); } catch (e) { }
 
 // Seed default settings if empty
 database.prepare(`
@@ -151,46 +151,6 @@ const seedDatabaseIfEmpty = () => {
   const videos = (initialData && initialData.videos && initialData.videos.length > 0)
     ? initialData.videos
     : [
-      {
-        id: 'vid-1785438113771',
-        title: '测试1',
-        description: '',
-        author: '官方创作者',
-        authorAvatar: '',
-        videoUrl: 'https://surrit.com/f36cb0aa-cbd9-4c21-a0a8-c136223cd87d/1280x720/video.m3u8',
-        poster: 'https://fourhoi.com/prst-004-uncensored-leak/cover-n.jpg',
-        duration: '05:00',
-        likes: 0,
-        shares: 0,
-        isVip: false,
-        status: 'PUBLISHED',
-        tags: '["新增"]',
-        headers: JSON.stringify({
-          "Referer": "https://missav.ws/dm61/cn/prst-004-uncensored-leak",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-        }),
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: 'vid-1785434511173',
-        title: '阿松大',
-        description: '',
-        author: '官方创作者',
-        authorAvatar: 'surrit.com/92ae0a5f-fce6-4c02-a538-4b54142afac1/720p/video.m3u8',
-        videoUrl: 'https://surrit.com/92ae0a5f-fce6-4c02-a538-4b54142afac1/720p/video.m3u8',
-        poster: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop',
-        duration: '05:00',
-        likes: 0,
-        shares: 0,
-        isVip: false,
-        status: 'PUBLISHED',
-        tags: '["新增"]',
-        headers: JSON.stringify({
-          "Referer": "https://missav.ws/dm48/cn/bf-720-uncensored-leak",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-        }),
-        createdAt: new Date().toISOString()
-      },
       {
         id: 'vid-101',
         title: '【4K Ultra HD】赛博朋克极光之夜 - 4K 独家帧率体验',
@@ -729,7 +689,7 @@ export const db = {
     if (action === 'VIDEO_CLICK' && data.videoId) {
       try {
         database.prepare('UPDATE videos SET views = views + 1 WHERE id = ?').run(data.videoId)
-      } catch (e) {}
+      } catch (e) { }
     }
 
     return { success: true, location }
