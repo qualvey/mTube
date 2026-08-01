@@ -13,11 +13,11 @@ services:
       - ./data:/app/packages/server/data
       - ./data/uploads:/app/packages/server/public/uploads
     environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
-      - LOG_LEVEL=info
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3000}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
 
 
 
