@@ -1,0 +1,88 @@
+name: StreamVIP CI/CD Auto Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_SERVER: ghcr.io/${{ github.repository }}/server
+  IMAGE_CLIENT: ghcr.io/${{ github.repository }}/client
+  IMAGE_ADMIN: ghcr.io/${{ github.repository }}/admin
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 1. 云端编译并推送 Server 后端镜像
+      - name: Build and Push Server Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_SERVER }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 2. 云端编译并推送 Client C端镜像
+      - name: Build and Push Client Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/client/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_CLIENT }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 3. 云端编译并推送 Admin B端镜像
+      - name: Build and Push Admin Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/admin/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_ADMIN }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-to-vps:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: SSH Connect and Auto Deploy on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            mkdir -p /root/mobile-paywall && cd /root/mobile-paywall
+            # 拉取 GitHub Container Registry 镜像并热重启
+            docker compose pull
+            docker compose up -d

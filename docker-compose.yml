@@ -3,6 +3,7 @@ version: '3.8'
 services:
   # Node.js Express Backend API & SQLite Database
   server:
+    image: ghcr.io/qualvey/mtube/server:latest
     build:
       context: .
       dockerfile: packages/server/Dockerfile
@@ -27,6 +28,7 @@ services:
 
   # Vue 3 Client (C端视频流主站)
   client:
+    image: ghcr.io/qualvey/mtube/client:latest
     build:
       context: .
       dockerfile: packages/client/Dockerfile
@@ -42,6 +44,7 @@ services:
 
   # Vue 3 Admin (B端管理控制台)
   admin:
+    image: ghcr.io/qualvey/mtube/admin:latest
     build:
       context: .
       dockerfile: packages/admin/Dockerfile
@@ -54,6 +57,7 @@ services:
         condition: service_healthy
     networks:
       - streamvip-net
+
 
 networks:
   streamvip-net:
