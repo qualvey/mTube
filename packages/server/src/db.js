@@ -117,9 +117,11 @@ database.prepare(`
   ('cryptoUsdtAddress', 'TY7x9N2m8Qk4Pz1v6W3s5R7u9Y2X4B6C8V'),
   ('cryptoExchangeRate', '7.2'),
   ('enableNotice', 'true'),
+  ('siteTitle', 'StreamVIP - 独家超清视频流与VIP特权'),
   ('noticeTitle', '📢 官方重要公告'),
   ('noticeContent', '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站无删减 4K 超清原画库！客服在线时间：10:00 - 24:00。')
 `).run()
+
 
 
 // Seed or Migrate Data if Videos table is empty

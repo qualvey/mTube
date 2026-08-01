@@ -420,6 +420,10 @@
                 </div>
               </div>
 
+              <el-form-item label="C端网站 HTML 标题 (浏览器 title 标签)">
+                <el-input v-model="systemSettings.siteTitle" placeholder="例如：StreamVIP - 独家超清视频流与VIP特权" />
+              </el-form-item>
+
               <div class="grid grid-cols-2 gap-4">
                 <el-form-item label="Hero 主标题">
                   <el-input v-model="systemSettings.heroTitle" placeholder="例如：极致诱惑" />
@@ -429,6 +433,7 @@
                   <el-input v-model="systemSettings.heroSubtitle" placeholder="例如：滑动探索更多独家无删减内容" />
                 </el-form-item>
               </div>
+
 
               <div class="flex justify-end mt-2">
                 <el-button type="warning" class="font-bold px-6 py-2.5" @click="saveSettings">
@@ -1032,7 +1037,9 @@ const logSearchAction = ref('')
 const clearBeforeDate = ref('')
 
 const systemSettings = ref({
+  siteTitle: 'StreamVIP - 独家超清视频流与VIP特权',
   enableSeekPreview: true,
+
   heroImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
   heroTitle: '极致诱惑',
   heroSubtitle: '滑动探索更多独家无删减内容',

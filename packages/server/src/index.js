@@ -547,8 +547,24 @@ function verifyAlipayNotifySign(params, alipayPublicKey) {
   return verifier.verify(formattedPubKey, sign, 'base64')
 }
 
+// Public Site Config (Includes siteTitle, hero settings, notice, etc.)
+app.get(['/api/v1/site-config', '/api/v1/paywall/config'], (req, res) => {
+  const settings = db.getSettings()
+  sendResponse(res, {
+    siteTitle: settings.siteTitle || 'StreamVIP - 独家超清视频流与VIP特权',
+    heroImageUrl: settings.heroImageUrl,
+    heroTitle: settings.heroTitle,
+    heroSubtitle: settings.heroSubtitle,
+    enableNotice: settings.enableNotice === 'true' || settings.enableNotice === true,
+    noticeTitle: settings.noticeTitle,
+    noticeContent: settings.noticeContent,
+    enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true
+  })
+})
+
 // VIP Device Status Query
 app.get('/api/v1/paywall/vip-status', (req, res) => {
+
   const { deviceId } = req.query
   const vipInfo = db.getDeviceVip(deviceId)
   sendResponse(res, vipInfo)

@@ -137,9 +137,25 @@ const getNoticeHash = (title, content) => {
   return 'nh_' + Math.abs(hash).toString(36)
 }
 
+const fetchSiteConfig = async () => {
+  try {
+    const res = await fetch('/api/v1/site-config')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && json.data && json.data.siteTitle) {
+        document.title = json.data.siteTitle
+      }
+    }
+  } catch (e) {}
+}
+
 onMounted(async () => {
+  // Dynamically set HTML Document Title from backend B-side configuration
+  fetchSiteConfig()
+
   // Trigger PV Analytics Tracking
   trackAnalytics('PV')
+
 
   const verified = localStorage.getItem('age_verified_18')
 
