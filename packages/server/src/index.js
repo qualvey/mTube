@@ -597,7 +597,10 @@ app.get(['/api/v1/site-config', '/api/v1/paywall/config', '/api/v1/settings'], (
     enableNotice: settings.enableNotice === 'true' || settings.enableNotice === true,
     noticeTitle: settings.noticeTitle,
     noticeContent: settings.noticeContent,
-    enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true
+    enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true,
+    paywallNotice: settings.paywallNotice,
+    userAgreement: settings.userAgreement,
+    customerServiceText: settings.customerServiceText
   })
 })
 

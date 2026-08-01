@@ -653,7 +653,10 @@ export const db = {
       heroSubtitle: '滑动探索更多独家无删减内容',
       enableNotice: true,
       noticeTitle: '📢 官方重要公告',
-      noticeContent: '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站无删减 4K 超清原画库！客服在线时间：10:00 - 24:00。'
+      noticeContent: '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站无删减 4K 超清原画库！客服在线时间：10:00 - 24:00。',
+      paywallNotice: '支付成功后系统将自动为您开通 VIP 尊享特权，支持任意设备凭订单号恢复特权。',
+      userAgreement: '【StreamVIP 用户服务协议与隐私条款】\n\n1. 协议范围：本协议是您与 StreamVIP 平台之间关于使用本平台无删减流媒体视频服务的法律协议。\n2. 会员特权：开通 VIP 会员后，您将在订阅有效期内享有全站 4K 原画视频无限制观看与免广告特权。\n3. 退款与售后：由于数字流媒体服务的即时交付特性，虚拟数字商品一经开通生效，概不退款。如有订单异常，请提供订单号联系官方客服协助恢复。',
+      customerServiceText: '如有支付问题或需要协助，请联系官方客服 Telegram: @StreamVIP_Support'
     }
     for (const r of rows) {
       if (r.key === 'enableSeekPreview' || r.key === 'enableNotice') {

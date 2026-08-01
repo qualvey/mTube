@@ -202,8 +202,47 @@
         </div>
       </template>
 
+      <!-- Dynamic Paywall Notice & Customer Service -->
+      <div class="mt-4 pt-3 border-t border-zinc-800/80 flex flex-col gap-2 text-center text-[11px] text-zinc-400">
+        <p v-if="paywallNotice" class="leading-relaxed text-zinc-300">
+          💡 {{ paywallNotice }}
+        </p>
+        <p v-if="customerServiceText" class="text-amber-400/90 font-medium">
+          🎧 {{ customerServiceText }}
+        </p>
+        <p class="text-zinc-500">
+          开通即表示您已阅读并同意
+          <button @click="showAgreementModal = true" class="text-yellow-400 underline hover:text-yellow-300">
+            《用户服务协议与隐私条款》
+          </button>
+        </p>
+      </div>
+
+      <!-- User Agreement Dynamic Modal -->
+      <div 
+        v-if="showAgreementModal" 
+        class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+        @click.self="showAgreementModal = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-lg w-full p-5 flex flex-col gap-4 max-h-[80vh] overflow-y-auto text-left shadow-2xl">
+          <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+            <h4 class="text-base font-bold text-yellow-400">📜 用户服务协议与隐私条款</h4>
+            <button @click="showAgreementModal = false" class="text-zinc-400 hover:text-white font-bold text-lg px-2">✕</button>
+          </div>
+          <div class="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
+            {{ userAgreement }}
+          </div>
+          <button 
+            @click="showAgreementModal = false" 
+            class="w-full py-2.5 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-400 transition-colors mt-2"
+          >
+            我已完全阅读并理解协议
+          </button>
+        </div>
+      </div>
+
       <!-- Footer Device ID Tag -->
-      <p class="text-zinc-500 text-[10px] mt-4 flex items-center gap-1">
+      <p class="text-zinc-500 text-[10px] mt-3 flex items-center gap-1 justify-center">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3">
           <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
         </svg>
@@ -281,6 +320,11 @@ const checkVipStatus = async () => {
   }
 }
 
+const paywallNotice = ref('支付成功后系统将自动为您开通 VIP 尊享特权，支持任意设备凭订单号恢复特权。')
+const userAgreement = ref('【StreamVIP 用户服务协议与隐私条款】\n\n1. 协议范围：本协议是您与 StreamVIP 平台之间关于使用本平台无删减流媒体视频服务的法律协议。\n2. 会员特权：开通 VIP 会员后，您将在订阅有效期内享有全站 4K 原画视频无限制观看与免广告特权。\n3. 退款与售后：由于数字流媒体服务的即时交付特性，虚拟数字商品一经开通生效，概不退款。如有订单异常，请提供订单号联系官方客服协助恢复。')
+const customerServiceText = ref('')
+const showAgreementModal = ref(false)
+
 onMounted(async () => {
   deviceId.value = getOrCreateDeviceId()
   createdOrderId.value = localStorage.getItem('mp_latest_order_id') || ''
@@ -293,11 +337,16 @@ onMounted(async () => {
     const res = await fetch('/api/v1/paywall/config')
     if (res.ok) {
       const json = await res.json()
-      if (json && json.data && json.data.plans) {
-        plans.value = json.data.plans
-        if (plans.value.length > 0) {
-          selectedPlanId.value = plans.value[0].id || plans.value[0].key
+      if (json && json.data) {
+        if (json.data.plans) {
+          plans.value = json.data.plans
+          if (plans.value.length > 0) {
+            selectedPlanId.value = plans.value[0].id || plans.value[0].key
+          }
         }
+        if (json.data.paywallNotice) paywallNotice.value = json.data.paywallNotice
+        if (json.data.userAgreement) userAgreement.value = json.data.userAgreement
+        if (json.data.customerServiceText) customerServiceText.value = json.data.customerServiceText
       }
     }
   } catch (e) {

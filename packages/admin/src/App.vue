@@ -546,9 +546,38 @@
                 />
               </div>
 
+              <!-- Terms, Notice & Customer Service Config -->
+              <el-form-item label="💳 C 端付费弹窗温馨提示文案">
+                <el-input 
+                  v-model="systemSettings.paywallNotice" 
+                  type="textarea" 
+                  :rows="2" 
+                  placeholder="例如：支付成功后系统将自动为您开通 VIP 尊享特权，支持任意设备凭订单号恢复特权。" 
+                />
+              </el-form-item>
+
+              <el-form-item label="📜 《用户服务协议与隐私条款》文本内容">
+                <el-input 
+                  v-model="systemSettings.userAgreement" 
+                  type="textarea" 
+                  :rows="6" 
+                  placeholder="请输入完整的用户协议与隐私条款内容..." 
+                />
+                <div class="text-[11px] text-slate-500 mt-1">
+                  提示：C 端用户在付费弹窗中点击《用户服务协议》时将弹窗全屏展示此处的文本条款。
+                </div>
+              </el-form-item>
+
+              <el-form-item label="🎧 官方客服联系方式 / 异常求助指南">
+                <el-input 
+                  v-model="systemSettings.customerServiceText" 
+                  placeholder="例如：如有支付问题或需要协助，请联系官方客服 Telegram: @StreamVIP_Support" 
+                />
+              </el-form-item>
+
               <div class="flex justify-end mt-2">
                 <el-button type="warning" class="font-bold px-6 py-2.5" @click="saveSettings">
-                  保存播放器设置
+                  保存全部全局设置
                 </el-button>
               </div>
             </el-form>
