@@ -1,4 +1,4 @@
-name: StreamVIP CI/CD Auto Deployment
+name: StreamVIP Incremental Modular CI/CD
 
 on:
   push:
@@ -11,7 +11,6 @@ env:
   IMAGE_CLIENT: ghcr.io/qualvey/mtube/client
   IMAGE_ADMIN: ghcr.io/qualvey/mtube/admin
 
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -19,25 +18,63 @@ jobs:
       contents: read
       packages: write
 
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      client: ${{ steps.filter.outputs.client }}
+      admin: ${{ steps.filter.outputs.admin }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 路径精准感知过滤器
+      - name: Path Filter (Detect Changed Modules)
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            server:
+              - 'packages/server/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/deploy.yml'
+              - 'docker-compose.yml'
+            client:
+              - 'packages/client/**'
+              - 'src/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/deploy.yml'
+              - 'docker-compose.yml'
+            admin:
+              - 'packages/admin/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/deploy.yml'
+              - 'docker-compose.yml'
+
       - name: Set up QEMU
+        if: steps.filter.outputs.server == 'true' || steps.filter.outputs.client == 'true' || steps.filter.outputs.admin == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        if: steps.filter.outputs.server == 'true' || steps.filter.outputs.client == 'true' || steps.filter.outputs.admin == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry (GHCR)
+        if: steps.filter.outputs.server == 'true' || steps.filter.outputs.client == 'true' || steps.filter.outputs.admin == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 1. 云端编译并推送 Server 后端镜像
+      # 1. 仅当 server 模块受变更影响时编译推送
       - name: Build and Push Server Image
+        if: steps.filter.outputs.server == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -47,8 +84,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 2. 云端编译并推送 Client C端镜像
+      # 2. 仅当 client 模块受变更影响时编译推送
       - name: Build and Push Client Image
+        if: steps.filter.outputs.client == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -58,8 +96,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 3. 云端编译并推送 Admin B端镜像
+      # 3. 仅当 admin 模块受变更影响时编译推送
       - name: Build and Push Admin Image
+        if: steps.filter.outputs.admin == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -72,7 +111,7 @@ jobs:
   deploy-to-vps:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (needs.build-and-push.outputs.server == 'true' || needs.build-and-push.outputs.client == 'true' || needs.build-and-push.outputs.admin == 'true')
 
     steps:
       - name: Checkout Code
@@ -88,7 +127,7 @@ jobs:
           source: "docker-compose.yml,nginx-production-example.conf"
           target: "/root/mobile-paywall"
 
-      - name: SSH Connect and Auto Deploy on VPS
+      - name: SSH Connect and Incremental Deploy on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -99,8 +138,19 @@ jobs:
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd /root/mobile-paywall
-            # 拉取 GitHub Container Registry 镜像并热重启
-            (docker compose pull || docker-compose pull)
-            (docker compose up -d || docker-compose up -d)
+            
+            SERVICES=""
+            if [ "${{ needs.build-and-push.outputs.server }}" == "true" ]; then SERVICES="$SERVICES server"; fi
+            if [ "${{ needs.build-and-push.outputs.client }}" == "true" ]; then SERVICES="$SERVICES client"; fi
+            if [ "${{ needs.build-and-push.outputs.admin }}" == "true" ]; then SERVICES="$SERVICES admin"; fi
+            
+            if [ -n "$SERVICES" ]; then
+              echo "🚀 Target incremental update services: $SERVICES"
+              (docker compose pull $SERVICES || docker-compose pull $SERVICES)
+              (docker compose up -d $SERVICES || docker-compose up -d $SERVICES)
+            else
+              echo "✨ No service changes detected. Skipping VPS update."
+            fi
+
 
 
