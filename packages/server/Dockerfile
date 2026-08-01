@@ -1,4 +1,5 @@
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
+
 
 # Install build dependencies for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++ sqlite-dev
