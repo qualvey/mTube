@@ -97,7 +97,9 @@
 
 <script setup>
 import { ref } from 'vue'
+
 import MemoryVideoPlayer from './MemoryVideoPlayer.vue'
+import { trackAnalytics } from '../services/videoService'
 
 const props = defineProps({
   video: {
@@ -115,15 +117,18 @@ const isVipUnlocked = ref(false)
 const isTrialEnded = ref(false)
 
 const onVipClick = () => {
+  trackAnalytics('VIDEO_CLICK', props.video.id)
   emit('trigger-paywall', props.video)
 }
 
 const handleTrialEnded = () => {
   if (!isVipUnlocked.value) {
     isTrialEnded.value = true
+    trackAnalytics('VIDEO_CLICK', props.video.id)
     emit('trigger-paywall', props.video)
   }
 }
+
 
 const handleLike = () => {
   isLiked.value = !isLiked.value

@@ -67,7 +67,33 @@ const mockFallbackVideos = [
   }
 ]
 
+// Global Analytics Tracking Helper (PV, Video Clicks)
+export const trackAnalytics = async (action = 'PV', videoId = null) => {
+  try {
+    let deviceId = localStorage.getItem('mp_device_id')
+    if (!deviceId) {
+      deviceId = 'dev-' + Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36)
+      localStorage.setItem('mp_device_id', deviceId)
+    }
+    await fetch('/api/v1/analytics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        videoId,
+        path: window.location.pathname || '/',
+        deviceId,
+        userAgent: navigator.userAgent,
+        referer: document.referrer
+      })
+    })
+  } catch (e) {
+    // Silent catch
+  }
+}
+
 export const videoService = {
+
   // Fetch video list from backend REST API or fallback to mock data
   async getVideos(filter = null, tag = null) {
     try {

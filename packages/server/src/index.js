@@ -712,7 +712,8 @@ app.get('/api/v1/admin/dashboard/stats', (req, res) => {
 
 // C端访问与点击数据上报
 app.post('/api/v1/analytics/track', (req, res) => {
-  const clientIp = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || req.ip || '127.0.0.1').split(',')[0].trim()
+  const clientIp = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || req.ip || '127.0.0.1').split(',')[0].trim()
+
   const { path, videoId, action, deviceId, userAgent, referer } = req.body || {}
   
   const result = db.recordAccess({

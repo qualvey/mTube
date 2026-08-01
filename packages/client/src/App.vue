@@ -81,8 +81,10 @@ import HeroSection from './components/HeroSection.vue'
 import VideoFeed from './components/VideoFeed.vue'
 import ScrollTransition from './components/ScrollTransition.vue'
 import PaywallModal from './components/PaywallModal.vue'
+import { trackAnalytics } from './services/videoService'
 
 const scrollContainer = ref(null)
+
 const ageVerified = ref(false)
 const showPaywall = ref(false)
 const isVip = ref(false)
@@ -136,7 +138,11 @@ const getNoticeHash = (title, content) => {
 }
 
 onMounted(async () => {
+  // Trigger PV Analytics Tracking
+  trackAnalytics('PV')
+
   const verified = localStorage.getItem('age_verified_18')
+
   if (verified === 'true') {
     ageVerified.value = true
   }
