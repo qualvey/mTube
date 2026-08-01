@@ -620,8 +620,8 @@ export const db = {
   getStats() {
     const totalVideos = database.prepare('SELECT COUNT(*) as c FROM videos').get().c
     const vipVideos = database.prepare('SELECT COUNT(*) as c FROM videos WHERE isVip = 1').get().c
-    const totalOrders = database.prepare('SELECT COUNT(*) as c FROM orders').get().c
-    const revRow = database.prepare('SELECT SUM(amount) as sum FROM orders').get()
+    const totalOrders = database.prepare("SELECT COUNT(*) as c FROM orders WHERE status = 'PAID'").get().c
+    const revRow = database.prepare("SELECT SUM(amount) as sum FROM orders WHERE status = 'PAID'").get()
     const totalRevenue = revRow && revRow.sum ? revRow.sum : 0
 
     const now = new Date()

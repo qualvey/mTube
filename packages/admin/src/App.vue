@@ -93,7 +93,13 @@
         <h3 class="text-lg font-bold text-slate-800">
           {{ tabTitles[activeTab] }}
         </h3>
-        <el-tag type="warning" effect="dark" round>系统状态：正常运行中</el-tag>
+        <div class="flex items-center gap-3">
+          <div class="px-3 py-1 bg-slate-100 rounded-lg border border-slate-200 text-xs font-mono font-semibold text-slate-600 flex items-center gap-1.5 shadow-inner">
+            <span class="text-amber-500 font-bold">🕒</span>
+            <span>{{ currentTime }}</span>
+          </div>
+          <el-tag type="warning" effect="dark" round>系统状态：正常运行中</el-tag>
+        </div>
       </el-header>
 
       <el-main class="p-6">
@@ -994,10 +1000,35 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+
+const currentTime = ref('')
+let clockTimer = null
+
+const updateClock = () => {
+  const now = new Date()
+  currentTime.value = now.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+}
+
+onMounted(() => {
+  updateClock()
+  clockTimer = setInterval(updateClock, 1000)
+})
+
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer)
+})
 
 const isLoggedIn = ref(false)
 const loginLoading = ref(false)
