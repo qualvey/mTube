@@ -348,14 +348,25 @@
                   >
                     取消 VIP
                   </el-button>
-                  <el-tag 
-                    v-else-if="row.deviceId && !row.isVip"
-                    type="info" 
-                    size="small" 
-                    class="ml-2"
+                  <el-popconfirm
+                    title="确定要彻底删除此订单记录吗？删除后不可恢复！"
+                    confirm-button-text="确定删除"
+                    cancel-button-text="取消"
+                    confirm-button-type="danger"
+                    @confirm="deleteOrder(row.id)"
                   >
-                    已取消 VIP
-                  </el-tag>
+                    <template #reference>
+                      <el-button 
+                        type="danger" 
+                        size="small" 
+                        icon="Delete" 
+                        text 
+                        class="ml-2"
+                      >
+                        删除
+                      </el-button>
+                    </template>
+                  </el-popconfirm>
                 </template>
               </el-table-column>
 
@@ -1437,10 +1448,28 @@ const confirmCryptoOrder = async (order) => {
     const json = await res.json()
     if (json.code === 200) {
       ElMessage.success(`订单 ${order.id} 已确认收到 USDT 汇款并成功补发 VIP！`)
-      loadAllData()
     }
   } catch (e) {
     ElMessage.error('确认失败')
+  }
+}
+
+const deleteOrder = async (orderId) => {
+  if (!orderId) return
+  try {
+    const res = await fetch(`/api/v1/admin/orders/${encodeURIComponent(orderId)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    const json = await res.json()
+    if (json.code === 200) {
+      ElMessage.success(`订单 [${orderId}] 已成功删除`)
+      loadAllData()
+    } else {
+      ElMessage.error(json.message || '删除订单失败')
+    }
+  } catch (e) {
+    ElMessage.error('删除订单网络请求失败')
   }
 }
 

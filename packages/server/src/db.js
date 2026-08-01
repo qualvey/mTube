@@ -536,6 +536,12 @@ export const db = {
     return database.prepare('SELECT * FROM orders WHERE id = ?').get(id)
   },
 
+  deleteOrder(id) {
+    if (!id) return false
+    const info = database.prepare('DELETE FROM orders WHERE id = ?').run(id)
+    return info.changes > 0
+  },
+
   createOrder(data) {
     const plans = this.getPlans()
     const plan = plans.find(p => p.id === data.planId || p.key === data.planId) || plans[0]

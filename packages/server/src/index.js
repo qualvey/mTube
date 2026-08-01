@@ -863,6 +863,14 @@ app.get('/api/v1/admin/orders', (req, res) => {
   sendResponse(res, db.getOrders())
 })
 
+app.delete('/api/v1/admin/orders/:id', (req, res) => {
+  const success = db.deleteOrder(req.params.id)
+  if (success) {
+    return sendResponse(res, { success: true }, 200, '订单记录已成功删除')
+  }
+  sendResponse(res, null, 404, '订单不存在或已被删除')
+})
+
 // Admin Confirm Crypto Order (Manual/Webhook)
 app.post('/api/v1/admin/orders/:id/confirm-crypto', (req, res) => {
   const { tradeNo } = req.body
