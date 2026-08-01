@@ -85,7 +85,9 @@ jobs:
 
 
           script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             mkdir -p /root/mobile-paywall && cd /root/mobile-paywall
             # 拉取 GitHub Container Registry 镜像并热重启
-            docker compose pull
-            docker compose up -d
+            (docker compose pull || docker-compose pull)
+            (docker compose up -d || docker-compose up -d)
+
