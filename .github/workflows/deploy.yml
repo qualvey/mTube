@@ -75,6 +75,19 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "docker-compose.yml,nginx-production-example.conf"
+          target: "/root/mobile-paywall"
+
       - name: SSH Connect and Auto Deploy on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -83,11 +96,11 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
 
-
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
-            mkdir -p /root/mobile-paywall && cd /root/mobile-paywall
+            cd /root/mobile-paywall
             # 拉取 GitHub Container Registry 镜像并热重启
             (docker compose pull || docker-compose pull)
             (docker compose up -d || docker-compose up -d)
+
 
