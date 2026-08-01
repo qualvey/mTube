@@ -25,12 +25,8 @@ env:
   IMAGE_ADMIN: ghcr.io/qualvey/mtube/admin
 
 jobs:
-  build-and-push:
+  detect-changes:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     outputs:
       server: ${{ steps.set-targets.outputs.server }}
       client: ${{ steps.set-targets.outputs.client }}
@@ -106,25 +102,28 @@ jobs:
           echo "admin=$BUILD_ADMIN" >> $GITHUB_OUTPUT
           echo "compose=$BUILD_COMPOSE" >> $GITHUB_OUTPUT
 
+  # 并行构建任务 1：Server 镜像构建与推送
+  build-server:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
       - name: Set up QEMU
-        if: steps.set-targets.outputs.server == 'true' || steps.set-targets.outputs.client == 'true' || steps.set-targets.outputs.admin == 'true'
         uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
-        if: steps.set-targets.outputs.server == 'true' || steps.set-targets.outputs.client == 'true' || steps.set-targets.outputs.admin == 'true'
         uses: docker/setup-buildx-action@v3
-
       - name: Log in to GitHub Container Registry (GHCR)
-        if: steps.set-targets.outputs.server == 'true' || steps.set-targets.outputs.client == 'true' || steps.set-targets.outputs.admin == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # 1. 仅当 server 模块受变更影响时编译推送
       - name: Build and Push Server Image
-        if: steps.set-targets.outputs.server == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -134,9 +133,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 2. 仅当 client 模块受变更影响时编译推送
+  # 并行构建任务 2：Client 镜像构建与推送
+  build-client:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.client == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and Push Client Image
-        if: steps.set-targets.outputs.client == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -146,9 +164,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 3. 仅当 admin 模块受变更影响时编译推送
+  # 并行构建任务 3：Admin 镜像构建与推送
+  build-admin:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and Push Admin Image
-        if: steps.set-targets.outputs.admin == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -158,10 +195,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # 汇总部署任务：在所有并行构建完成后执行增量 VPS 部署
   deploy-to-vps:
-    needs: build-and-push
+    needs: [detect-changes, build-server, build-client, build-admin]
+    if: !cancelled() && !failed() && github.ref == 'refs/heads/main' && (needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.client == 'true' || needs.detect-changes.outputs.admin == 'true' || needs.detect-changes.outputs.compose == 'true')
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && (needs.build-and-push.outputs.server == 'true' || needs.build-and-push.outputs.client == 'true' || needs.build-and-push.outputs.admin == 'true' || needs.build-and-push.outputs.compose == 'true')
 
     steps:
       - name: Checkout Code
@@ -190,9 +228,9 @@ jobs:
             cd /root/mobile-paywall
             
             SERVICES=""
-            if [ "${{ needs.build-and-push.outputs.server }}" == "true" ]; then SERVICES="$SERVICES server"; fi
-            if [ "${{ needs.build-and-push.outputs.client }}" == "true" ]; then SERVICES="$SERVICES client"; fi
-            if [ "${{ needs.build-and-push.outputs.admin }}" == "true" ]; then SERVICES="$SERVICES admin"; fi
+            if [ "${{ needs.detect-changes.outputs.server }}" == "true" ]; then SERVICES="$SERVICES server"; fi
+            if [ "${{ needs.detect-changes.outputs.client }}" == "true" ]; then SERVICES="$SERVICES client"; fi
+            if [ "${{ needs.detect-changes.outputs.admin }}" == "true" ]; then SERVICES="$SERVICES admin"; fi
             
             if [ -n "$SERVICES" ]; then
               echo "🚀 Cleaning old unused image caches on low-disk VPS..."
@@ -201,12 +239,13 @@ jobs:
               (docker compose pull $SERVICES || docker-compose pull $SERVICES)
               (docker compose up -d $SERVICES || docker-compose up -d $SERVICES)
               docker image prune -f || true
-            elif [ "${{ needs.build-and-push.outputs.compose }}" == "true" ]; then
+            elif [ "${{ needs.detect-changes.outputs.compose }}" == "true" ]; then
               echo "⚙️ Only docker-compose / configuration changed. Reloading containers..."
               (docker compose up -d || docker-compose up -d)
             else
               echo "✨ No service changes detected. Skipping VPS update."
             fi
+
 
 
 
