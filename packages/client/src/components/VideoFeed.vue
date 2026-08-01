@@ -43,6 +43,7 @@
         v-for="video in filteredVideos"
         :key="video.id"
         :video="video"
+        :is-vip-unlocked="isVip"
         @trigger-paywall="$emit('trigger-paywall', $event)"
       />
 
@@ -69,6 +70,13 @@ import VideoCard from './VideoCard.vue'
 import { videoService } from '../services/videoService'
 
 defineEmits(['trigger-paywall'])
+
+const props = defineProps({
+  isVip: {
+    type: Boolean,
+    default: false
+  }
+})
 
 const loading = ref(true)
 const videos = ref([])

@@ -9,6 +9,7 @@
         v-if="!video.isVip || isVipUnlocked || !isTrialEnded"
         :video="video"
         :muted="isMuted"
+        :is-vip-unlocked="isVipUnlocked"
         @trial-ended="handleTrialEnded"
       />
 
@@ -34,13 +35,19 @@
 
       <!-- VIP Badge (Top Left Overlay) -->
       <div 
-        v-if="video.isVip" 
+        v-if="video.isVip && !isVipUnlocked" 
         class="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-black text-xs font-black shadow-lg flex items-center gap-1 pointer-events-none"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3.5 h-3.5">
           <path fill-rule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clip-rule="evenodd" />
         </svg>
         <span>VIP 试看 {{ Math.round((video.previewDuration || 120) / 60) }}分钟</span>
+      </div>
+      <div 
+        v-else-if="video.isVip && isVipUnlocked" 
+        class="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black text-xs font-black shadow-lg flex items-center gap-1 pointer-events-none"
+      >
+        <span>👑 VIP 尊享解禁</span>
       </div>
 
       <!-- Duration Badge (Top Right Overlay) -->
@@ -105,6 +112,10 @@ const props = defineProps({
   video: {
     type: Object,
     required: true
+  },
+  isVipUnlocked: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -113,7 +124,6 @@ const emit = defineEmits(['trigger-paywall'])
 const isMuted = ref(true)
 const isLiked = ref(props.video.isLiked)
 const likesCount = ref(props.video.likes)
-const isVipUnlocked = ref(false)
 const isTrialEnded = ref(false)
 
 const onVipClick = () => {
@@ -122,7 +132,7 @@ const onVipClick = () => {
 }
 
 const handleTrialEnded = () => {
-  if (!isVipUnlocked.value) {
+  if (!props.isVipUnlocked) {
     isTrialEnded.value = true
     trackAnalytics('VIDEO_CLICK', props.video.id)
     emit('trigger-paywall', props.video)

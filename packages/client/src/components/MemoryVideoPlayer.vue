@@ -112,13 +112,16 @@ export interface ComponentProps {
   loop?: boolean
   muted?: boolean
   enableSeekPreview?: boolean
+  isVipUnlocked?: boolean
+  previewDuration?: number
 }
 
 const props = withDefaults(defineProps<ComponentProps>(), {
   autoplay: false,
   loop: false,
   muted: true,
-  enableSeekPreview: true
+  enableSeekPreview: true,
+  isVipUnlocked: false
 })
 
 const emit = defineEmits<{
@@ -501,7 +504,7 @@ const initializePlyr = () => {
 
   let trialTriggered = false
   plyrInstance.on('timeupdate', () => {
-    if (props.video && props.video.isVip) {
+    if (props.video && props.video.isVip && !props.isVipUnlocked) {
       const limit = props.previewDuration || props.video.previewDuration || 120
       if (plyrInstance && plyrInstance.currentTime >= limit) {
         plyrInstance.pause()

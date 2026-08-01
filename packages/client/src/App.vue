@@ -38,6 +38,7 @@
       <!-- Video Feed Stream (Backend Controlled) -->
       <VideoFeed 
         :class="{ 'blur-sm brightness-75 transition-all duration-500': showPaywall }" 
+        :is-vip="isVip"
         @trigger-paywall="showPaywall = true"
       />
       
