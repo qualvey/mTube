@@ -518,10 +518,10 @@ function generateAlipayWapUrl({ appId, privateKey, notifyUrl, orderId, amount, s
 
   const signer = crypto.createSign('RSA-SHA256')
   signer.update(signContent, 'utf8')
-  const formattedKey = privateKey.includes('-----BEGIN') 
-    ? privateKey 
+  const formattedKey = privateKey.includes('-----BEGIN')
+    ? privateKey
     : `-----BEGIN RSA PRIVATE KEY-----\n${privateKey}\n-----END RSA PRIVATE KEY-----`
-  
+
   const sign = signer.sign(formattedKey, 'base64')
   const queryStr = sortedKeys.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&')
 
@@ -683,14 +683,19 @@ app.post('/api/v1/paywall/restore', (req, res) => {
 
 app.post('/api/v1/admin/auth/login', (req, res) => {
   const { username, password } = req.body
-  if (username === 'admin' && password === 'admin123') {
+  const expectedUsername = process.env.ADMIN_USERNAME || 'admin'
+  const expectedPassword = process.env.ADMIN_PASSWORD || 'admin123'
+  const jwtSecret = process.env.JWT_SECRET || 'jwt-token-admin-secret-888'
+
+  if (username === expectedUsername && password === expectedPassword) {
     return sendResponse(res, {
-      token: 'jwt-token-admin-secret-888',
-      user: { username: 'admin', role: 'SUPER_ADMIN' }
+      token: jwtSecret,
+      user: { username: expectedUsername, role: 'SUPER_ADMIN' }
     })
   }
   sendResponse(res, null, 401, '用户名或密码错误')
 })
+
 
 app.get('/api/v1/admin/settings', (req, res) => {
   sendResponse(res, db.getSettings())
@@ -715,7 +720,7 @@ app.post('/api/v1/analytics/track', (req, res) => {
   const clientIp = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || req.ip || '127.0.0.1').split(',')[0].trim()
 
   const { path, videoId, action, deviceId, userAgent, referer } = req.body || {}
-  
+
   const result = db.recordAccess({
     ip: clientIp,
     userAgent: userAgent || req.headers['user-agent'] || '',
@@ -725,7 +730,7 @@ app.post('/api/v1/analytics/track', (req, res) => {
     action: action || 'PV',
     deviceId
   })
-  
+
   sendResponse(res, result)
 })
 
