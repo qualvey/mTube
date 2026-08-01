@@ -188,8 +188,8 @@ const proxyDirectUrl = (videoUrl, req, res, customHeaders = {}, retryCount = 0) 
   }
 }
 
-// Helper to fetch and rewrite HLS M3U8 Playlists with automatic gzip/br decompression and 3xx redirect following
-const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0) => {
+// Helper to fetch and rewrite HLS M3U8 Playlists with automatic gzip/br decompression, VIP device verification & 3xx redirect following
+const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0, isVipUnlocked = true, previewLimit = 120) => {
   if (redirectCount > 5) {
     logger.error(`Too many redirects for M3U8: ${targetUrl}`)
     return proxyDirectUrl(targetUrl, req, res, customHeaders)
@@ -211,13 +211,13 @@ const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0
     const protocol = cleanUrl.startsWith('https') ? https : http
 
     const proxyReq = protocol.get(cleanUrl, { headers: finalHeaders }, (streamRes) => {
-      // 1. Follow 3xx Redirects (e.g. 301 Moved Permanently from HTTP to HTTPS or CDN redirect)
+      // 1. Follow 3xx Redirects
       if (streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
         const redirectUrl = streamRes.headers.location.startsWith('http')
           ? streamRes.headers.location
           : new URL(streamRes.headers.location, cleanUrl).href
         logger.info(`[HLS M3U8 Proxy] Following ${streamRes.statusCode} redirect to: ${redirectUrl}`)
-        return fetchM3u8Playlist(redirectUrl, customHeaders, req, res, redirectCount + 1)
+        return fetchM3u8Playlist(redirectUrl, customHeaders, req, res, redirectCount + 1, isVipUnlocked, previewLimit)
       }
 
       // 2. Handle HTTP 4xx / 5xx Error Code
@@ -226,7 +226,7 @@ const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0
         return proxyDirectUrl(cleanUrl, req, res, customHeaders)
       }
 
-      // 3. Transparently Decompress Gzip / Deflate / Brotli Response Bodies
+      // 3. Transparently Decompress Response Bodies
       let responseStream = streamRes
       const encoding = streamRes.headers['content-encoding']
       if (encoding === 'gzip') {
@@ -242,19 +242,41 @@ const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0
       responseStream.on('end', () => {
         if (res.headersSent) return
 
-        // If non-M3U8 response (e.g. Cloudflare WAF challenge page)
         if (!m3u8Data.includes('#EXTM3U')) {
           logger.warn(`Upstream returned non-M3U8 data for ${cleanUrl}, falling back to direct stream.`)
           return proxyDirectUrl(cleanUrl, req, res, customHeaders)
         }
 
         const lines = m3u8Data.split('\n')
-        const rewritten = lines.map(line => {
+        const rewrittenLines = []
+        let currentDuration = 0
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]
           const trimmed = line.trim()
-          if (!trimmed || trimmed.startsWith('#')) return line
-          const segUrl = trimmed.startsWith('http') ? trimmed : (baseUrl + trimmed)
-          return `/api/v1/proxy/video?id=${req.query.id || ''}&url=${encodeURIComponent(segUrl)}`
-        }).join('\n')
+
+          if (trimmed.startsWith('#EXTINF:')) {
+            const match = trimmed.match(/#EXTINF:([\d.]+)/)
+            if (match) {
+              const segDur = parseFloat(match[1]) || 0
+              if (!isVipUnlocked && previewLimit > 0 && (currentDuration + segDur) > previewLimit) {
+                rewrittenLines.push('#EXT-X-ENDLIST')
+                break
+              }
+              currentDuration += segDur
+            }
+          }
+
+          if (!trimmed || trimmed.startsWith('#')) {
+            rewrittenLines.push(line)
+          } else {
+            const segUrl = trimmed.startsWith('http') ? trimmed : (baseUrl + trimmed)
+            const deviceIdParam = req.query.deviceId ? `&deviceId=${encodeURIComponent(req.query.deviceId)}` : ''
+            rewrittenLines.push(`/api/v1/proxy/video?id=${req.query.id || ''}${deviceIdParam}&url=${encodeURIComponent(segUrl)}`)
+          }
+        }
+
+        const rewritten = rewrittenLines.join('\n')
 
         res.writeHead(200, {
           'Content-Type': 'application/x-mpegURL',
@@ -272,10 +294,9 @@ const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0
     })
 
     proxyReq.on('error', (err) => {
-      // Automatic retry on transient Keep-Alive socket drops
       if (err.message.includes('socket hang up') && redirectCount < 2 && !res.headersSent) {
         logger.info(`[HLS M3U8 Proxy] Transient socket hang up, retrying fresh connection (${redirectCount + 1}/2)...`)
-        return fetchM3u8Playlist(cleanUrl, customHeaders, req, res, redirectCount + 1)
+        return fetchM3u8Playlist(cleanUrl, customHeaders, req, res, redirectCount + 1, isVipUnlocked, previewLimit)
       }
       logger.error('HLS m3u8 request error:', err.message)
       if (!res.headersSent) {
@@ -294,14 +315,31 @@ const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0
   }
 }
 
-// GET /api/v1/proxy/video?url=...&id=...&headers=...
+// GET /api/v1/proxy/video?url=...&id=...&deviceId=...&headers=...
 app.get('/api/v1/proxy/video', async (req, res) => {
   let targetUrl = req.query.url ? req.query.url.trim() : null
   let customHeaders = {}
+  const deviceId = (req.query.deviceId || req.headers['x-device-id'] || '').trim()
+
+  let isVipUnlocked = false
+  let previewLimit = 120
+
+  if (deviceId) {
+    const vipInfo = db.getDeviceVip(deviceId)
+    isVipUnlocked = Boolean(vipInfo && vipInfo.isVip)
+  }
 
   if (req.query.id) {
     const video = db.getVideoById(req.query.id)
     if (video) {
+      previewLimit = video.previewDuration !== undefined && video.previewDuration !== null ? Number(video.previewDuration) : 120
+
+      // 后端核心 VIP 权限防御校验 (Backend Core VIP Security Check)
+      if (video.isVip && !isVipUnlocked && previewLimit <= 0) {
+        logger.warn(`[Security Alert] Non-VIP device (${deviceId || 'No-ID'}) blocked from streaming VIP video ${video.id}`)
+        return sendResponse(res, null, 403, '该视频为 VIP 独家专享内容，您的设备未开通 VIP 权限！')
+      }
+
       if (!targetUrl) targetUrl = video.videoUrl ? video.videoUrl.trim() : null
       if (video.headers) {
         customHeaders = normalizeHeaders(video.headers)
@@ -328,7 +366,7 @@ app.get('/api/v1/proxy/video', async (req, res) => {
   }
 
   if (targetUrl.includes('.m3u8')) {
-    return fetchM3u8Playlist(targetUrl, customHeaders, req, res)
+    return fetchM3u8Playlist(targetUrl, customHeaders, req, res, 0, isVipUnlocked, previewLimit)
   }
 
   const match = targetUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/)

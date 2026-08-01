@@ -326,9 +326,11 @@ const loadVideoToMemory = async () => {
   const hasHeaders = Object.keys(customHeaders).length > 0
 
   let fetchTargetUrl = cleanUrl
+  const deviceId = localStorage.getItem('mp_device_id') || ''
   if (isYoutube || hasHeaders || video.id || isM3u8) {
     const params = new URLSearchParams()
     if (video.id) params.append('id', video.id)
+    if (deviceId) params.append('deviceId', deviceId)
     params.append('url', cleanUrl)
     if (hasHeaders) params.append('headers', JSON.stringify(customHeaders))
     fetchTargetUrl = `/api/v1/proxy/video?${params.toString()}`
