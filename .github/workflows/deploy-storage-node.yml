@@ -94,10 +94,18 @@ jobs:
             mkdir -p $TARGET_DIR
             cd $TARGET_DIR
             
-            # 若缺失 .env，使用 .env.example 自动复制初始化配置
-            if [ ! -f .env ] && [ -f .env.example ]; then
-              cp .env.example .env
-            fi
+            # 由 GitHub Secrets 自动生成/更新远端 .env 配置文件 (彻底无需手动登陆服务器修改)
+            cat << EOF > .env
+NODE_ENV=production
+STORAGE_PORT=3001
+NODE_ID=${{ secrets.STORAGE_NODE_ID || 'node-02' }}
+NODE_NAME="${{ secrets.STORAGE_NODE_NAME || '香港存储节点 02' }}"
+PUBLIC_URL=${{ secrets.STORAGE_PUBLIC_URL || 'http://localhost:3001' }}
+MAIN_SERVER_URL=${{ secrets.MAIN_SERVER_URL || 'http://localhost:3000' }}
+CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}
+STORAGE_DATA_PATH=${{ secrets.STORAGE_DATA_PATH || '/var/storage/uploads' }}
+STORAGE_NODE_IMAGE=ghcr.io/qualvey/mtube/storage-node:latest
+EOF
 
             echo "🚀 Deploying and reloading Storage Node container..."
             docker image prune -af || true

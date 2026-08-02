@@ -270,6 +270,19 @@ jobs:
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd /root/mobile-paywall
             
+            # 若不存在 .env 文件，由 GitHub Secrets 自动生成
+            if [ ! -f .env ]; then
+              cat << EOF > .env
+NODE_ENV=production
+SERVER_PORT=3000
+CLIENT_PORT=5173
+ADMIN_PORT=5174
+ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}
+ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}
+CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}
+EOF
+            fi
+
             SERVICES=""
             if [ "${{ needs.detect-changes.outputs.server }}" == "true" ]; then SERVICES="$SERVICES server"; fi
             if [ "${{ needs.detect-changes.outputs.client }}" == "true" ]; then SERVICES="$SERVICES client"; fi
