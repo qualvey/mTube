@@ -272,15 +272,13 @@ jobs:
             
             # 若不存在 .env 文件，由 GitHub Secrets 自动生成
             if [ ! -f .env ]; then
-              cat << EOF > .env
-NODE_ENV=production
-SERVER_PORT=3000
-CLIENT_PORT=5173
-ADMIN_PORT=5174
-ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}
-ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}
-CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}
-EOF
+              echo "NODE_ENV=production" > .env
+              echo "SERVER_PORT=3000" >> .env
+              echo "CLIENT_PORT=5173" >> .env
+              echo "ADMIN_PORT=5174" >> .env
+              echo "ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}" >> .env
+              echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}" >> .env
+              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}" >> .env
             fi
 
             SERVICES=""
