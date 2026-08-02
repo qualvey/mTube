@@ -155,6 +155,27 @@ const CLUSTER_SECRET = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
 const HEARTBEAT_INTERVAL = Number(process.env.HEARTBEAT_INTERVAL) || 30
 
 /**
+ * Generate HMAC-SHA256 signature headers with Timestamp + Nonce to prevent Replay attacks & Secret exposure
+ */
+const createHmacSignedHeaders = (payload, secret) => {
+  const timestamp = Date.now().toString()
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const bodyString = typeof payload === 'string' ? payload : JSON.stringify(payload)
+
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`${bodyString}.${timestamp}.${nonce}`)
+    .digest('hex')
+
+  return {
+    'Content-Type': 'application/json',
+    'X-Cluster-Timestamp': timestamp,
+    'X-Cluster-Nonce': nonce,
+    'X-Cluster-Signature': signature
+  }
+}
+
+/**
  * Auto-Register with Main Control Server on startup
  */
 const registerWithMainServer = async () => {
@@ -162,18 +183,21 @@ const registerWithMainServer = async () => {
 
   try {
     const targetUrl = `${MAIN_SERVER_URL.replace(/\/$/, '')}/api/v1/storage-nodes/register`
-    console.log(`[Storage Node 📦] Auto-registering to Main Control Server: ${targetUrl}`)
+    console.log(`[Storage Node 📦] Auto-registering (HMAC-SHA256 Signed) to Main Control Server: ${targetUrl}`)
+
+    const payload = {
+      id: NODE_ID,
+      name: NODE_NAME,
+      baseUrl: PUBLIC_URL,
+      isDefault: process.env.IS_DEFAULT === 'true'
+    }
+
+    const headers = createHmacSignedHeaders(payload, CLUSTER_SECRET)
 
     const resp = await fetch(targetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: NODE_ID,
-        name: NODE_NAME,
-        baseUrl: PUBLIC_URL,
-        clusterSecret: CLUSTER_SECRET,
-        isDefault: process.env.IS_DEFAULT === 'true'
-      })
+      headers,
+      body: JSON.stringify(payload)
     })
 
     const json = await resp.json()
@@ -198,15 +222,17 @@ const sendHeartbeat = async () => {
 
   try {
     const targetUrl = `${MAIN_SERVER_URL.replace(/\/$/, '')}/api/v1/storage-nodes/heartbeat`
+    const payload = {
+      id: NODE_ID,
+      status: 'ONLINE',
+      videoCount
+    }
+    const headers = createHmacSignedHeaders(payload, CLUSTER_SECRET)
+
     await fetch(targetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: NODE_ID,
-        status: 'ONLINE',
-        videoCount,
-        clusterSecret: CLUSTER_SECRET
-      })
+      headers,
+      body: JSON.stringify(payload)
     })
   } catch (err) {
     // Silent fail on heartbeat retry

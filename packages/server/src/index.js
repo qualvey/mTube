@@ -1112,21 +1112,54 @@ app.get('/api/v1/admin/storage/status', async (req, res) => {
   })
 })
 
+const verifyClusterHmacSignature = (req, secret) => {
+  const timestamp = req.get('X-Cluster-Timestamp')
+  const nonce = req.get('X-Cluster-Nonce')
+  const signature = req.get('X-Cluster-Signature')
+
+  if (timestamp && nonce && signature) {
+    const now = Date.now()
+    const reqTime = Number(timestamp)
+    if (isNaN(reqTime) || Math.abs(now - reqTime) > 5 * 60 * 1000) {
+      return { valid: false, reason: 'HMAC 请求已过期（超过 5 分钟），防重放攻击校验拦截' }
+    }
+
+    const bodyString = JSON.stringify(req.body)
+    const expectedSig = crypto
+      .createHmac('sha256', secret)
+      .update(`${bodyString}.${timestamp}.${nonce}`)
+      .digest('hex')
+
+    if (signature !== expectedSig) {
+      return { valid: false, reason: 'HMAC-SHA256 签名解密匹配失败' }
+    }
+    return { valid: true, mode: 'HMAC-SHA256' }
+  }
+
+  const reqSecret = req.body?.clusterSecret || req.get('Authorization')?.replace('Bearer ', '')
+  if (reqSecret === secret) {
+    return { valid: true, mode: 'TOKEN' }
+  }
+
+  return { valid: false, reason: '请求缺少 HMAC 签名请求头且密钥匹配失败' }
+}
+
 // Storage Node Auto-Registration Endpoint (Called by storage-nodes on startup)
 app.post('/api/v1/storage-nodes/register', (req, res) => {
-  const { id, name, baseUrl, isDefault, clusterSecret } = req.body
+  const { id, name, baseUrl, isDefault } = req.body
   if (!id || !baseUrl) {
     return sendResponse(res, null, 400, '节点 ID 和 Base URL 不能为空')
   }
 
   const configuredSecret = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
-  if (clusterSecret && clusterSecret !== configuredSecret) {
-    return sendResponse(res, null, 401, '存储节点集群密钥 (CLUSTER_SECRET) 匹配失败，无法自动注册')
+  const auth = verifyClusterHmacSignature(req, configuredSecret)
+  if (!auth.valid) {
+    return sendResponse(res, null, 401, `存储节点自动注册校验失败: ${auth.reason}`)
   }
 
-  logger.info(`[Node Auto-Register] Received auto-registration from storage node [${name || id}] (${id}) -> ${baseUrl}`)
+  logger.info(`[Node Auto-Register] Received authenticated auto-registration (${auth.mode}) from storage node [${name || id}] (${id}) -> ${baseUrl}`)
   const node = db.upsertStorageNode({ id, name, baseUrl, isDefault })
-  sendResponse(res, node, 200, `存储节点 [${node.name}] 已成功自动注册并向主站上线！`)
+  sendResponse(res, node, 200, `存储节点 [${node.name}] 已通过 ${auth.mode} 安全校验成功注册上线！`)
 })
 
 // Storage Node Heartbeat Endpoint (Called periodically by storage-nodes)
@@ -1134,6 +1167,12 @@ app.post('/api/v1/storage-nodes/heartbeat', (req, res) => {
   const { id, status, videoCount, freeSpace } = req.body
   if (!id) {
     return sendResponse(res, null, 400, '节点 ID 不能为空')
+  }
+
+  const configuredSecret = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
+  const auth = verifyClusterHmacSignature(req, configuredSecret)
+  if (!auth.valid) {
+    return sendResponse(res, null, 401, `存储节点心跳保活校验失败: ${auth.reason}`)
   }
 
   const node = db.updateStorageNodeHeartbeat(id, { status: status || 'ONLINE', videoCount, freeSpace })
