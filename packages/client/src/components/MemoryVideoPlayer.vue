@@ -1,6 +1,7 @@
 <template>
   <div 
-    class="relative w-full h-full aspect-video bg-black rounded-xl overflow-hidden group shadow-2xl"
+    class="relative w-full h-full bg-black rounded-xl overflow-hidden group shadow-2xl transition-all duration-300 flex items-center justify-center max-h-[75vh]"
+    :style="{ aspectRatio: videoAspectRatio }"
     @mousemove="handleContainerMouseMove"
     @mouseleave="hoveringProgress = false"
   >
@@ -81,7 +82,8 @@
       :poster="video.poster"
       playsinline
       crossorigin="anonymous"
-      class="plyr-video-element w-full h-full object-cover"
+      @loadedmetadata="handleLoadedMetadata"
+      class="plyr-video-element w-full h-full object-contain"
     ></video>
   </div>
 </template>
@@ -137,6 +139,24 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const loading = ref<boolean>(true)
 const progress = ref<number>(0)
 const errorMessage = ref<string | null>(null)
+
+// Aspect Ratio State for Landscape / Portrait Auto Adaptation
+const videoAspectRatio = ref<string>('16 / 9')
+const isPortrait = ref<boolean>(false)
+
+/**
+ * Handle video loadedmetadata to detect resolution and aspect ratio dynamically
+ */
+const handleLoadedMetadata = (e?: Event) => {
+  const el = (e?.target as HTMLVideoElement) || videoRef.value
+  if (el && el.videoWidth && el.videoHeight) {
+    const w = el.videoWidth
+    const h = el.videoHeight
+    isPortrait.value = h > w
+    videoAspectRatio.value = `${w} / ${h}`
+    console.log(`[MemoryVideoPlayer Debug] 📐 Dynamic aspect ratio detected: ${w}x${h} (${videoAspectRatio.value}), isPortrait: ${isPortrait.value}`)
+  }
+}
 
 // Seek Hover Preview States
 const hoveringProgress = ref<boolean>(false)
@@ -309,6 +329,8 @@ const loadVideoToMemory = async () => {
   loading.value = true
   progress.value = 0
   errorMessage.value = null
+  videoAspectRatio.value = '16 / 9'
+  isPortrait.value = false
 
   currentAbortController = new AbortController()
 
@@ -378,7 +400,7 @@ const loadVideoToMemory = async () => {
 
   // Case B: MP4 Stream -> Fetch into memory Blob -> Object URL
   try {
-    console.log(`[Step 2/5 - Fetch] Initiating HTTP GET request to backend proxy...`)
+    console.log(`[Step 2/5 - Fetch] Initiating HTTP GET request to backend proxy... with url: \n ${fetchTargetUrl}`)
     const response = await fetch(fetchTargetUrl, {
       method: 'GET',
       headers: customHeaders,
@@ -487,7 +509,6 @@ const initializePlyr = () => {
     autoplay: props.autoplay,
     loop: { active: props.loop },
     muted: props.muted,
-    ratio: '16:9',
     controls: [
       'play-large',
       'play',
@@ -499,6 +520,10 @@ const initializePlyr = () => {
       'fullscreen'
     ],
     tooltips: { controls: true, seek: true }
+  })
+
+  plyrInstance.on('ready', () => {
+    handleLoadedMetadata()
   })
 
   plyrInstance.on('play', () => emit('play'))
@@ -584,7 +609,7 @@ onUnmounted(() => {
 .plyr__video-wrapper video {
   height: 100% !important;
   width: 100% !important;
-  object-fit: cover !important;
+  object-fit: contain !important;
 }
 
 .plyr__poster {

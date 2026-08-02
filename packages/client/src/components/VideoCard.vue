@@ -3,7 +3,7 @@
     class="relative w-full rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 shadow-2xl transition-all duration-300 hover:border-zinc-700/80"
   >
     <!-- Video Player Area -->
-    <div class="relative w-full aspect-video bg-black group overflow-hidden">
+    <div class="relative w-full bg-black group overflow-hidden flex items-center justify-center min-h-[220px]">
       <!-- Memory Stream Video Player (Fetch with custom headers -> Blob Object URL -> Plyr) -->
       <MemoryVideoPlayer
         v-if="!video.isVip || isVipUnlocked || !isTrialEnded"
