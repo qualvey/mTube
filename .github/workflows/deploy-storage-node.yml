@@ -1,0 +1,107 @@
+name: StreamVIP Storage Node Independent CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/storage-node/**'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-storage-node.yml'
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: '选择需要部署的目标节点环境 (Select target node environment)'
+        required: true
+        default: 'production-storage-01'
+        type: choice
+        options:
+          - production-storage-01
+          - staging-storage
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_STORAGE_NODE: ghcr.io/qualvey/mtube/storage-node
+
+jobs:
+  # 1. 独立构建并推送 Storage Node 容器镜像至 GHCR
+  build-storage-node:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Storage Node Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/storage-node/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_STORAGE_NODE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 2. 安全部署最新镜像至独立存储节点服务器 (敏感信息全量走 GitHub Secrets)
+  deploy-to-storage-vps:
+    needs: build-storage-node
+    if: "always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.ref == 'refs/heads/main'"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Copy Storage Node Compose & Config to Remote VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STORAGE_NODE_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.STORAGE_NODE_USER || secrets.VPS_USER }}
+          key: ${{ secrets.STORAGE_NODE_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_NODE_PORT || secrets.VPS_PORT || 22 }}
+          source: "packages/storage-node/docker-compose.yml,packages/storage-node/.env.example"
+          target: "${{ secrets.STORAGE_NODE_DEPLOY_PATH || '/root/storage-node' }}"
+          strip_components: 2
+
+      - name: SSH Connect and Deploy Storage Node Service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STORAGE_NODE_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.STORAGE_NODE_USER || secrets.VPS_USER }}
+          key: ${{ secrets.STORAGE_NODE_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_NODE_PORT || secrets.VPS_PORT || 22 }}
+
+          script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
+            TARGET_DIR="${{ secrets.STORAGE_NODE_DEPLOY_PATH || '/root/storage-node' }}"
+            mkdir -p $TARGET_DIR
+            cd $TARGET_DIR
+            
+            # 若缺失 .env，使用 .env.example 自动复制初始化配置
+            if [ ! -f .env ] && [ -f .env.example ]; then
+              cp .env.example .env
+            fi
+
+            echo "🚀 Deploying and reloading Storage Node container..."
+            docker image prune -af || true
+            (docker compose pull || docker-compose pull)
+            (docker compose up -d || docker-compose up -d)
+            docker image prune -f || true
+            echo "✅ Storage Node container deployment complete!"
