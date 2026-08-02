@@ -156,7 +156,7 @@
                 <el-option v-for="tag in allExistingTags" :key="tag" :label="tag" :value="tag" />
               </el-select>
             </div>
-            <el-button type="warning" icon="Plus" class="font-bold" @click="showAddDialog = true">
+            <el-button type="warning" icon="Plus" class="font-bold" @click="openAddVideoDialog">
               发布新视频
             </el-button>
           </div>
@@ -1248,6 +1248,12 @@ const fetchStorageNodes = async () => {
       const json = await res.json()
       if (json && json.data) {
         storageNodesList.value = json.data
+        const defaultNode = storageNodesList.value.find(n => n.isDefault) || storageNodesList.value[0]
+        if (defaultNode) {
+          if (!newVideoForm.value.storageNodeId || newVideoForm.value.storageNodeId === 'node-01') {
+            newVideoForm.value.storageNodeId = defaultNode.id
+          }
+        }
       }
     }
   } catch (e) {
@@ -1409,7 +1415,7 @@ const newVideoForm = ref({
   title: '',
   description: '',
   author: '官方创作者',
-  storageNodeId: 'node-01',
+  storageNodeId: '',
   videoUrl: '',
   referer: '',
   userAgent: '',
@@ -1427,7 +1433,7 @@ const editVideoForm = ref({
   description: '',
   author: '',
   authorAvatar: '',
-  storageNodeId: 'node-01',
+  storageNodeId: '',
   videoUrl: '',
   referer: '',
   userAgent: '',
@@ -1576,6 +1582,14 @@ const buildHeadersJson = (referer, userAgent) => {
   obj['User-Agent'] = finalUa
 
   return JSON.stringify(obj, null, 2)
+}
+
+const openAddVideoDialog = () => {
+  const defaultNode = storageNodesList.value.find(n => n.isDefault) || storageNodesList.value[0]
+  if (defaultNode) {
+    newVideoForm.value.storageNodeId = defaultNode.id
+  }
+  showAddDialog.value = true
 }
 
 const submitAddVideo = async () => {
