@@ -176,13 +176,22 @@ const createHmacSignedHeaders = (payload, secret) => {
 }
 
 /**
+ * Safely format target API URL (supports https://domain.com, https://domain.com/api, http://IP:3000)
+ */
+const buildApiUrl = (baseUrl, endpointPath) => {
+  let cleanBase = baseUrl.replace(/\/$/, '')
+  cleanBase = cleanBase.replace(/\/api\/v1$/, '').replace(/\/api$/, '')
+  return `${cleanBase}/api/v1/${endpointPath.replace(/^\//, '')}`
+}
+
+/**
  * Auto-Register with Main Control Server on startup
  */
 const registerWithMainServer = async () => {
   if (!MAIN_SERVER_URL) return
 
   try {
-    const targetUrl = `${MAIN_SERVER_URL.replace(/\/$/, '')}/api/v1/storage-nodes/register`
+    const targetUrl = buildApiUrl(MAIN_SERVER_URL, 'storage-nodes/register')
     console.log(`[Storage Node 📦] Auto-registering (HMAC-SHA256 Signed) to Main Control Server: ${targetUrl}`)
 
     const payload = {
@@ -221,7 +230,7 @@ const sendHeartbeat = async () => {
   try { videoCount = fs.readdirSync(videosDir).length } catch (e) {}
 
   try {
-    const targetUrl = `${MAIN_SERVER_URL.replace(/\/$/, '')}/api/v1/storage-nodes/heartbeat`
+    const targetUrl = buildApiUrl(MAIN_SERVER_URL, 'storage-nodes/heartbeat')
     const payload = {
       id: NODE_ID,
       status: 'ONLINE',
