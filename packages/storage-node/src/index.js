@@ -149,6 +149,72 @@ app.post('/api/v1/storage/upload', upload.single('video'), async (req, res) => {
   })
 })
 
-app.listen(PORT, () => {
+const MAIN_SERVER_URL = process.env.MAIN_SERVER_URL || 'http://localhost:3000'
+const PUBLIC_URL = process.env.PUBLIC_URL || process.env.NODE_BASE_URL || `http://localhost:${PORT}`
+const CLUSTER_SECRET = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
+const HEARTBEAT_INTERVAL = Number(process.env.HEARTBEAT_INTERVAL) || 30
+
+/**
+ * Auto-Register with Main Control Server on startup
+ */
+const registerWithMainServer = async () => {
+  if (!MAIN_SERVER_URL) return
+
+  try {
+    const targetUrl = `${MAIN_SERVER_URL.replace(/\/$/, '')}/api/v1/storage-nodes/register`
+    console.log(`[Storage Node 📦] Auto-registering to Main Control Server: ${targetUrl}`)
+
+    const resp = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: NODE_ID,
+        name: NODE_NAME,
+        baseUrl: PUBLIC_URL,
+        clusterSecret: CLUSTER_SECRET,
+        isDefault: process.env.IS_DEFAULT === 'true'
+      })
+    })
+
+    const json = await resp.json()
+    if (resp.ok && json.code === 200) {
+      console.log(`[Storage Node 📦] ✅ Auto-registered successfully with Main Server! Response: ${json.message}`)
+    } else {
+      console.warn(`[Storage Node 📦] Auto-registration returned status ${resp.status}:`, json.message || json)
+    }
+  } catch (err) {
+    console.warn(`[Storage Node 📦] Auto-registration connection failed to ${MAIN_SERVER_URL}:`, err.message)
+  }
+}
+
+/**
+ * Send periodic heartbeat to Main Control Server
+ */
+const sendHeartbeat = async () => {
+  if (!MAIN_SERVER_URL) return
+
+  let videoCount = 0
+  try { videoCount = fs.readdirSync(videosDir).length } catch (e) {}
+
+  try {
+    const targetUrl = `${MAIN_SERVER_URL.replace(/\/$/, '')}/api/v1/storage-nodes/heartbeat`
+    await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: NODE_ID,
+        status: 'ONLINE',
+        videoCount,
+        clusterSecret: CLUSTER_SECRET
+      })
+    })
+  } catch (err) {
+    // Silent fail on heartbeat retry
+  }
+}
+
+app.listen(PORT, async () => {
   console.log(`[Storage Node 📦] ${NODE_NAME} (${NODE_ID}) running on port ${PORT}`)
+  await registerWithMainServer()
+  setInterval(sendHeartbeat, HEARTBEAT_INTERVAL * 1000)
 })

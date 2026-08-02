@@ -1112,6 +1112,37 @@ app.get('/api/v1/admin/storage/status', async (req, res) => {
   })
 })
 
+// Storage Node Auto-Registration Endpoint (Called by storage-nodes on startup)
+app.post('/api/v1/storage-nodes/register', (req, res) => {
+  const { id, name, baseUrl, isDefault, clusterSecret } = req.body
+  if (!id || !baseUrl) {
+    return sendResponse(res, null, 400, '节点 ID 和 Base URL 不能为空')
+  }
+
+  const configuredSecret = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
+  if (clusterSecret && clusterSecret !== configuredSecret) {
+    return sendResponse(res, null, 401, '存储节点集群密钥 (CLUSTER_SECRET) 匹配失败，无法自动注册')
+  }
+
+  logger.info(`[Node Auto-Register] Received auto-registration from storage node [${name || id}] (${id}) -> ${baseUrl}`)
+  const node = db.upsertStorageNode({ id, name, baseUrl, isDefault })
+  sendResponse(res, node, 200, `存储节点 [${node.name}] 已成功自动注册并向主站上线！`)
+})
+
+// Storage Node Heartbeat Endpoint (Called periodically by storage-nodes)
+app.post('/api/v1/storage-nodes/heartbeat', (req, res) => {
+  const { id, status, videoCount, freeSpace } = req.body
+  if (!id) {
+    return sendResponse(res, null, 400, '节点 ID 不能为空')
+  }
+
+  const node = db.updateStorageNodeHeartbeat(id, { status: status || 'ONLINE', videoCount, freeSpace })
+  if (!node) {
+    return sendResponse(res, null, 404, '节点未注册')
+  }
+  sendResponse(res, { status: 'ACK', nodeId: id }, 200, '心跳接收成功')
+})
+
 // Storage Node Management APIs
 app.get('/api/v1/admin/storage-nodes', async (req, res) => {
   const nodes = db.getStorageNodes()

@@ -112,6 +112,8 @@ try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAddress TEXT DEFAULT NU
 try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAmount REAL DEFAULT 0;"); } catch (e) { }
 try { database.exec("ALTER TABLE videos ADD COLUMN views INTEGER DEFAULT 0;"); } catch (e) { }
 try { database.exec("ALTER TABLE videos ADD COLUMN storageNodeId TEXT DEFAULT 'node-01';"); } catch (e) { }
+try { database.exec("ALTER TABLE storage_nodes ADD COLUMN lastHeartbeat TEXT DEFAULT NULL;"); } catch (e) { }
+try { database.exec("ALTER TABLE storage_nodes ADD COLUMN clusterSecret TEXT DEFAULT NULL;"); } catch (e) { }
 
 // Seed default settings if empty
 database.prepare(`
@@ -476,6 +478,58 @@ export const db = {
       isDefault,
       new Date().toISOString()
     )
+    return this.getStorageNodeById(id)
+  },
+
+  upsertStorageNode(data) {
+    const id = data.id ? data.id.trim() : `node-${Date.now()}`
+    const existing = this.getStorageNodeById(id)
+    const nowStr = new Date().toISOString()
+
+    if (existing) {
+      const stmt = database.prepare(`
+        UPDATE storage_nodes
+        SET name = ?, baseUrl = ?, status = 'ONLINE', lastHeartbeat = ?
+        WHERE id = ?
+      `)
+      stmt.run(
+        data.name || existing.name,
+        data.baseUrl || existing.baseUrl,
+        nowStr,
+        id
+      )
+      return this.getStorageNodeById(id)
+    } else {
+      const checkCount = database.prepare('SELECT COUNT(*) as c FROM storage_nodes').get().c
+      const isDefault = (checkCount === 0 || data.isDefault) ? 1 : 0
+      if (isDefault) {
+        database.prepare('UPDATE storage_nodes SET isDefault = 0').run()
+      }
+      const stmt = database.prepare(`
+        INSERT INTO storage_nodes (id, name, baseUrl, status, isDefault, lastHeartbeat, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `)
+      stmt.run(
+        id,
+        data.name || id,
+        data.baseUrl || 'http://localhost:3001',
+        'ONLINE',
+        isDefault,
+        nowStr,
+        nowStr
+      )
+      return this.getStorageNodeById(id)
+    }
+  },
+
+  updateStorageNodeHeartbeat(id, statusData = {}) {
+    const nowStr = new Date().toISOString()
+    const stmt = database.prepare(`
+      UPDATE storage_nodes
+      SET status = ?, lastHeartbeat = ?
+      WHERE id = ?
+    `)
+    stmt.run(statusData.status || 'ONLINE', nowStr, id)
     return this.getStorageNodeById(id)
   },
 

@@ -19,6 +19,11 @@ services:
       - PORT=3001
       - NODE_ID=${NODE_ID:-node-01}
       - NODE_NAME=${NODE_NAME:-Storage Node 01}
+      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3001}
+      - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://localhost:3000}
+      - CLUSTER_SECRET=${CLUSTER_SECRET:-streamvip-cluster-secret}
+      - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-30}
+      - IS_DEFAULT=${IS_DEFAULT:-false}
     logging:
       driver: "json-file"
       options:
