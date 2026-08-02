@@ -4,6 +4,8 @@ import crypto from 'node:crypto'
 import http from 'http'
 import https from 'https'
 import zlib from 'zlib'
+import { spawn } from 'child_process'
+import multer from 'multer'
 import ytdl from '@distube/ytdl-core'
 import { db } from './db.js'
 import { logger, requestLoggerMiddleware } from './logger.js'
@@ -22,6 +24,11 @@ const PORT = 3000
 const uploadsDir = path.resolve(__dirname, '../public/uploads')
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true })
+}
+
+const postersDir = path.resolve(__dirname, '../public/uploads/posters')
+if (!fs.existsSync(postersDir)) {
+  fs.mkdirSync(postersDir, { recursive: true })
 }
 
 // Serve local static media files (uploaded local videos/images)
@@ -415,6 +422,148 @@ app.get('/api/v1/proxy/video', async (req, res) => {
   }
 
   proxyDirectUrl(targetUrl, req, res, customHeaders)
+})
+
+/**
+ * Extract the 50th frame (select=eq(n\,49)) from videoUrl using ffmpeg
+ */
+const generateFrame50Poster = (videoUrl, customHeaders = {}) => {
+  if (!videoUrl) return Promise.resolve('')
+
+  const hash = crypto.createHash('md5').update(videoUrl).digest('hex')
+  const posterFilename = `poster_frame50_${hash}.jpg`
+  const outputPath = path.join(postersDir, posterFilename)
+  const publicUrl = `/uploads/posters/${posterFilename}`
+
+  if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+    return Promise.resolve(publicUrl)
+  }
+
+  return new Promise((resolve) => {
+    let cleanUrl = videoUrl.trim()
+
+    // Handle local server uploaded video files
+    if (cleanUrl.startsWith('/uploads/') || cleanUrl.includes('/uploads/')) {
+      const fileName = cleanUrl.split('/uploads/').pop()
+      const localFilePath = path.join(uploadsDir, fileName)
+      if (fs.existsSync(localFilePath)) {
+        cleanUrl = localFilePath
+      }
+    }
+
+    // Construct FFmpeg arguments
+    const ffmpegArgs = []
+
+    if (customHeaders && Object.keys(customHeaders).length > 0) {
+      let headersHeaderStr = ''
+      for (const [k, v] of Object.entries(customHeaders)) {
+        if (k.toLowerCase() === 'user-agent') {
+          ffmpegArgs.push('-user_agent', v)
+        } else if (k.toLowerCase() === 'referer') {
+          ffmpegArgs.push('-headers', `Referer: ${v}\r\n`)
+        } else {
+          headersHeaderStr += `${k}: ${v}\r\n`
+        }
+      }
+      if (headersHeaderStr) {
+        ffmpegArgs.push('-headers', headersHeaderStr)
+      }
+    }
+
+    // Capture the 50th frame (n=49) from the video
+    ffmpegArgs.push(
+      '-i', cleanUrl,
+      '-vf', 'select=eq(n\\,49)',
+      '-vframes', '1',
+      '-y',
+      outputPath
+    )
+
+    logger.info(`[Poster Generator 🎬] Extracting 50th frame via FFmpeg from: ${cleanUrl}`)
+    const ff = spawn('ffmpeg', ffmpegArgs)
+
+    let stderr = ''
+    if (ff.stderr) {
+      ff.stderr.on('data', (d) => { stderr += d.toString() })
+    }
+
+    ff.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+        logger.info(`[Poster Generator 🎬] Successfully generated 50th frame poster: ${publicUrl}`)
+        resolve(publicUrl)
+      } else {
+        logger.warn(`[Poster Generator 🎬] Frame 50 extraction returned exit code ${code}, attempting fallback frame 0 / 1s...`)
+        const fallbackArgs = ['-ss', '00:00:01', '-i', cleanUrl, '-vframes', '1', '-y', outputPath]
+        const ffFb = spawn('ffmpeg', fallbackArgs)
+        ffFb.on('close', (fbCode) => {
+          if (fbCode === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+            logger.info(`[Poster Generator 🎬] Fallback poster generated: ${publicUrl}`)
+            resolve(publicUrl)
+          } else {
+            logger.error(`[Poster Generator 🎬] Poster generation failed for ${cleanUrl}`)
+            resolve('')
+          }
+        })
+      }
+    })
+
+    ff.on('error', (err) => {
+      logger.error(`[Poster Generator 🎬] FFmpeg spawn error: ${err.message}`)
+      resolve('')
+    })
+  })
+}
+
+// GET /api/v1/proxy/poster?id=...&url=...&headers=...
+app.get('/api/v1/proxy/poster', async (req, res) => {
+  const { id, url: rawUrl, headers: rawHeaders } = req.query
+  let targetUrl = rawUrl ? rawUrl.trim() : null
+  let customHeaders = {}
+
+  if (id) {
+    const video = db.getVideoById(id)
+    if (video) {
+      if (video.poster && video.poster.trim() && !video.poster.includes('/api/v1/proxy/poster')) {
+        if (video.poster.startsWith('/uploads/')) {
+          const localPath = path.join(__dirname, '../public', video.poster)
+          if (fs.existsSync(localPath)) {
+            return res.sendFile(localPath)
+          }
+        }
+      }
+      if (!targetUrl && video.videoUrl) {
+        targetUrl = video.videoUrl.trim()
+      }
+      if (video.headers) {
+        customHeaders = normalizeHeaders(video.headers)
+      }
+    }
+  }
+
+  if (rawHeaders) {
+    customHeaders = { ...customHeaders, ...normalizeHeaders(rawHeaders) }
+  }
+
+  if (!targetUrl) {
+    return sendResponse(res, null, 400, 'Missing video url or id parameter')
+  }
+
+  const posterUrl = await generateFrame50Poster(targetUrl, customHeaders)
+  if (posterUrl && posterUrl.startsWith('/uploads/')) {
+    const localPath = path.join(__dirname, '../public', posterUrl)
+    if (fs.existsSync(localPath)) {
+      if (id) {
+        try {
+          db.updateVideoPoster(id, posterUrl)
+        } catch (e) {
+          // ignore
+        }
+      }
+      return res.sendFile(localPath)
+    }
+  }
+
+  res.redirect('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop')
 })
 
 // -------------------------------------------------------------
@@ -935,6 +1084,133 @@ app.all(['/api/v1/admin/devices/:deviceId/revoke-vip', '/api/v1/admin/devices/re
   const cleanId = String(deviceId).trim()
   db.revokeDeviceVip(cleanId)
   return sendResponse(res, { success: true, deviceId: cleanId }, 200, '手动取消设备 VIP 成功')
+})
+
+const uploadMemory = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 * 1024 } })
+
+// GET /api/v1/admin/storage/status - Get Active Storage Node Health Status
+app.get('/api/v1/admin/storage/status', async (req, res) => {
+  const defaultNode = db.getDefaultStorageNode()
+  const storageNodeUrl = defaultNode.baseUrl || 'http://localhost:3001'
+
+  try {
+    const response = await fetch(`${storageNodeUrl}/api/v1/storage/status`)
+    if (response.ok) {
+      const data = await response.json()
+      return sendResponse(res, data.data || data)
+    }
+  } catch (err) {
+    logger.warn(`Storage Node status check failed for ${storageNodeUrl}:`, err.message)
+  }
+
+  sendResponse(res, {
+    nodeId: defaultNode.id || 'node-01',
+    nodeName: defaultNode.name || '存储节点 01',
+    status: 'OFFLINE',
+    baseUrl: storageNodeUrl,
+    message: 'Storage Node connection failed'
+  })
+})
+
+// Storage Node Management APIs
+app.get('/api/v1/admin/storage-nodes', async (req, res) => {
+  const nodes = db.getStorageNodes()
+  const results = await Promise.all(
+    nodes.map(async (n) => {
+      let isOnline = false
+      let videoCount = 0
+      try {
+        const resp = await fetch(`${n.baseUrl}/api/v1/storage/status`, { signal: AbortSignal.timeout(2000) })
+        if (resp.ok) {
+          const json = await resp.json()
+          isOnline = true
+          videoCount = json.data?.videoCount || 0
+        }
+      } catch (e) {
+        isOnline = false
+      }
+      return {
+        ...n,
+        status: isOnline ? 'ONLINE' : 'OFFLINE',
+        videoCount
+      }
+    })
+  )
+  sendResponse(res, results)
+})
+
+app.post('/api/v1/admin/storage-nodes', (req, res) => {
+  const { id, name, baseUrl, isDefault } = req.body
+  if (!id || !name || !baseUrl) {
+    return sendResponse(res, null, 400, '节点 ID、名称和 Base URL 均不能为空')
+  }
+  const node = db.addStorageNode({ id, name, baseUrl, isDefault })
+  sendResponse(res, node, 200, '新存储节点注册成功')
+})
+
+app.put('/api/v1/admin/storage-nodes/:id', (req, res) => {
+  const node = db.updateStorageNode(req.params.id, req.body)
+  if (!node) return sendResponse(res, null, 404, '未找到存储节点')
+  sendResponse(res, node, 200, '存储节点信息已更新')
+})
+
+app.delete('/api/v1/admin/storage-nodes/:id', (req, res) => {
+  db.deleteStorageNode(req.params.id)
+  sendResponse(res, { success: true }, 200, '存储节点已成功注销/删除')
+})
+
+app.post('/api/v1/admin/storage-nodes/:id/set-default', (req, res) => {
+  const node = db.setDefaultStorageNode(req.params.id)
+  if (!node) return sendResponse(res, null, 404, '未找到存储节点')
+  sendResponse(res, node, 200, `存储节点 [${node.name}] 已成功设为默认上传节点`)
+})
+
+// POST /api/v1/admin/videos/upload - Upload video file directly to specified Storage Node
+app.post('/api/v1/admin/videos/upload', uploadMemory.single('video'), async (req, res) => {
+  if (!req.file) {
+    return sendResponse(res, null, 400, '未检测到上传视频文件（表单字段名应为 video）')
+  }
+
+  const targetNodeId = req.body.nodeId || req.query.nodeId
+  let targetNode = targetNodeId ? db.getStorageNodeById(targetNodeId) : db.getDefaultStorageNode()
+  if (!targetNode) {
+    targetNode = db.getDefaultStorageNode()
+  }
+
+  const storageNodeUrl = targetNode.baseUrl || 'http://localhost:3001'
+
+  try {
+    logger.info(`[Admin Upload] Proxying video file (${(req.file.size / 1024 / 1024).toFixed(2)} MB) to Storage Node [${targetNode.name}] (${targetNode.id}): ${storageNodeUrl}`)
+
+    const formData = new FormData()
+    const blob = new Blob([req.file.buffer], { type: req.file.mimetype || 'video/mp4' })
+    formData.append('video', blob, req.file.originalname)
+
+    const response = await fetch(`${storageNodeUrl}/api/v1/storage/upload`, {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error(`Storage Node HTTP ${response.status} ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    logger.info(`[Admin Upload] Storage Node response:`, result)
+
+    if (result && result.data) {
+      const dataWithNode = {
+        ...result.data,
+        storageNodeId: targetNode.id,
+        storageNodeName: targetNode.name
+      }
+      return sendResponse(res, dataWithNode, 200, `视频已成功透传上传至存储节点 [${targetNode.name}]，第50帧封面已生成！`)
+    }
+    sendResponse(res, result, 200, '视频上传成功')
+  } catch (err) {
+    logger.error(`[Admin Upload] Proxy upload to storage node failed:`, err.message)
+    sendResponse(res, null, 500, `上传至存储节点失败: ${err.message}`)
+  }
 })
 
 

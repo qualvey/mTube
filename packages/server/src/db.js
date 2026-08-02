@@ -94,6 +94,15 @@ database.exec(`
     deviceId TEXT DEFAULT NULL,
     createdAt TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS storage_nodes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    baseUrl TEXT NOT NULL,
+    status TEXT DEFAULT 'ACTIVE',
+    isDefault INTEGER DEFAULT 0,
+    createdAt TEXT NOT NULL
+  );
 `)
 
 try { database.exec("ALTER TABLE orders ADD COLUMN deviceId TEXT DEFAULT NULL;"); } catch (e) { }
@@ -102,6 +111,7 @@ try { database.exec("ALTER TABLE orders ADD COLUMN tradeNo TEXT DEFAULT NULL;");
 try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAddress TEXT DEFAULT NULL;"); } catch (e) { }
 try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAmount REAL DEFAULT 0;"); } catch (e) { }
 try { database.exec("ALTER TABLE videos ADD COLUMN views INTEGER DEFAULT 0;"); } catch (e) { }
+try { database.exec("ALTER TABLE videos ADD COLUMN storageNodeId TEXT DEFAULT 'node-01';"); } catch (e) { }
 
 // Seed default settings if empty
 database.prepare(`
@@ -119,8 +129,19 @@ database.prepare(`
   ('enableNotice', 'true'),
   ('siteTitle', 'StreamVIP - 独家超清视频流与VIP特权'),
   ('noticeTitle', '📢 官方重要公告'),
-  ('noticeContent', '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站无删减 4K 超清原画库！客服在线时间：10:00 - 24:00。')
+  ('noticeContent', '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站无删减 4K 超清原画库！客服在线时间：10:00 - 24:00。'),
+  ('activeStorageNodeUrl', 'http://localhost:3001')
 `).run()
+
+// Seed default storage nodes if table is empty
+const checkNodes = database.prepare('SELECT COUNT(*) as count FROM storage_nodes').get()
+if (!checkNodes || checkNodes.count === 0) {
+  database.prepare(`
+    INSERT OR IGNORE INTO storage_nodes (id, name, baseUrl, status, isDefault, createdAt) VALUES
+    ('node-01', '存储节点 01 (主节点)', 'http://localhost:3001', 'ACTIVE', 1, '${new Date().toISOString()}'),
+    ('node-02', '存储节点 02 (备用节点)', 'http://localhost:3002', 'ACTIVE', 0, '${new Date().toISOString()}')
+  `).run()
+}
 
 
 
@@ -288,8 +309,12 @@ export const getIpLocation = (ip, reqHeaders = {}) => {
 
 const formatVideoRow = (row) => {
   if (!row) return null
+  const rawPoster = row.poster ? row.poster.trim() : ''
+  const poster = rawPoster || `/api/v1/proxy/poster?id=${row.id}`
   return {
     ...row,
+    poster,
+    storageNodeId: row.storageNodeId || 'node-01',
     isVip: Boolean(row.isVip),
     views: Number(row.views || 0),
     previewDuration: row.previewDuration !== undefined && row.previewDuration !== null ? Number(row.previewDuration) : 120,
@@ -324,6 +349,11 @@ export const db = {
     return formatVideoRow(row)
   },
 
+  updateVideoPoster(id, posterUrl) {
+    const stmt = database.prepare('UPDATE videos SET poster = ? WHERE id = ?')
+    stmt.run(posterUrl, id)
+  },
+
   addVideo(data) {
     const newId = `vid-${Date.now()}`
     const headersStr = data.headers
@@ -335,9 +365,11 @@ export const db = {
       ? Number(data.previewDuration)
       : 120
 
+    const storageNodeId = data.storageNodeId || 'node-01'
+
     const stmt = database.prepare(`
-      INSERT INTO videos (id, title, description, author, authorAvatar, videoUrl, poster, duration, likes, shares, isVip, status, tags, headers, previewDuration, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 'PUBLISHED', ?, ?, ?, ?)
+      INSERT INTO videos (id, title, description, author, authorAvatar, videoUrl, poster, duration, likes, shares, isVip, status, tags, headers, previewDuration, storageNodeId, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 'PUBLISHED', ?, ?, ?, ?, ?)
     `)
 
     const tagsStr = Array.isArray(data.tags)
@@ -357,6 +389,7 @@ export const db = {
       tagsStr,
       headersStr,
       previewDuration,
+      storageNodeId,
       createdAt
     )
 
@@ -380,9 +413,11 @@ export const db = {
       ? (Array.isArray(updated.tags) ? JSON.stringify(updated.tags) : (typeof updated.tags === 'string' ? (updated.tags.startsWith('[') ? updated.tags : JSON.stringify(updated.tags.split(',').map(t => t.trim()).filter(Boolean))) : '[]'))
       : (typeof existing.tags === 'string' ? existing.tags : JSON.stringify(existing.tags || []))
 
+    const storageNodeId = updated.storageNodeId || 'node-01'
+
     const stmt = database.prepare(`
       UPDATE videos
-      SET title = ?, description = ?, author = ?, authorAvatar = ?, videoUrl = ?, poster = ?, duration = ?, isVip = ?, tags = ?, headers = ?, previewDuration = ?
+      SET title = ?, description = ?, author = ?, authorAvatar = ?, videoUrl = ?, poster = ?, duration = ?, isVip = ?, tags = ?, headers = ?, previewDuration = ?, storageNodeId = ?
       WHERE id = ?
     `)
 
@@ -398,10 +433,83 @@ export const db = {
       tagsStr,
       headersStr,
       previewDuration,
+      storageNodeId,
       id
     )
 
     return this.getVideoById(id)
+  },
+
+  getStorageNodes() {
+    const rows = database.prepare('SELECT * FROM storage_nodes ORDER BY isDefault DESC, createdAt ASC').all()
+    return rows.map(r => ({ ...r, isDefault: Boolean(r.isDefault) }))
+  },
+
+  getStorageNodeById(id) {
+    const row = database.prepare('SELECT * FROM storage_nodes WHERE id = ?').get(id)
+    if (!row) return null
+    return { ...row, isDefault: Boolean(row.isDefault) }
+  },
+
+  getDefaultStorageNode() {
+    const row = database.prepare('SELECT * FROM storage_nodes WHERE isDefault = 1 LIMIT 1').get()
+    if (row) return { ...row, isDefault: true }
+    const nodes = this.getStorageNodes()
+    return nodes[0] || { id: 'node-01', name: '存储节点 01', baseUrl: 'http://localhost:3001', isDefault: true }
+  },
+
+  addStorageNode(data) {
+    const id = data.id ? data.id.trim() : `node-${Date.now()}`
+    const isDefault = data.isDefault ? 1 : 0
+    if (isDefault) {
+      database.prepare('UPDATE storage_nodes SET isDefault = 0').run()
+    }
+    const stmt = database.prepare(`
+      INSERT INTO storage_nodes (id, name, baseUrl, status, isDefault, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    stmt.run(
+      id,
+      data.name || '新存储节点',
+      data.baseUrl || 'http://localhost:3001',
+      data.status || 'ACTIVE',
+      isDefault,
+      new Date().toISOString()
+    )
+    return this.getStorageNodeById(id)
+  },
+
+  updateStorageNode(id, data) {
+    const existing = this.getStorageNodeById(id)
+    if (!existing) return null
+    const updated = { ...existing, ...data }
+    if (data.isDefault) {
+      database.prepare('UPDATE storage_nodes SET isDefault = 0').run()
+    }
+    const stmt = database.prepare(`
+      UPDATE storage_nodes
+      SET name = ?, baseUrl = ?, status = ?, isDefault = ?
+      WHERE id = ?
+    `)
+    stmt.run(
+      updated.name,
+      updated.baseUrl,
+      updated.status || 'ACTIVE',
+      updated.isDefault ? 1 : 0,
+      id
+    )
+    return this.getStorageNodeById(id)
+  },
+
+  deleteStorageNode(id) {
+    database.prepare('DELETE FROM storage_nodes WHERE id = ?').run(id)
+    return true
+  },
+
+  setDefaultStorageNode(id) {
+    database.prepare('UPDATE storage_nodes SET isDefault = 0').run()
+    database.prepare('UPDATE storage_nodes SET isDefault = 1 WHERE id = ?').run(id)
+    return this.getStorageNodeById(id)
   },
 
   getAllTags() {
