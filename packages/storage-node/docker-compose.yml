@@ -11,7 +11,7 @@ services:
       - path: .env
         required: false
     ports:
-      - "${STORAGE_PORT:-3001}:3001"
+      - "${STORAGE_BIND_IP:-127.0.0.1}:${STORAGE_PORT:-3001}:3001"
     volumes:
       - ${STORAGE_DATA_PATH:-/var/storage/uploads}:/app/packages/storage-node/public/uploads
     environment:
@@ -31,12 +31,6 @@ services:
         max-file: "3"
     networks:
       - storage-net
-    healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3001/api/v1/storage/status || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
 
 networks:
   storage-net:
