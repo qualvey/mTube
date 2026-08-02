@@ -17,12 +17,14 @@ on:
           - server
           - client
           - admin
+          - storage-node
 
 env:
   REGISTRY: ghcr.io
   IMAGE_SERVER: ghcr.io/qualvey/mtube/server
   IMAGE_CLIENT: ghcr.io/qualvey/mtube/client
   IMAGE_ADMIN: ghcr.io/qualvey/mtube/admin
+  IMAGE_STORAGE_NODE: ghcr.io/qualvey/mtube/storage-node
 
 jobs:
   detect-changes:
@@ -31,6 +33,7 @@ jobs:
       server: ${{ steps.set-targets.outputs.server }}
       client: ${{ steps.set-targets.outputs.client }}
       admin: ${{ steps.set-targets.outputs.admin }}
+      storage-node: ${{ steps.set-targets.outputs.storage-node }}
       compose: ${{ steps.set-targets.outputs.compose }}
 
     steps:
@@ -58,6 +61,11 @@ jobs:
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
+            storage-node:
+              - 'packages/storage-node/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
             compose:
               - 'docker-compose.yml'
               - 'nginx-production-example.conf'
@@ -70,33 +78,40 @@ jobs:
           FILTER_SERVER="${{ steps.filter.outputs.server }}"
           FILTER_CLIENT="${{ steps.filter.outputs.client }}"
           FILTER_ADMIN="${{ steps.filter.outputs.admin }}"
+          FILTER_STORAGE_NODE="${{ steps.filter.outputs.storage-node }}"
           FILTER_COMPOSE="${{ steps.filter.outputs.compose }}"
 
           BUILD_SERVER="false"
           BUILD_CLIENT="false"
           BUILD_ADMIN="false"
+          BUILD_STORAGE_NODE="false"
           BUILD_COMPOSE="false"
 
           if [ "$TARGET" == "all" ]; then
             BUILD_SERVER="true"
             BUILD_CLIENT="true"
             BUILD_ADMIN="true"
+            BUILD_STORAGE_NODE="true"
           elif [ "$TARGET" == "server" ]; then
             BUILD_SERVER="true"
           elif [ "$TARGET" == "client" ]; then
             BUILD_CLIENT="true"
           elif [ "$TARGET" == "admin" ]; then
             BUILD_ADMIN="true"
+          elif [ "$TARGET" == "storage-node" ]; then
+            BUILD_STORAGE_NODE="true"
           else
             BUILD_SERVER="$FILTER_SERVER"
             BUILD_CLIENT="$FILTER_CLIENT"
             BUILD_ADMIN="$FILTER_ADMIN"
+            BUILD_STORAGE_NODE="$FILTER_STORAGE_NODE"
             BUILD_COMPOSE="$FILTER_COMPOSE"
           fi
 
           echo "server=$BUILD_SERVER" >> $GITHUB_OUTPUT
           echo "client=$BUILD_CLIENT" >> $GITHUB_OUTPUT
           echo "admin=$BUILD_ADMIN" >> $GITHUB_OUTPUT
+          echo "storage-node=$BUILD_STORAGE_NODE" >> $GITHUB_OUTPUT
           echo "compose=$BUILD_COMPOSE" >> $GITHUB_OUTPUT
 
   # 并行构建任务 1：Server 镜像构建与推送
@@ -192,10 +207,41 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # 并行构建任务 4：Storage Node 镜像构建与推送
+  build-storage-node:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.storage-node == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push Storage Node Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/storage-node/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_STORAGE_NODE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # 汇总部署任务：在所有并行构建完成后执行增量 VPS 部署
   deploy-to-vps:
-    needs: [detect-changes, build-server, build-client, build-admin]
-    if: "always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.ref == 'refs/heads/main' && (needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.client == 'true' || needs.detect-changes.outputs.admin == 'true' || needs.detect-changes.outputs.compose == 'true')"
+    needs: [detect-changes, build-server, build-client, build-admin, build-storage-node]
+    if: "always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.ref == 'refs/heads/main' && (needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.client == 'true' || needs.detect-changes.outputs.admin == 'true' || needs.detect-changes.outputs.storage-node == 'true' || needs.detect-changes.outputs.compose == 'true')"
     runs-on: ubuntu-latest
 
     steps:

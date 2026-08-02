@@ -19,8 +19,6 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - LOG_LEVEL=${LOG_LEVEL:-info}
 
-
-
     logging:
       driver: "json-file"
       options:
@@ -30,7 +28,7 @@ services:
       - streamvip-net
 
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/v1/videos || exit 1"]
+      test: [ "CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/v1/videos || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -67,7 +65,6 @@ services:
         condition: service_healthy
     networks:
       - streamvip-net
-
 
 networks:
   streamvip-net:
