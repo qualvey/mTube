@@ -138,10 +138,45 @@ docker compose up -d
 
 启动完成后，在 **B 端管理后台 -> ⚙️ 系统设置 -> 多存储节点管理** 中点击 **【+ 注册新存储节点】**，输入 `node-02` 及 `http://<服务器IP>:3002` 即可上线！
 
-### 3. GitHub Actions CI/CD 增量部署
-项目内置 `.github/workflows/deploy.yml`，每次提交到 `main` 分支时：
-- 精准识别改动路径（Path Filter），**仅构建修改过的模块镜像**并推送到 GHCR。
-- 主站服务器自动拉取最新的 `server` / `client` / `admin` 镜像完成无缝更新。
+### 3. GitHub Actions CI/CD 增量部署与动态密钥注入
+项目内置 `.github/workflows/deploy.yml` 与 `.github/workflows/deploy-storage-node.yml`：
+- **增量构建**：精准识别改动路径（Path Filter），**仅构建修改过的模块镜像**并推送到 GHCR。
+- **动态密钥注入**：在部署时自动从 GitHub Secrets 中读取配置并生成远程 `.env`，**无需人工登录服务器手动修改配置文件**。
+
+---
+
+## 🔐 GitHub Actions Secrets 完整配置指南
+
+请在 GitHub 仓库后台 (**Settings -> Secrets and variables -> Actions**) 配置以下环境变量：
+
+### 1. 主站服务器 (Main VPS) 核心配置
+| Secret 名称 | 必须 | 示例配置值 | 说明 |
+| :--- | :---: | :--- | :--- |
+| `VPS_HOST` | **是** | `23.141.204.202` | 主站 VPS 服务器的公网 IP 地址 |
+| `VPS_USER` | **是** | `root` | 主站 VPS 服务器 SSH 登录用户名 |
+| `VPS_SSH_KEY` | **是** | `-----BEGIN OPENSSH PRIVATE KEY-----...` | 主站 VPS 服务器 SSH 私钥 |
+| `VPS_PORT` | 否 | `22` (或自定义如 `52222`) | 主站 VPS 服务器 SSH 端口号 |
+| `ADMIN_USERNAME` | 否 | `admin` | 主站后台默认管理员账号 |
+| `ADMIN_PASSWORD` | 否 | `MySecurePass2026!` | 主站后台默认管理员密码 |
+
+### 2. 集群通信安全密钥 (Cluster HMAC Secret)
+| Secret 名称 | 必须 | 示例配置值 | 说明 |
+| :--- | :---: | :--- | :--- |
+| `CLUSTER_SECRET` | **是** | `sk_cluster_9f8e7d6c5b4a` | 主站与所有存储节点间 **HMAC-SHA256 动态签名校验的集群统一密钥** |
+
+### 3. 存储节点 (Storage Node VPS) 专属配置
+*(若无异地节点，可留空自动回退复用主站 VPS Secrets)*
+| Secret 名称 | 必须 | 示例配置值 | 说明 |
+| :--- | :---: | :--- | :--- |
+| `STORAGE_NODE_HOST` | 异地 | `202.182.101.231` | 存储节点 VPS 服务器的公网 IP 地址 |
+| `STORAGE_NODE_USER` | 异地 | `root` 或 `linuxuser` | 存储节点 VPS 服务器 SSH 登录用户名 |
+| `STORAGE_NODE_SSH_KEY` | 异地 | `-----BEGIN OPENSSH PRIVATE KEY-----...` | 存储节点 VPS 服务器 SSH 私钥 |
+| `STORAGE_NODE_PORT` | 否 | `22` | 存储节点 VPS 服务器 SSH 端口号 |
+| `STORAGE_NODE_DEPLOY_PATH` | 否 | `/opt/storage_node` 或 `/root/storage-node` | 存储节点部署在 VPS 上的目标路径 |
+| `STORAGE_NODE_ID` | 建议 | `node-hk-02` | 存储节点唯一标识 ID |
+| `STORAGE_NODE_NAME` | 建议 | `香港 8TB 存储节点 02` | 存储节点后台显示名称 |
+| `MAIN_SERVER_URL` | **是** | `https://yourdomain.com` | **主站 API 控制面的公网 URL**（节点向此地址自动注册与心跳） |
+| `STORAGE_PUBLIC_URL` | **是** | `http://202.182.101.231:3001` | **存储节点的真实公网访问地址**（用于视频流与封面播放） |
 
 ---
 
