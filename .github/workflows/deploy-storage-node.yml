@@ -103,6 +103,7 @@ jobs:
             echo "PUBLIC_URL=${{ secrets.STORAGE_PUBLIC_URL || 'http://localhost:3001' }}" >> .env
             echo "MAIN_SERVER_URL=${{ secrets.MAIN_SERVER_URL || 'http://localhost:3000' }}" >> .env
             echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}" >> .env
+            echo "ENABLE_DIRECT_UPLOAD=${{ secrets.ENABLE_DIRECT_UPLOAD || 'true' }}" >> .env
             echo "STORAGE_DATA_PATH=${{ secrets.STORAGE_DATA_PATH || '/var/storage/uploads' }}" >> .env
             echo "STORAGE_NODE_IMAGE=ghcr.io/qualvey/mtube/storage-node:latest" >> .env
 
