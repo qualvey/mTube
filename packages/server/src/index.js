@@ -1235,6 +1235,50 @@ app.post('/api/v1/admin/storage-nodes/:id/set-default', (req, res) => {
   sendResponse(res, node, 200, `存储节点 [${node.name}] 已成功设为默认上传节点`)
 })
 
+// GET /api/v1/admin/upload-config - Check if direct upload mode is enabled
+app.get('/api/v1/admin/upload-config', (req, res) => {
+  const enableDirectUpload = process.env.ENABLE_DIRECT_UPLOAD !== 'false'
+  sendResponse(res, { enableDirectUpload }, 200, 'Upload config retrieved')
+})
+
+// POST /api/v1/admin/videos/upload-ticket - Generate Direct Upload Ticket for target storage node
+app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
+  const enableDirectUpload = process.env.ENABLE_DIRECT_UPLOAD !== 'false'
+  const targetNodeId = req.body.nodeId || req.query.nodeId
+  let targetNode = targetNodeId ? db.getStorageNodeById(targetNodeId) : db.getDefaultStorageNode()
+  if (!targetNode) {
+    targetNode = db.getDefaultStorageNode()
+  }
+  if (!targetNode) {
+    return sendResponse(res, null, 404, '无可用存储节点')
+  }
+
+  const configuredSecret = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
+  const timestamp = Date.now().toString()
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const payloadStr = JSON.stringify({ nodeId: targetNode.id, timestamp })
+  const signature = crypto
+    .createHmac('sha256', configuredSecret)
+    .update(`${payloadStr}.${timestamp}.${nonce}`)
+    .digest('hex')
+
+  const baseUrl = targetNode.baseUrl || 'http://localhost:3001'
+  const uploadUrl = `${baseUrl.replace(/\/$/, '')}/api/v1/storage/upload`
+
+  sendResponse(res, {
+    enableDirectUpload,
+    storageNodeId: targetNode.id,
+    storageNodeName: targetNode.name,
+    baseUrl,
+    uploadUrl,
+    headers: {
+      'X-Cluster-Timestamp': timestamp,
+      'X-Cluster-Nonce': nonce,
+      'X-Cluster-Signature': signature
+    }
+  }, 200, '直传凭证生成成功')
+})
+
 // POST /api/v1/admin/videos/upload - Upload video file directly to specified Storage Node
 app.post('/api/v1/admin/videos/upload', uploadMemory.single('video'), async (req, res) => {
   if (!req.file) {

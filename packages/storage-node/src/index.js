@@ -23,7 +23,11 @@ const postersDir = path.resolve(publicDir, 'uploads/posters')
 if (!fs.existsSync(videosDir)) fs.mkdirSync(videosDir, { recursive: true })
 if (!fs.existsSync(postersDir)) fs.mkdirSync(postersDir, { recursive: true })
 
-app.use(cors())
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Cluster-Timestamp', 'X-Cluster-Nonce', 'X-Cluster-Signature']
+}))
 app.use(express.json())
 
 // Serve static uploaded files (videos & posters with HTTP Range support)
@@ -130,9 +134,12 @@ app.post('/api/v1/storage/upload', upload.single('video'), async (req, res) => {
   // Generate 50th frame poster
   const publicPosterPath = await generateFrame50Poster(videoPath)
 
+  const nodePublicUrl = process.env.PUBLIC_URL || process.env.NODE_BASE_URL
   const hostHeader = req.get('host') || `localhost:${PORT}`
   const protocol = req.protocol || 'http'
-  const fullBaseUrl = `${protocol}://${hostHeader}`
+  const fullBaseUrl = (nodePublicUrl && !nodePublicUrl.includes('localhost'))
+    ? nodePublicUrl.replace(/\/$/, '')
+    : `${protocol}://${hostHeader}`
 
   res.json({
     code: 200,

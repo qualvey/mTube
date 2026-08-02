@@ -279,6 +279,7 @@ jobs:
               echo "ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}" >> .env
               echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}" >> .env
               echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}" >> .env
+              echo "ENABLE_DIRECT_UPLOAD=${{ secrets.ENABLE_DIRECT_UPLOAD || 'true' }}" >> .env
             fi
 
             SERVICES=""

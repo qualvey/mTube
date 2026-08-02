@@ -21,6 +21,7 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ENABLE_DIRECT_UPLOAD=${ENABLE_DIRECT_UPLOAD:-true}
     logging:
       driver: "json-file"
       options:

@@ -950,7 +950,18 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="视频 MP4 / M3U8 播放地址" required>
+      <el-form-item required>
+        <template #label>
+          <div class="flex items-center justify-between w-full">
+            <span>视频 MP4 / M3U8 播放地址</span>
+            <el-tag v-if="enableDirectUpload" type="success" size="small" effect="light" class="font-bold">
+              ⚡ 浏览器直传模式 (零主控带宽开销)
+            </el-tag>
+            <el-tag v-else type="info" size="small" effect="light">
+              📦 主控中转模式
+            </el-tag>
+          </div>
+        </template>
         <div class="flex items-center gap-2">
           <el-input v-model="newVideoForm.videoUrl" placeholder="https://.../video.mp4 或 /uploads/... 或 YouTube 链接" />
           <input type="file" ref="addVideoInput" accept="video/*,.m3u8,.mp4,.mov,.webm" class="hidden" @change="handleFileUpload($event, newVideoForm, 'videoUrl')" />
@@ -1210,6 +1221,21 @@ const systemSettings = ref({
 })
 const searchKeyword = ref('')
 const uploadLoading = ref(false)
+const enableDirectUpload = ref(true)
+
+const fetchUploadConfig = async () => {
+  try {
+    const res = await fetch('/api/v1/admin/upload-config')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && json.data) {
+        enableDirectUpload.value = json.data.enableDirectUpload !== false
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to fetch upload config:', e)
+  }
+}
 
 const storageNodeStatus = ref({
   status: 'CHECKING',
@@ -1333,32 +1359,77 @@ const handleFileUpload = async (event, targetObj, fieldName) => {
     const isVideo = file.type.startsWith('video/') || fieldName === 'videoUrl'
 
     if (isVideo) {
-      const formData = new FormData()
-      formData.append('video', file)
       const target = (targetObj && typeof targetObj === 'object' && 'value' in targetObj)
         ? targetObj.value
         : targetObj
-      if (target && target.storageNodeId) {
-        formData.append('nodeId', target.storageNodeId)
+
+      let uploadSuccess = false
+
+      // Try Direct Upload if enabled
+      if (enableDirectUpload.value) {
+        try {
+          const ticketRes = await fetch('/api/v1/admin/videos/upload-ticket', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nodeId: target?.storageNodeId })
+          })
+          const ticketJson = await ticketRes.json()
+
+          if (ticketRes.ok && ticketJson.data && ticketJson.data.uploadUrl) {
+            const ticket = ticketJson.data
+            const directFormData = new FormData()
+            directFormData.append('video', file)
+
+            const directRes = await fetch(ticket.uploadUrl, {
+              method: 'POST',
+              headers: ticket.headers || {},
+              body: directFormData
+            })
+            const directJson = await directRes.json()
+
+            if (directRes.ok && directJson.data && directJson.data.videoUrl) {
+              target[fieldName] = directJson.data.videoUrl
+              if (ticket.storageNodeId) {
+                target.storageNodeId = ticket.storageNodeId
+              }
+              if (directJson.data.posterUrl && !target.poster) {
+                target.poster = directJson.data.posterUrl
+              }
+              ElMessage.success(`⚡ [直传成功] 视频已直接传输至存储节点 [${ticket.storageNodeName || ticket.storageNodeId}]，第50帧封面已生成！`)
+              uploadSuccess = true
+            }
+          }
+        } catch (directErr) {
+          console.warn('[Direct Upload] Direct upload failed, falling back to proxy upload:', directErr.message)
+        }
       }
 
-      const res = await fetch('/api/v1/admin/videos/upload', {
-        method: 'POST',
-        body: formData
-      })
-      const json = await res.json()
+      // Fallback to Proxy Upload if Direct Upload was skipped or failed
+      if (!uploadSuccess) {
+        const formData = new FormData()
+        formData.append('video', file)
+        if (target && target.storageNodeId) {
+          formData.append('nodeId', target.storageNodeId)
+        }
 
-      if (res.ok && json.data && json.data.videoUrl) {
-        target[fieldName] = json.data.videoUrl
-        if (json.data.storageNodeId) {
-          target.storageNodeId = json.data.storageNodeId
+        const res = await fetch('/api/v1/admin/videos/upload', {
+          method: 'POST',
+          body: formData
+        })
+        const json = await res.json()
+
+        if (res.ok && json.data && json.data.videoUrl) {
+          target[fieldName] = json.data.videoUrl
+          if (json.data.storageNodeId) {
+            target.storageNodeId = json.data.storageNodeId
+          }
+          if (json.data.posterUrl && !target.poster) {
+            target.poster = json.data.posterUrl
+          }
+          ElMessage.success(`视频已成功上传至存储节点 [${json.data.storageNodeName || json.data.storageNodeId || 'Node-01'}]，第50帧封面已生成！`)
+        } else {
+          ElMessage.error(json.message || '存储节点上传失败')
         }
-        if (json.data.posterUrl && !target.poster) {
-          target.poster = json.data.posterUrl
-        }
-        ElMessage.success(`视频已成功上传至存储节点 [${json.data.storageNodeName || json.data.storageNodeId || 'Node-01'}]，第50帧封面已生成！`)
-      } else {
-        ElMessage.error(json.message || '存储节点上传失败')
       }
     } else {
       const reader = new FileReader()
@@ -1530,6 +1601,7 @@ const loadAllData = async () => {
     if (ordersRes.data) orders.value = ordersRes.data
     if (settingsRes.data) systemSettings.value = settingsRes.data
 
+    fetchUploadConfig()
     fetchAnalyticsData()
   } catch (e) {
     console.warn('Load data error:', e)
