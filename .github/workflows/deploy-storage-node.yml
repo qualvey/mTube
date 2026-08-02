@@ -1,15 +1,6 @@
-name: StreamVIP Storage Node Independent CI/CD
+name: StreamVIP Storage Node Independent CI/CD (Manual)
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'packages/storage-node/**'
-      - 'package.json'
-      - 'pnpm-workspace.yaml'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/deploy-storage-node.yml'
   workflow_dispatch:
     inputs:
       target_env:
