@@ -209,11 +209,16 @@ const registerWithMainServer = async () => {
       body: JSON.stringify(payload)
     })
 
-    const json = await resp.json()
-    if (resp.ok && json.code === 200) {
-      console.log(`[Storage Node 📦] ✅ Auto-registered successfully with Main Server! Response: ${json.message}`)
+    const text = await resp.text()
+    let json = null
+    try { json = JSON.parse(text) } catch (e) {}
+
+    if (resp.ok && json && json.code === 200) {
+      console.log(`[Storage Node 📦] ✅ Auto-registered successfully with Main Control Server! Response: ${json.message}`)
+    } else if (resp.status === 404) {
+      console.warn(`[Storage Node 📦] Auto-registration returned HTTP 404: 主站服务器 (https://91cso.com) 尚未更新部署最新的 /api/v1/storage-nodes/register 自动注册路由，请触发主站 CI/CD 升级主站容器镜像。`)
     } else {
-      console.warn(`[Storage Node 📦] Auto-registration returned status ${resp.status}:`, json.message || json)
+      console.warn(`[Storage Node 📦] Auto-registration returned status ${resp.status}:`, json ? (json.message || json) : text.substring(0, 150))
     }
   } catch (err) {
     console.warn(`[Storage Node 📦] Auto-registration connection failed to ${MAIN_SERVER_URL}:`, err.message)
