@@ -255,6 +255,7 @@ const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0
           const line = lines[i]
           const trimmed = line.trim()
 
+          // 1. 处理 #EXTINF 切片时长标签，同时做 VIP 截断
           if (trimmed.startsWith('#EXTINF:')) {
             const match = trimmed.match(/#EXTINF:([\d.]+)/)
             if (match) {
@@ -265,12 +266,33 @@ const fetchM3u8Playlist = (targetUrl, customHeaders, req, res, redirectCount = 0
               }
               currentDuration += segDur
             }
+            // 【关键】必须把 #EXTINF 这行推入数组！
+            rewrittenLines.push(line)
           }
 
-          if (!trimmed || trimmed.startsWith('#')) {
+          // 2. 处理 CMAF/DASH 初始化头 (#EXT-X-MAP)
+          else if (trimmed.startsWith('#EXT-X-MAP:')) {
+            const mapMatch = trimmed.match(/URI="([^"]+)"/)
+            if (mapMatch) {
+              const initUri = mapMatch[1]
+              const absoluteInitUrl = new URL(initUri, cleanUrl).href
+              const deviceIdParam = req.query.deviceId ? `&deviceId=${encodeURIComponent(req.query.deviceId)}` : ''
+
+              const proxyInitUrl = `/api/v1/proxy/video?id=${req.query.id || ''}${deviceIdParam}&url=${encodeURIComponent(absoluteInitUrl)}`
+              rewrittenLines.push(`#EXT-X-MAP:URI="${proxyInitUrl}"`)
+            } else {
+              rewrittenLines.push(line)
+            }
+          }
+
+          // 3. 其他所有以 '#' 开头的配置标签或空行，原样保留
+          else if (!trimmed || trimmed.startsWith('#')) {
             rewrittenLines.push(line)
-          } else {
-            const segUrl = trimmed.startsWith('http') ? trimmed : (baseUrl + trimmed)
+          }
+
+          // 4. 真正的切片 URL，重写为后端代理
+          else {
+            const segUrl = new URL(trimmed, cleanUrl).href
             const deviceIdParam = req.query.deviceId ? `&deviceId=${encodeURIComponent(req.query.deviceId)}` : ''
             rewrittenLines.push(`/api/v1/proxy/video?id=${req.query.id || ''}${deviceIdParam}&url=${encodeURIComponent(segUrl)}`)
           }
