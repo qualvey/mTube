@@ -181,6 +181,14 @@
                   <el-tag v-else type="info">直连播放</el-tag>
                 </template>
               </el-table-column>
+              <el-table-column label="存储节点" width="130">
+                <template #default="{ row }">
+                  <el-tag v-if="row.storageNodeId" type="success" effect="light">
+                    {{ row.storageNodeId }}
+                  </el-tag>
+                  <el-tag v-else type="info">主节点</el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="VIP 专属" width="110">
                 <template #default="{ row }">
                   <el-switch v-model="row.isVip" @change="updateVideoVip(row)" />
@@ -497,6 +505,68 @@
                 </el-button>
               </div>
             </el-form>
+          </el-card>
+
+          <!-- Multi Storage Node Configuration Card -->
+          <el-card class="rounded-xl shadow-sm border-slate-200">
+            <template #header>
+              <div class="font-bold text-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span>多存储节点管理 (Multi-Storage-Node Cluster Management)</span>
+                  <el-tag type="primary">分布式存储架构</el-tag>
+                </div>
+                <div class="flex items-center gap-2">
+                  <el-button type="success" size="small" icon="Plus" class="font-bold" @click="openAddStorageNodeDialog">
+                    + 注册新存储节点
+                  </el-button>
+                  <el-button type="primary" size="small" plain icon="Refresh" @click="fetchStorageNodes">
+                    刷新节点连通状态
+                  </el-button>
+                </div>
+              </div>
+            </template>
+
+            <!-- Storage Nodes Table -->
+            <el-table :data="storageNodesList" border class="w-full rounded-lg my-2">
+              <el-table-column prop="id" label="节点 ID" width="120" />
+              <el-table-column prop="name" label="节点名称" min-width="160" />
+              <el-table-column prop="baseUrl" label="节点 Base URL" min-width="220" />
+              <el-table-column label="默认状态" width="110">
+                <template #default="{ row }">
+                  <el-tag v-if="row.isDefault" type="success">默认上传节点</el-tag>
+                  <el-tag v-else type="info">普通节点</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="连通状态" width="120">
+                <template #default="{ row }">
+                  <el-tag :type="row.status === 'ONLINE' ? 'success' : 'danger'">
+                    {{ row.status === 'ONLINE' ? '🟢 节点在线' : '🔴 连通异常' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="videoCount" label="已存视频数" width="110" />
+              <el-table-column label="节点操作按钮项" width="220" fixed="right">
+                <template #default="{ row }">
+                  <el-button 
+                    v-if="!row.isDefault" 
+                    type="success" 
+                    size="small" 
+                    text 
+                    @click="setDefaultStorageNode(row.id)"
+                  >
+                    设为默认
+                  </el-button>
+                  <el-button 
+                    type="danger" 
+                    size="small" 
+                    text 
+                    @click="deleteStorageNode(row.id)"
+                  >
+                    注销节点
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
           </el-card>
 
           <!-- Crypto USDT Wallet Settings Card -->
@@ -870,6 +940,16 @@
       <el-form-item label="创作者名称">
         <el-input v-model="newVideoForm.author" placeholder="官方创作者" />
       </el-form-item>
+      <el-form-item label="归属 / 上传存储节点 (Target Storage Node)">
+        <el-select v-model="newVideoForm.storageNodeId" placeholder="选择存储节点" style="width: 100%">
+          <el-option
+            v-for="node in storageNodesList"
+            :key="node.id"
+            :label="`${node.name} (${node.id}) ${node.isDefault ? ' [默认]' : ''}`"
+            :value="node.id"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="视频 MP4 / M3U8 播放地址" required>
         <div class="flex items-center gap-2">
           <el-input v-model="newVideoForm.videoUrl" placeholder="https://.../video.mp4 或 /uploads/... 或 YouTube 链接" />
@@ -1064,6 +1144,8 @@ const updateClock = () => {
 onMounted(() => {
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
+  checkStorageNodeStatus()
+  fetchStorageNodes()
 })
 
 onUnmounted(() => {
@@ -1123,10 +1205,118 @@ const systemSettings = ref({
   cryptoExchangeRate: '7.2',
   enableNotice: true,
   noticeTitle: '📢 官方重要公告',
-  noticeContent: '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站无删减 4K 超清原画库！客服在线时间：10:00 - 24:00。'
+  noticeContent: '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站无删减 4K 超清原画库！客服在线时间：10:00 - 24:00。',
+  activeStorageNodeUrl: 'http://localhost:3001'
 })
 const searchKeyword = ref('')
 const uploadLoading = ref(false)
+
+const storageNodeStatus = ref({
+  status: 'CHECKING',
+  nodeName: 'Storage Node 01',
+  videoCount: 0,
+  port: 3001
+})
+
+const checkStorageNodeStatus = async () => {
+  try {
+    const res = await fetch('/api/v1/admin/storage/status')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && (json.data || json.nodeId)) {
+        storageNodeStatus.value = json.data || json
+      }
+    }
+  } catch (e) {
+    storageNodeStatus.value.status = 'OFFLINE'
+  }
+}
+
+const storageNodesList = ref([])
+const showAddStorageNodeDialog = ref(false)
+const newStorageNodeForm = ref({
+  id: '',
+  name: '',
+  baseUrl: '',
+  isDefault: false
+})
+
+const fetchStorageNodes = async () => {
+  try {
+    const res = await fetch('/api/v1/admin/storage-nodes')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && json.data) {
+        storageNodesList.value = json.data
+      }
+    }
+  } catch (e) {
+    console.error('Failed to fetch storage nodes:', e)
+  }
+}
+
+const openAddStorageNodeDialog = () => {
+  newStorageNodeForm.value = {
+    id: `node-0${storageNodesList.value.length + 1}`,
+    name: `存储节点 0${storageNodesList.value.length + 1}`,
+    baseUrl: 'http://localhost:3002',
+    isDefault: false
+  }
+  showAddStorageNodeDialog.value = true
+}
+
+const submitAddStorageNode = async () => {
+  if (!newStorageNodeForm.value.id || !newStorageNodeForm.value.name || !newStorageNodeForm.value.baseUrl) {
+    ElMessage.warning('请填写完整的节点 ID、名称和 Base URL')
+    return
+  }
+  try {
+    const res = await fetch('/api/v1/admin/storage-nodes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newStorageNodeForm.value)
+    })
+    const json = await res.json()
+    if (json.code === 200) {
+      ElMessage.success(`存储节点 [${newStorageNodeForm.value.name}] 注册成功！`)
+      showAddStorageNodeDialog.value = false
+      fetchStorageNodes()
+    } else {
+      ElMessage.error(json.message || '节点注册失败')
+    }
+  } catch (e) {
+    ElMessage.error('注册节点网络请求失败')
+  }
+}
+
+const setDefaultStorageNode = async (nodeId) => {
+  try {
+    const res = await fetch(`/api/v1/admin/storage-nodes/${nodeId}/set-default`, {
+      method: 'POST'
+    })
+    const json = await res.json()
+    if (json.code === 200) {
+      ElMessage.success(`存储节点已成功设为默认上传节点！`)
+      fetchStorageNodes()
+    }
+  } catch (e) {
+    ElMessage.error('设置失败')
+  }
+}
+
+const deleteStorageNode = async (nodeId) => {
+  try {
+    const res = await fetch(`/api/v1/admin/storage-nodes/${nodeId}`, {
+      method: 'DELETE'
+    })
+    if (res.ok) {
+      ElMessage.success('存储节点已注销')
+      fetchStorageNodes()
+    }
+  } catch (e) {
+    ElMessage.error('注销失败')
+  }
+}
 
 const handleFileUpload = async (event, targetObj, fieldName) => {
   const file = event.target.files[0]
@@ -1134,35 +1324,67 @@ const handleFileUpload = async (event, targetObj, fieldName) => {
 
   uploadLoading.value = true
   try {
-    const reader = new FileReader()
-    reader.onload = async (e) => {
-      const base64Data = e.target.result
-      const res = await fetch('/api/v1/upload', {
+    const isVideo = file.type.startsWith('video/') || fieldName === 'videoUrl'
+
+    if (isVideo) {
+      const formData = new FormData()
+      formData.append('video', file)
+      const target = (targetObj && typeof targetObj === 'object' && 'value' in targetObj)
+        ? targetObj.value
+        : targetObj
+      if (target && target.storageNodeId) {
+        formData.append('nodeId', target.storageNodeId)
+      }
+
+      const res = await fetch('/api/v1/admin/videos/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: file.name,
-          fileData: base64Data
-        })
+        body: formData
       })
       const json = await res.json()
-      if (res.ok && json.data && json.data.url) {
-        // Safely set property on Vue 3 ref or reactive object
-        const target = (targetObj && typeof targetObj === 'object' && 'value' in targetObj)
-          ? targetObj.value
-          : targetObj
-        target[fieldName] = json.data.url
-        ElMessage.success(`本地文件 ${file.name} 上传成功！已生成路径: ${json.data.url}`)
+
+      if (res.ok && json.data && json.data.videoUrl) {
+        target[fieldName] = json.data.videoUrl
+        if (json.data.storageNodeId) {
+          target.storageNodeId = json.data.storageNodeId
+        }
+        if (json.data.posterUrl && !target.poster) {
+          target.poster = json.data.posterUrl
+        }
+        ElMessage.success(`视频已成功上传至存储节点 [${json.data.storageNodeName || json.data.storageNodeId || 'Node-01'}]，第50帧封面已生成！`)
       } else {
-        ElMessage.error(json.message || '文件上传失败')
+        ElMessage.error(json.message || '存储节点上传失败')
       }
-      uploadLoading.value = false
+    } else {
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        const base64Data = e.target.result
+        const res = await fetch('/api/v1/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
+            fileData: base64Data
+          })
+        })
+        const json = await res.json()
+        if (res.ok && json.data && json.data.url) {
+          const target = (targetObj && typeof targetObj === 'object' && 'value' in targetObj)
+            ? targetObj.value
+            : targetObj
+          target[fieldName] = json.data.url
+          ElMessage.success(`图片文件 ${file.name} 上传成功！已生成路径: ${json.data.url}`)
+        } else {
+          ElMessage.error(json.message || '文件上传失败')
+        }
+        uploadLoading.value = false
+      }
+      reader.readAsDataURL(file)
+      return
     }
-    reader.readAsDataURL(file)
   } catch (err) {
     ElMessage.error('上传读取异常: ' + err.message)
-    uploadLoading.value = false
   } finally {
+    uploadLoading.value = false
     event.target.value = ''
   }
 }
@@ -1187,6 +1409,7 @@ const newVideoForm = ref({
   title: '',
   description: '',
   author: '官方创作者',
+  storageNodeId: 'node-01',
   videoUrl: '',
   referer: '',
   userAgent: '',
@@ -1204,6 +1427,7 @@ const editVideoForm = ref({
   description: '',
   author: '',
   authorAvatar: '',
+  storageNodeId: 'node-01',
   videoUrl: '',
   referer: '',
   userAgent: '',
