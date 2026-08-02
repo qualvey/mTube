@@ -176,7 +176,7 @@ docker compose up -d
 | `STORAGE_NODE_ID` | 建议 | `node-hk-02` | 存储节点唯一标识 ID |
 | `STORAGE_NODE_NAME` | 建议 | `香港 8TB 存储节点 02` | 存储节点后台显示名称 |
 | `MAIN_SERVER_URL` | **是** | `https://yourdomain.com` | **主站 API 控制面的公网 URL**（节点向此地址自动注册与心跳） |
-| `STORAGE_PUBLIC_URL` | **是** | `http://202.182.101.231:3001` | **存储节点的真实公网访问地址**（用于视频流与封面播放） |
+| `STORAGE_PUBLIC_URL` | **是** | `https://storage02.yourdomain.com` | **存储节点的真实公网/HTTPS 访问地址**（用于直传、视频播放与封面） |
 
 ---
 
