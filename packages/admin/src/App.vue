@@ -967,6 +967,30 @@
           <input type="file" ref="addVideoInput" accept="video/*,.m3u8,.mp4,.mov,.webm" class="hidden" @change="handleFileUpload($event, newVideoForm, 'videoUrl')" />
           <el-button type="primary" plain icon="Upload" :loading="uploadLoading" @click="$refs.addVideoInput.click()">上传本地视频</el-button>
         </div>
+
+        <!-- Real-time Video Upload Progress & Transfer Speed Indicator -->
+        <div v-if="uploadLoading || uploadProgress > 0" class="mt-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2 shadow-inner w-full">
+          <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+            <span class="flex items-center gap-1.5">
+              <span class="text-amber-500 animate-pulse">🚀</span>
+              <span>{{ uploadStatusLabel || '视频传输处理中...' }}</span>
+            </span>
+            <span class="font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-xs">
+              ⚡ {{ uploadSpeed }}
+            </span>
+          </div>
+          <el-progress
+            :percentage="uploadProgress"
+            :status="uploadProgress === 100 ? 'success' : ''"
+            :stroke-width="8"
+            striped
+            striped-flow
+          />
+          <div class="flex items-center justify-between text-[11px] font-mono text-slate-500">
+            <span>已传输: {{ uploadDetailText }}</span>
+            <span>进度: {{ uploadProgress }}%</span>
+          </div>
+        </div>
       </el-form-item>
 
       <!-- Predefined Request Headers UI Component Block -->
@@ -1223,6 +1247,78 @@ const searchKeyword = ref('')
 const uploadLoading = ref(false)
 const enableDirectUpload = ref(true)
 
+const uploadProgress = ref(0)
+const uploadSpeed = ref('0 KB/s')
+const uploadDetailText = ref('')
+const uploadStatusLabel = ref('')
+
+const formatBytes = (bytes) => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+const formatSpeed = (bytesPerSec) => {
+  if (!bytesPerSec || bytesPerSec <= 0) return '0 KB/s'
+  if (bytesPerSec >= 1024 * 1024) {
+    return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s'
+  }
+  return (bytesPerSec / 1024).toFixed(0) + ' KB/s'
+}
+
+const uploadFileWithProgress = (url, formData, headers = {}) => {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url, true)
+
+    Object.keys(headers).forEach(key => {
+      xhr.setRequestHeader(key, headers[key])
+    })
+
+    let lastLoaded = 0
+    let lastTime = Date.now()
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = Math.floor((e.loaded / e.total) * 100)
+        uploadProgress.value = percent
+
+        const now = Date.now()
+        const timeDiff = (now - lastTime) / 1000
+
+        if (timeDiff >= 0.3 || e.loaded === e.total) {
+          const loadedDiff = e.loaded - lastLoaded
+          const bytesPerSec = timeDiff > 0 ? loadedDiff / timeDiff : 0
+          uploadSpeed.value = formatSpeed(bytesPerSec)
+          uploadDetailText.value = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`
+
+          lastLoaded = e.loaded
+          lastTime = now
+        }
+      }
+    }
+
+    xhr.onload = () => {
+      try {
+        const json = JSON.parse(xhr.responseText)
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve({ ok: true, status: xhr.status, data: json })
+        } else {
+          resolve({ ok: false, status: xhr.status, data: json })
+        }
+      } catch (err) {
+        reject(new Error(`解析响应失败: ${xhr.responseText.substring(0, 100)}`))
+      }
+    }
+
+    xhr.onerror = () => reject(new Error('网络请求异常或服务器连接被阻断'))
+    xhr.ontimeout = () => reject(new Error('上传请求超时'))
+    xhr.send(formData)
+  })
+}
+
 const fetchUploadConfig = async () => {
   try {
     const res = await fetch('/api/v1/admin/upload-config')
@@ -1355,6 +1451,11 @@ const handleFileUpload = async (event, targetObj, fieldName) => {
   if (!file) return
 
   uploadLoading.value = true
+  uploadProgress.value = 0
+  uploadSpeed.value = '0 KB/s'
+  uploadDetailText.value = `0 B / ${formatBytes(file.size)}`
+  uploadStatusLabel.value = '准备上传...'
+
   try {
     const isVideo = file.type.startsWith('video/') || fieldName === 'videoUrl'
 
@@ -1368,6 +1469,7 @@ const handleFileUpload = async (event, targetObj, fieldName) => {
       // Try Direct Upload if enabled
       if (enableDirectUpload.value) {
         try {
+          uploadStatusLabel.value = '⚡ [直传模式] 正在获取存储节点直传凭证...'
           const ticketRes = await fetch('/api/v1/admin/videos/upload-ticket', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1380,14 +1482,12 @@ const handleFileUpload = async (event, targetObj, fieldName) => {
             const directFormData = new FormData()
             directFormData.append('video', file)
 
-            const directRes = await fetch(ticket.uploadUrl, {
-              method: 'POST',
-              headers: ticket.headers || {},
-              body: directFormData
-            })
-            const directJson = await directRes.json()
+            uploadStatusLabel.value = `⚡ [直传模式] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
 
-            if (directRes.ok && directJson.data && directJson.data.videoUrl) {
+            const result = await uploadFileWithProgress(ticket.uploadUrl, directFormData, ticket.headers || {})
+            const directJson = result.data
+
+            if (result.ok && directJson.data && directJson.data.videoUrl) {
               target[fieldName] = directJson.data.videoUrl
               if (ticket.storageNodeId) {
                 target.storageNodeId = ticket.storageNodeId
@@ -1406,29 +1506,34 @@ const handleFileUpload = async (event, targetObj, fieldName) => {
 
       // Fallback to Proxy Upload if Direct Upload was skipped or failed
       if (!uploadSuccess) {
+        uploadProgress.value = 0
+        uploadSpeed.value = '0 KB/s'
+        uploadStatusLabel.value = '📦 [中转模式] 上传至主控服务器中转...'
+
         const formData = new FormData()
         formData.append('video', file)
         if (target && target.storageNodeId) {
           formData.append('nodeId', target.storageNodeId)
         }
 
-        const res = await fetch('/api/v1/admin/videos/upload', {
-          method: 'POST',
-          body: formData
-        })
-        const json = await res.json()
+        try {
+          const result = await uploadFileWithProgress('/api/v1/admin/videos/upload', formData)
+          const json = result.data
 
-        if (res.ok && json.data && json.data.videoUrl) {
-          target[fieldName] = json.data.videoUrl
-          if (json.data.storageNodeId) {
-            target.storageNodeId = json.data.storageNodeId
+          if (result.ok && json.data && json.data.videoUrl) {
+            target[fieldName] = json.data.videoUrl
+            if (json.data.storageNodeId) {
+              target.storageNodeId = json.data.storageNodeId
+            }
+            if (json.data.posterUrl && !target.poster) {
+              target.poster = json.data.posterUrl
+            }
+            ElMessage.success(`视频已成功上传至存储节点 [${json.data.storageNodeName || json.data.storageNodeId || 'Node-01'}]，第50帧封面已生成！`)
+          } else {
+            ElMessage.error(json.message || '存储节点上传失败')
           }
-          if (json.data.posterUrl && !target.poster) {
-            target.poster = json.data.posterUrl
-          }
-          ElMessage.success(`视频已成功上传至存储节点 [${json.data.storageNodeName || json.data.storageNodeId || 'Node-01'}]，第50帧封面已生成！`)
-        } else {
-          ElMessage.error(json.message || '存储节点上传失败')
+        } catch (proxyErr) {
+          ElMessage.error('上传失败: ' + proxyErr.message)
         }
       }
     } else {
