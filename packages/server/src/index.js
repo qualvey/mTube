@@ -1262,8 +1262,10 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
     .update(`${payloadStr}.${timestamp}.${nonce}`)
     .digest('hex')
 
-  const baseUrl = targetNode.baseUrl || 'http://localhost:3001'
-  const uploadUrl = `${baseUrl.replace(/\/$/, '')}/api/v1/storage/upload`
+  const cleanBase = baseUrl.replace(/\/$/, '')
+  const uploadUrl = `${cleanBase}/api/v1/storage/upload`
+  const chunkUploadUrl = `${cleanBase}/api/v1/storage/upload-chunk`
+  const mergeUrl = `${cleanBase}/api/v1/storage/merge-chunks`
 
   sendResponse(res, {
     enableDirectUpload,
@@ -1271,6 +1273,8 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
     storageNodeName: targetNode.name,
     baseUrl,
     uploadUrl,
+    chunkUploadUrl,
+    mergeUrl,
     headers: {
       'X-Cluster-Timestamp': timestamp,
       'X-Cluster-Nonce': nonce,
