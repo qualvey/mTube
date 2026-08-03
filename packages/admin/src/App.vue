@@ -1285,6 +1285,10 @@ const uploadFileWithProgress = (url, formData, headers = {}) => {
         const percent = Math.floor((e.loaded / e.total) * 100)
         uploadProgress.value = percent
 
+        if (percent >= 100) {
+          uploadStatusLabel.value = '📦 [中转模式] 浏览器文件已发送完毕，主控正在向存储节点二次传输与生成封面...'
+        }
+
         const now = Date.now()
         const timeDiff = (now - lastTime) / 1000
 
