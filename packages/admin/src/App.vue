@@ -1319,6 +1319,120 @@ const uploadFileWithProgress = (url, formData, headers = {}) => {
   })
 }
 
+const uploadFileParallelChunks = (ticket, file) => {
+  const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks
+  const CONCURRENCY_LIMIT = 4 // 4 parallel TCP sockets
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+  const uploadId = `up_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+
+  const chunkLoadedBytes = new Array(totalChunks).fill(0)
+  let lastTime = Date.now()
+  let lastTotalLoaded = 0
+
+  const updateOverallProgress = () => {
+    const totalLoaded = chunkLoadedBytes.reduce((sum, b) => sum + b, 0)
+    const percent = Math.floor((totalLoaded / file.size) * 100)
+    uploadProgress.value = Math.min(percent, 99)
+
+    const now = Date.now()
+    const timeDiff = (now - lastTime) / 1000
+
+    if (timeDiff >= 0.3 || totalLoaded === file.size) {
+      const loadedDiff = totalLoaded - lastTotalLoaded
+      const bytesPerSec = timeDiff > 0 ? loadedDiff / timeDiff : 0
+      uploadSpeed.value = formatSpeed(bytesPerSec)
+      uploadDetailText.value = `${formatBytes(totalLoaded)} / ${formatBytes(file.size)} (4并发通道)`
+
+      lastTotalLoaded = totalLoaded
+      lastTime = now
+    }
+  }
+
+  const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i)
+  let activeWorkers = 0
+  let hasError = false
+
+  return new Promise((resolve, reject) => {
+    const processNextChunk = () => {
+      if (hasError) return
+      if (chunkIndices.length === 0 && activeWorkers === 0) {
+        uploadStatusLabel.value = `⚡ [4并发直传] 分片完结，正在自动拼接文件并提取第50帧封面...`
+        fetch(ticket.mergeUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(ticket.headers || {})
+          },
+          body: JSON.stringify({
+            uploadId,
+            filename: file.name,
+            totalChunks
+          })
+        })
+          .then(r => r.json())
+          .then(mergeJson => {
+            if (mergeJson.code === 200 && mergeJson.data) {
+              uploadProgress.value = 100
+              resolve({ ok: true, status: 200, data: mergeJson })
+            } else {
+              reject(new Error(mergeJson.message || '分片拼接失败'))
+            }
+          })
+          .catch(err => reject(new Error('分片缝合请求失败: ' + err.message)))
+        return
+      }
+
+      while (activeWorkers < CONCURRENCY_LIMIT && chunkIndices.length > 0) {
+        const chunkIndex = chunkIndices.shift()
+        activeWorkers++
+
+        const start = chunkIndex * CHUNK_SIZE
+        const end = Math.min(start + CHUNK_SIZE, file.size)
+        const chunkBlob = file.slice(start, end)
+
+        const formData = new FormData()
+        formData.append('uploadId', uploadId)
+        formData.append('chunkIndex', chunkIndex.toString())
+        formData.append('totalChunks', totalChunks.toString())
+        formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`)
+
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', ticket.chunkUploadUrl, true)
+        Object.keys(ticket.headers || {}).forEach(k => xhr.setRequestHeader(k, ticket.headers[k]))
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            chunkLoadedBytes[chunkIndex] = e.loaded
+            updateOverallProgress()
+          }
+        }
+
+        xhr.onload = () => {
+          activeWorkers--
+          if (xhr.status >= 200 && xhr.status < 300) {
+            chunkLoadedBytes[chunkIndex] = end - start
+            updateOverallProgress()
+            processNextChunk()
+          } else {
+            hasError = true
+            reject(new Error(`分片 ${chunkIndex} 传输失败 HTTP ${xhr.status}`))
+          }
+        }
+
+        xhr.onerror = () => {
+          activeWorkers--
+          hasError = true
+          reject(new Error(`分片 ${chunkIndex} 网络错误`))
+        }
+
+        xhr.send(formData)
+      }
+    }
+
+    processNextChunk()
+  })
+}
+
 const fetchUploadConfig = async () => {
   try {
     const res = await fetch('/api/v1/admin/upload-config')
@@ -1479,24 +1593,42 @@ const handleFileUpload = async (event, targetObj, fieldName) => {
 
           if (ticketRes.ok && ticketJson.data && ticketJson.data.uploadUrl) {
             const ticket = ticketJson.data
-            const directFormData = new FormData()
-            directFormData.append('video', file)
+            if (ticket.chunkUploadUrl && ticket.mergeUrl && file.size >= 5 * 1024 * 1024) {
+              uploadStatusLabel.value = `⚡ [4并发直传] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
+              const result = await uploadFileParallelChunks(ticket, file)
+              const directJson = result.data
 
-            uploadStatusLabel.value = `⚡ [直传模式] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
-
-            const result = await uploadFileWithProgress(ticket.uploadUrl, directFormData, ticket.headers || {})
-            const directJson = result.data
-
-            if (result.ok && directJson.data && directJson.data.videoUrl) {
-              target[fieldName] = directJson.data.videoUrl
-              if (ticket.storageNodeId) {
-                target.storageNodeId = ticket.storageNodeId
+              if (result.ok && directJson.data && directJson.data.videoUrl) {
+                target[fieldName] = directJson.data.videoUrl
+                if (ticket.storageNodeId) {
+                  target.storageNodeId = ticket.storageNodeId
+                }
+                if (directJson.data.posterUrl && !target.poster) {
+                  target.poster = directJson.data.posterUrl
+                }
+                ElMessage.success(`⚡ [4通道并发直传成功] 视频已加速传输完成 [${ticket.storageNodeName || ticket.storageNodeId}]，第50帧封面已生成！`)
+                uploadSuccess = true
               }
-              if (directJson.data.posterUrl && !target.poster) {
-                target.poster = directJson.data.posterUrl
+            } else {
+              const directFormData = new FormData()
+              directFormData.append('video', file)
+
+              uploadStatusLabel.value = `⚡ [直传模式] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
+
+              const result = await uploadFileWithProgress(ticket.uploadUrl, directFormData, ticket.headers || {})
+              const directJson = result.data
+
+              if (result.ok && directJson.data && directJson.data.videoUrl) {
+                target[fieldName] = directJson.data.videoUrl
+                if (ticket.storageNodeId) {
+                  target.storageNodeId = ticket.storageNodeId
+                }
+                if (directJson.data.posterUrl && !target.poster) {
+                  target.poster = directJson.data.posterUrl
+                }
+                ElMessage.success(`⚡ [直传成功] 视频已直接传输至存储节点 [${ticket.storageNodeName || ticket.storageNodeId}]，第50帧封面已生成！`)
+                uploadSuccess = true
               }
-              ElMessage.success(`⚡ [直传成功] 视频已直接传输至存储节点 [${ticket.storageNodeName || ticket.storageNodeId}]，第50帧封面已生成！`)
-              uploadSuccess = true
             }
           }
         } catch (directErr) {

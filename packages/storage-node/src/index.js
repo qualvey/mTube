@@ -20,8 +20,11 @@ const publicDir = path.resolve(__dirname, '../public')
 const videosDir = path.resolve(publicDir, 'uploads/videos')
 const postersDir = path.resolve(publicDir, 'uploads/posters')
 
+const tempChunksDir = path.resolve(publicDir, 'uploads/temp_chunks')
+
 if (!fs.existsSync(videosDir)) fs.mkdirSync(videosDir, { recursive: true })
 if (!fs.existsSync(postersDir)) fs.mkdirSync(postersDir, { recursive: true })
+if (!fs.existsSync(tempChunksDir)) fs.mkdirSync(tempChunksDir, { recursive: true })
 
 app.use(cors({
   origin: '*',
@@ -33,7 +36,7 @@ app.use(express.json())
 // Serve static uploaded files (videos & posters with HTTP Range support)
 app.use('/uploads', express.static(path.resolve(publicDir, 'uploads')))
 
-// Multer storage config
+// Multer storage config for full single file
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, videosDir)
@@ -49,6 +52,21 @@ const upload = multer({
   storage,
   limits: { fileSize: 2 * 1024 * 1024 * 1024 } // 2GB limit per file
 })
+
+// Multer storage config for parallel chunks
+const chunkStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const uploadId = req.body.uploadId || 'temp_upload'
+    const targetDir = path.join(tempChunksDir, uploadId)
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
+    cb(null, targetDir)
+  },
+  filename: (req, _file, cb) => {
+    const chunkIndex = req.body.chunkIndex !== undefined ? req.body.chunkIndex : '0'
+    cb(null, `chunk_${chunkIndex}`)
+  }
+})
+const uploadChunkMulter = multer({ storage: chunkStorage, limits: { fileSize: 100 * 1024 * 1024 } })
 
 /**
  * Extract 50th frame (select=eq(n\,49)) from local video file using FFmpeg
@@ -154,6 +172,93 @@ app.post('/api/v1/storage/upload', upload.single('video'), async (req, res) => {
       posterUrl: publicPosterPath ? `${fullBaseUrl}${publicPosterPath}` : ''
     }
   })
+})
+
+// POST /api/v1/storage/upload-chunk - Receive single parallel file chunk
+app.post('/api/v1/storage/upload-chunk', uploadChunkMulter.single('chunk'), (req, res) => {
+  const { uploadId, chunkIndex, totalChunks } = req.body
+  if (!uploadId || chunkIndex === undefined) {
+    return res.status(400).json({ code: 400, message: '缺少 uploadId 或 chunkIndex 参数' })
+  }
+  res.json({
+    code: 200,
+    message: `分片 ${chunkIndex}/${totalChunks} 保存成功`,
+    data: { uploadId, chunkIndex: Number(chunkIndex) }
+  })
+})
+
+// POST /api/v1/storage/merge-chunks - Stitch parallel chunks into final video & extract frame 50 poster
+app.post('/api/v1/storage/merge-chunks', async (req, res) => {
+  const { uploadId, filename, totalChunks } = req.body
+  if (!uploadId || !totalChunks) {
+    return res.status(400).json({ code: 400, message: '缺少 uploadId 或 totalChunks 参数' })
+  }
+
+  const chunkDir = path.join(tempChunksDir, uploadId)
+  if (!fs.existsSync(chunkDir)) {
+    return res.status(404).json({ code: 404, message: '未找到分片文件临时目录' })
+  }
+
+  const ext = path.extname(filename || 'video.mp4') || '.mp4'
+  const hash = crypto.createHash('md5').update((filename || 'vid') + Date.now()).digest('hex').substring(0, 10)
+  const finalFilename = `vid_${Date.now()}_${hash}${ext}`
+  const finalVideoPath = path.join(videosDir, finalFilename)
+
+  try {
+    const writeStream = fs.createWriteStream(finalVideoPath)
+
+    for (let i = 0; i < Number(totalChunks); i++) {
+      const chunkPath = path.join(chunkDir, `chunk_${i}`)
+      if (!fs.existsSync(chunkPath)) {
+        writeStream.close()
+        return res.status(400).json({ code: 400, message: `缺失分片文件: chunk_${i}` })
+      }
+      const chunkBuffer = fs.readFileSync(chunkPath)
+      writeStream.write(chunkBuffer)
+    }
+    writeStream.end()
+
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', resolve)
+      writeStream.on('error', reject)
+    })
+
+    // Clean up temporary chunks directory
+    try {
+      fs.rmSync(chunkDir, { recursive: true, force: true })
+    } catch (e) {}
+
+    const publicVideoPath = `/uploads/videos/${finalFilename}`
+    const publicPosterPath = await generateFrame50Poster(finalVideoPath)
+
+    const nodePublicUrl = process.env.PUBLIC_URL || process.env.NODE_BASE_URL
+    const hostHeader = req.get('host') || `localhost:${PORT}`
+    const protocol = req.protocol || 'http'
+    const fullBaseUrl = (nodePublicUrl && !nodePublicUrl.includes('localhost'))
+      ? nodePublicUrl.replace(/\/$/, '')
+      : `${protocol}://${hostHeader}`
+
+    const stats = fs.statSync(finalVideoPath)
+
+    console.log(`[Storage Node 📦] Parallel chunks merged successfully: ${finalFilename} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`)
+
+    res.json({
+      code: 200,
+      message: '多分片并发传输与缝合完成！',
+      data: {
+        nodeId: NODE_ID,
+        filename: finalFilename,
+        sizeBytes: stats.size,
+        videoPath: publicVideoPath,
+        posterPath: publicPosterPath,
+        videoUrl: `${fullBaseUrl}${publicVideoPath}`,
+        posterUrl: publicPosterPath ? `${fullBaseUrl}${publicPosterPath}` : ''
+      }
+    })
+  } catch (err) {
+    console.error(`[Storage Node 📦] Chunk merge error for ${uploadId}:`, err.message)
+    res.status(500).json({ code: 500, message: `分片合并处理失败: ${err.message}` })
+  }
 })
 
 const MAIN_SERVER_URL = process.env.MAIN_SERVER_URL || 'http://localhost:3000'
