@@ -31,7 +31,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Cluster-Timestamp', 'X-Cluster-Nonce', 'X-Cluster-Signature']
 }))
-app.use(express.json())
+app.use(express.json({ limit: '100mb' }))
+app.use(express.urlencoded({ limit: '100mb', extended: true }))
 
 // Serve static uploaded files (videos & posters with HTTP Range support)
 app.use('/uploads', express.static(path.resolve(publicDir, 'uploads')))
