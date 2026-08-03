@@ -1301,6 +1301,10 @@ const uploadFileWithProgress = (url, formData, headers = {}) => {
     }
 
     xhr.onload = () => {
+      if (xhr.status === 413) {
+        reject(new Error('HTTP 413 请求体超出限制: Nginx 限制了文件上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
+        return
+      }
       try {
         const json = JSON.parse(xhr.responseText)
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -1309,7 +1313,7 @@ const uploadFileWithProgress = (url, formData, headers = {}) => {
           resolve({ ok: false, status: xhr.status, data: json })
         }
       } catch (err) {
-        reject(new Error(`解析响应失败: ${xhr.responseText.substring(0, 100)}`))
+        reject(new Error(`HTTP ${xhr.status} 响应解析异常: ${xhr.responseText.substring(0, 100)}`))
       }
     }
 
