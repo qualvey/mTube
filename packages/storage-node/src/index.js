@@ -235,6 +235,40 @@ app.post('/api/v1/storage/upload', upload.single('video'), async (req, res) => {
   })
 })
 
+// GET /api/v1/storage/check-chunks - Resumable upload check: Query existing uploaded chunks for uploadId
+app.get('/api/v1/storage/check-chunks', (req, res) => {
+  const uploadId = req.query.uploadId
+  if (!uploadId) {
+    return res.status(400).json({ code: 400, message: 'Missing uploadId parameter' })
+  }
+
+  const chunkDir = path.join(tempChunksDir, uploadId)
+  const existingChunks = []
+
+  if (fs.existsSync(chunkDir)) {
+    try {
+      const files = fs.readdirSync(chunkDir)
+      files.forEach(file => {
+        if (file.startsWith('chunk_')) {
+          const index = parseInt(file.replace('chunk_', ''), 10)
+          if (!isNaN(index)) {
+            existingChunks.push(index)
+          }
+        }
+      })
+    } catch (e) {}
+  }
+
+  res.json({
+    code: 200,
+    message: 'Uploaded chunks query successful',
+    data: {
+      uploadId,
+      uploadedChunks: existingChunks
+    }
+  })
+})
+
 // POST /api/v1/storage/upload-chunk - Receive single parallel file chunk
 app.post('/api/v1/storage/upload-chunk', uploadChunkMulter.single('chunk'), (req, res) => {
   const { uploadId, chunkIndex, totalChunks } = req.body

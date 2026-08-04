@@ -810,6 +810,7 @@ export const db = {
     const rows = database.prepare('SELECT * FROM settings').all()
     const settings = {
       enableSeekPreview: true,
+      uploadChunkConcurrency: 4,
       heroImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
       heroTitle: '极致诱惑',
       heroSubtitle: '滑动探索更多独家无删减内容',
@@ -823,6 +824,8 @@ export const db = {
     for (const r of rows) {
       if (r.key === 'enableSeekPreview' || r.key === 'enableNotice') {
         settings[r.key] = r.value === 'true'
+      } else if (r.key === 'uploadChunkConcurrency') {
+        settings[r.key] = Number(r.value) || 4
       } else {
         settings[r.key] = r.value
       }
