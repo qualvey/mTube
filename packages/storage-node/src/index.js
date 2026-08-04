@@ -34,6 +34,31 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }))
 app.use(express.urlencoded({ limit: '100mb', extended: true }))
 
+// Request Debug Tracing Middleware
+app.use((req, res, next) => {
+  const isDebug = process.env.DEBUG === 'true' || process.env.DEBUG === '1' || process.env.LOG_LEVEL === 'debug'
+  const startTime = Date.now()
+  const len = req.headers['content-length']
+  const formattedLen = len ? `${(Number(len) / 1024 / 1024).toFixed(2)} MB` : 'N/A'
+
+  if (isDebug) {
+    console.log(`[DEBUG 🐞] ${req.method} ${req.originalUrl || req.url} | Payload: ${formattedLen} | IP: ${req.ip || req.socket?.remoteAddress}`)
+  }
+
+  res.on('finish', () => {
+    const duration = Date.now() - startTime
+    if (res.statusCode >= 400) {
+      console.warn(`[WARN ⚠️] ${req.method} ${req.originalUrl || req.url} -> ${res.statusCode} (${duration}ms) [Payload: ${formattedLen}]`)
+      if (res.statusCode === 413) {
+        console.error(`[HTTP 413 ❌] Storage Node received payload exceeding limit (${formattedLen}). Check Nginx client_max_body_size 2000M; configuration.`)
+      }
+    } else if (isDebug) {
+      console.log(`[DEBUG 🐞] ${req.method} ${req.originalUrl || req.url} -> ${res.statusCode} (${duration}ms)`)
+    }
+  })
+  next()
+})
+
 // Serve static uploaded files (videos & posters with HTTP Range support)
 app.use('/uploads', express.static(path.resolve(publicDir, 'uploads')))
 
@@ -136,6 +161,41 @@ app.get('/api/v1/storage/status', (_req, res) => {
       posterCount,
       uptimeSeconds: Math.floor(process.uptime()),
       baseUrl: `http://localhost:${PORT}`
+    }
+  })
+})
+
+// GET /api/v1/storage/debug - Storage Node Debug Diagnostic Endpoint
+app.get('/api/v1/storage/debug', (req, res) => {
+  let videoCount = 0
+  let posterCount = 0
+  let tempChunkCount = 0
+  try { videoCount = fs.readdirSync(videosDir).length } catch (e) {}
+  try { posterCount = fs.readdirSync(postersDir).length } catch (e) {}
+  try { tempChunkCount = fs.readdirSync(tempChunksDir).length } catch (e) {}
+
+  res.json({
+    code: 200,
+    message: 'Storage Node Debug Diagnostic Report',
+    data: {
+      nodeId: NODE_ID,
+      nodeName: NODE_NAME,
+      port: PORT,
+      publicUrl: process.env.PUBLIC_URL || process.env.NODE_BASE_URL || 'Not set',
+      mainServerUrl: process.env.MAIN_SERVER_URL || 'Not set',
+      hasClusterSecret: !!process.env.CLUSTER_SECRET,
+      isDebugMode: process.env.DEBUG === 'true' || process.env.DEBUG === '1' || process.env.LOG_LEVEL === 'debug',
+      stats: {
+        videoCount,
+        posterCount,
+        tempChunkDirs: tempChunkCount,
+        uptimeSeconds: Math.floor(process.uptime()),
+        memoryUsage: process.memoryUsage()
+      },
+      clientInfo: {
+        ip: req.ip || req.socket?.remoteAddress,
+        headers: req.headers
+      }
     }
   })
 })

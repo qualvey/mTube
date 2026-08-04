@@ -1279,6 +1279,52 @@ app.get('/api/v1/admin/upload-config', (req, res) => {
   sendResponse(res, { enableDirectUpload }, 200, 'Upload config retrieved')
 })
 
+// GET /api/v1/admin/debug - System Debug Diagnostic Endpoint
+app.get('/api/v1/admin/debug', async (req, res) => {
+  const isCloudflare = !!(req.headers['cf-ray'] || req.headers['cf-connecting-ip'])
+  const nodes = db.getStorageNodes() || []
+  
+  const nodeProbes = await Promise.all(
+    nodes.map(async (n) => {
+      const cleanBase = (n.baseUrl || '').replace(/\/$/, '')
+      let isReachable = false
+      let details = null
+      try {
+        if (cleanBase) {
+          const r = await fetch(`${cleanBase}/api/v1/storage/status`, { signal: AbortSignal.timeout(2000) })
+          isReachable = r.ok
+          if (r.ok) details = await r.json()
+        }
+      } catch (e) {
+        details = e.message
+      }
+      return { id: n.id, name: n.name, baseUrl: n.baseUrl, isReachable, details }
+    })
+  )
+
+  sendResponse(res, {
+    server: {
+      uptimeSeconds: Math.floor(process.uptime()),
+      nodeVersion: process.version,
+      memoryUsage: process.memoryUsage(),
+      logLevel: logger.getLevel(),
+      isDebugMode: logger.isLevelEnabled('debug'),
+      enableDirectUpload: process.env.ENABLE_DIRECT_UPLOAD !== 'false',
+      hasClusterSecret: !!process.env.CLUSTER_SECRET
+    },
+    proxy: {
+      isCloudflareProxy: isCloudflare,
+      cfRay: req.headers['cf-ray'] || null,
+      cfConnectingIp: req.headers['cf-connecting-ip'] || null,
+      clientIp: req.ip || req.socket?.remoteAddress,
+      maxUploadNotes: isCloudflare
+        ? '⚠️ 检测到 Cloudflare 代理！Cloudflare 免费版对 POST 请求强加 100MB 限制。如需上传大文件，必须使用【浏览器 4 通道切片直传模式】(Direct Chunk Upload) 或关闭 Cloudflare 小黄云 CDN 代理。'
+        : '🟢 直接 Nginx/VPS 连接，上传限制受 Nginx client_max_body_size (建议 2000M) 约束。'
+    },
+    storageNodes: nodeProbes
+  }, 200, '系统 DEBUG 诊断报告已生成')
+})
+
 // POST /api/v1/admin/videos/upload-ticket - Generate Direct Upload Ticket for target storage node
 app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
   const enableDirectUpload = process.env.ENABLE_DIRECT_UPLOAD !== 'false'

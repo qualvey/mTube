@@ -40,7 +40,11 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
 
     xhr.onload = () => {
       if (xhr.status === 413) {
-        reject(new Error('HTTP 413 请求体超出限制: Nginx 限制了文件上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
+        if (url.includes('/admin/videos/upload')) {
+          reject(new Error('HTTP 413 请求体超出限制: 【中转模式】已触发 Cloudflare CDN 免费版 100MB 单次 POST 传输上限！请确保在后台启用【4通道切片直传模式】以绕过 100MB 限制。'))
+        } else {
+          reject(new Error('HTTP 413 请求体超出限制: VPS Nginx 限制了文件上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
+        }
         return
       }
       try {
