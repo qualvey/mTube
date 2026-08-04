@@ -1235,6 +1235,21 @@ app.post('/api/v1/admin/storage-nodes/:id/set-default', (req, res) => {
   sendResponse(res, node, 200, `存储节点 [${node.name}] 已成功设为默认上传节点`)
 })
 
+// GET /api/v1/admin/stats - Overview statistics (total revenue strictly from PAID orders)
+app.get('/api/v1/admin/stats', (_req, res) => {
+  const orders = db.getOrders() || []
+  const paidOrders = orders.filter(o => o.status === 'PAID' || o.status === 'SUCCESS' || o.paid === true)
+
+  const totalRevenue = paidOrders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0)
+  const paidOrderCount = paidOrders.length
+
+  sendResponse(res, {
+    totalRevenue,
+    paidOrderCount,
+    totalOrderCount: orders.length
+  }, 200, 'Dashboard stats retrieved')
+})
+
 // POST /api/v1/admin/login - Admin authentication login endpoint
 app.post('/api/v1/admin/login', (req, res) => {
   const { username, password } = req.body || {}
