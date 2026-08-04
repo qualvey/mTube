@@ -252,15 +252,26 @@ const handleFileUpload = async (event, fieldName) => {
           if (ticketRes.ok && ticketJson.data && ticketJson.data.uploadUrl) {
             const ticket = ticketJson.data
             if (ticket.chunkUploadUrl && ticket.mergeUrl && file.size >= 5 * 1024 * 1024) {
-              uploadStatusLabel.value = `⚡ [4并发直传] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
-              const result = await uploadFileParallelChunks(ticket, file, stateRefs)
+              let concurrencyLimit = 4
+              try {
+                const settingsRes = await fetch('/api/v1/admin/settings')
+                if (settingsRes.ok) {
+                  const sJson = await settingsRes.json()
+                  if (sJson.data && sJson.data.uploadChunkConcurrency) {
+                    concurrencyLimit = Number(sJson.data.uploadChunkConcurrency) || 4
+                  }
+                }
+              } catch (e) {}
+
+              uploadStatusLabel.value = `⚡ [${concurrencyLimit}并发直传] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
+              const result = await uploadFileParallelChunks(ticket, file, stateRefs, { concurrency: concurrencyLimit })
               const directJson = result.data
 
               if (result.ok && directJson.data && directJson.data.videoUrl) {
                 props.form[fieldName] = directJson.data.videoUrl
                 if (ticket.storageNodeId) props.form.storageNodeId = ticket.storageNodeId
                 if (directJson.data.posterUrl && !props.form.poster) props.form.poster = directJson.data.posterUrl
-                ElMessage.success(`⚡ [4通道并发直传成功] 已自动关联播放地址：${directJson.data.videoUrl}`)
+                ElMessage.success(`⚡ [${concurrencyLimit}通道并发直传成功] 已自动关联播放地址：${directJson.data.videoUrl}`)
                 uploadSuccess = true
               }
             } else {

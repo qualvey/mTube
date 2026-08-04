@@ -95,6 +95,13 @@
         <el-form-item label="默认全局备用存储节点地址">
           <el-input v-model="settings.activeStorageNodeUrl" placeholder="https://storage02.91cso.com" />
         </el-form-item>
+
+        <el-form-item label="直传切片 TCP 并发连接数 (Concurrency Limit)">
+          <el-input-number v-model="settings.uploadChunkConcurrency" :min="2" :max="8" :step="1" />
+          <span class="text-xs text-slate-500 ml-2">
+            (默认 4 通道并行，在劣质跨国网络下推荐开至 4-6 通道突破单 TCP 拥塞瓶颈)
+          </span>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -132,6 +139,7 @@ const settings = ref({
   heroTitle: '极致诱惑',
   heroSubtitle: '滑动探索更多独家无删减内容',
   enableSeekPreview: true,
+  uploadChunkConcurrency: 4,
   activeStorageNodeUrl: 'https://storage02.91cso.com'
 })
 

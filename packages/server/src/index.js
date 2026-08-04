@@ -935,6 +935,11 @@ app.put('/api/v1/admin/settings', (req, res) => {
   sendResponse(res, updated, 200, '系统配置保存成功')
 })
 
+app.post('/api/v1/admin/settings', (req, res) => {
+  const updated = db.updateSettings(req.body)
+  sendResponse(res, updated, 200, '系统配置保存成功')
+})
+
 app.get('/api/v1/admin/dashboard/stats', (req, res) => {
   const stats = db.getStats()
   sendResponse(res, stats)

@@ -65,16 +65,56 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
   })
 }
 
-export const uploadFileParallelChunks = (ticket, file, stateRefs = {}) => {
+export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, options = {}) => {
   const { uploadProgress, uploadSpeed, uploadDetailText, uploadStatusLabel } = stateRefs
   const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks
-  const CONCURRENCY_LIMIT = 4 // 4 parallel TCP sockets
+  const CONCURRENCY_LIMIT = Number(options.concurrency) || 4 // Configurable parallel TCP sockets (default 4)
+  const MAX_RETRIES = 3 // Max retries per chunk on network fluctuation
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
-  const uploadId = `up_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+
+  // Calculate deterministic uploadId for resumable upload matching
+  const sanitizeName = file.name.replace(/[^a-zA-Z0-9_\.-]/g, '_')
+  const fileHashInput = `${sanitizeName}_${file.size}_${file.lastModified}`
+  let uploadId = 'up_'
+  for (let i = 0; i < fileHashInput.length; i++) {
+    uploadId += fileHashInput.charCodeAt(i).toString(16)
+  }
+  uploadId = uploadId.substring(0, 48)
 
   const chunkLoadedBytes = new Array(totalChunks).fill(0)
+  const chunkRetries = new Array(totalChunks).fill(0)
   let lastTime = Date.now()
   let lastTotalLoaded = 0
+
+  // 1. Resumable Upload Check: Probe storage node for existing chunks
+  let existingChunkIndices = new Set()
+  try {
+    if (uploadStatusLabel) uploadStatusLabel.value = '⚡ [断点检查] 正在探测存储节点已有分片历史...'
+    const cleanBase = (ticket.baseUrl || '').replace(/\/$/, '')
+    const checkRes = await fetch(`${cleanBase}/api/v1/storage/check-chunks?uploadId=${uploadId}`, {
+      headers: ticket.headers || {}
+    })
+    if (checkRes.ok) {
+      const checkJson = await checkRes.json()
+      if (checkJson.data && Array.isArray(checkJson.data.uploadedChunks)) {
+        existingChunkIndices = new Set(checkJson.data.uploadedChunks)
+        if (existingChunkIndices.size > 0 && uploadStatusLabel) {
+          uploadStatusLabel.value = `⚡ [断点续传] 已命中历史进度！直接恢复 ${existingChunkIndices.size}/${totalChunks} 个已有分片`
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Resumable Check] Could not check existing chunks:', e.message)
+  }
+
+  // Mark already existing chunks as 100% completed
+  for (let i = 0; i < totalChunks; i++) {
+    if (existingChunkIndices.has(i)) {
+      const start = i * CHUNK_SIZE
+      const end = Math.min(start + CHUNK_SIZE, file.size)
+      chunkLoadedBytes[i] = end - start
+    }
+  }
 
   const updateOverallProgress = () => {
     const totalLoaded = chunkLoadedBytes.reduce((sum, b) => sum + b, 0)
@@ -88,14 +128,27 @@ export const uploadFileParallelChunks = (ticket, file, stateRefs = {}) => {
       const loadedDiff = totalLoaded - lastTotalLoaded
       const bytesPerSec = timeDiff > 0 ? loadedDiff / timeDiff : 0
       if (uploadSpeed) uploadSpeed.value = formatSpeed(bytesPerSec)
-      if (uploadDetailText) uploadDetailText.value = `${formatBytes(totalLoaded)} / ${formatBytes(file.size)} (4并发通道)`
+      if (uploadDetailText) {
+        const detailSuffix = existingChunkIndices.size > 0 ? ` (${CONCURRENCY_LIMIT}通道 / 断点恢复)` : ` (${CONCURRENCY_LIMIT}并发通道)`
+        uploadDetailText.value = `${formatBytes(totalLoaded)} / ${formatBytes(file.size)}${detailSuffix}`
+      }
 
       lastTotalLoaded = totalLoaded
       lastTime = now
     }
   }
 
-  const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i)
+  // Initial progress calculation in case existing chunks are restored
+  updateOverallProgress()
+
+  // Prepare remaining uncompleted chunk queue
+  const chunkIndices = []
+  for (let i = 0; i < totalChunks; i++) {
+    if (!existingChunkIndices.has(i)) {
+      chunkIndices.push(i)
+    }
+  }
+
   let activeWorkers = 0
   let hasError = false
 
@@ -104,7 +157,7 @@ export const uploadFileParallelChunks = (ticket, file, stateRefs = {}) => {
       if (hasError) return
       if (chunkIndices.length === 0 && activeWorkers === 0) {
         if (uploadStatusLabel) {
-          uploadStatusLabel.value = `⚡ [4并发直传] 分片完结，正在自动拼接文件并提取第50帧封面...`
+          uploadStatusLabel.value = `⚡ [${CONCURRENCY_LIMIT}并发直传] 所有分片就位，存储节点正在自动缝合文件与提取第50帧封面...`
         }
         fetch(ticket.mergeUrl, {
           method: 'POST',
@@ -135,51 +188,68 @@ export const uploadFileParallelChunks = (ticket, file, stateRefs = {}) => {
         const chunkIndex = chunkIndices.shift()
         activeWorkers++
 
-        const start = chunkIndex * CHUNK_SIZE
-        const end = Math.min(start + CHUNK_SIZE, file.size)
-        const chunkBlob = file.slice(start, end)
+        const sendChunkXHR = () => {
+          const start = chunkIndex * CHUNK_SIZE
+          const end = Math.min(start + CHUNK_SIZE, file.size)
+          const chunkBlob = file.slice(start, end)
 
-        const formData = new FormData()
-        formData.append('uploadId', uploadId)
-        formData.append('chunkIndex', chunkIndex.toString())
-        formData.append('totalChunks', totalChunks.toString())
-        formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`)
+          const formData = new FormData()
+          formData.append('uploadId', uploadId)
+          formData.append('chunkIndex', chunkIndex.toString())
+          formData.append('totalChunks', totalChunks.toString())
+          formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`)
 
-        const xhr = new XMLHttpRequest()
-        xhr.open('POST', ticket.chunkUploadUrl, true)
-        Object.keys(ticket.headers || {}).forEach(k => xhr.setRequestHeader(k, ticket.headers[k]))
+          const xhr = new XMLHttpRequest()
+          xhr.open('POST', ticket.chunkUploadUrl, true)
+          Object.keys(ticket.headers || {}).forEach(k => xhr.setRequestHeader(k, ticket.headers[k]))
 
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            chunkLoadedBytes[chunkIndex] = e.loaded
-            updateOverallProgress()
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              chunkLoadedBytes[chunkIndex] = e.loaded
+              updateOverallProgress()
+            }
           }
+
+          const handleChunkFailure = (errorMsg) => {
+            if (chunkRetries[chunkIndex] < MAX_RETRIES) {
+              chunkRetries[chunkIndex]++
+              console.warn(`[Chunk Upload Retry] Retry ${chunkRetries[chunkIndex]}/${MAX_RETRIES} for chunk_${chunkIndex}: ${errorMsg}`)
+              if (uploadStatusLabel) {
+                uploadStatusLabel.value = `⚡ [抖动重试] 分片 ${chunkIndex + 1}/${totalChunks} 正在自动进行第 ${chunkRetries[chunkIndex]}/${MAX_RETRIES} 次重试...`
+              }
+              setTimeout(() => {
+                sendChunkXHR()
+              }, 1000 * chunkRetries[chunkIndex])
+            } else {
+              activeWorkers--
+              hasError = true
+              reject(new Error(`分片 ${chunkIndex + 1} 重试 ${MAX_RETRIES} 次均失败: ${errorMsg}`))
+            }
+          }
+
+          xhr.onload = () => {
+            if (xhr.status === 413) {
+              activeWorkers--
+              hasError = true
+              reject(new Error('HTTP 413 请求体超出限制: Nginx 限制了分片上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
+              return
+            }
+            if (xhr.status >= 200 && xhr.status < 300) {
+              activeWorkers--
+              chunkLoadedBytes[chunkIndex] = end - start
+              updateOverallProgress()
+              processNextChunk()
+            } else {
+              handleChunkFailure(`HTTP ${xhr.status}`)
+            }
+          }
+
+          xhr.onerror = () => handleChunkFailure('网络断开或请求阻断')
+          xhr.ontimeout = () => handleChunkFailure('请求超时')
+          xhr.send(formData)
         }
 
-        xhr.onload = () => {
-          activeWorkers--
-          if (xhr.status === 413) {
-            hasError = true
-            reject(new Error('HTTP 413 请求体超出限制: Nginx 限制了分片上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
-            return
-          }
-          if (xhr.status >= 200 && xhr.status < 300) {
-            chunkLoadedBytes[chunkIndex] = end - start
-            updateOverallProgress()
-            processNextChunk()
-          } else {
-            hasError = true
-            reject(new Error(`分片 ${chunkIndex} 传输失败 HTTP ${xhr.status}`))
-          }
-        }
-
-        xhr.onerror = () => {
-          activeWorkers--
-          hasError = true
-          reject(new Error(`分片 ${chunkIndex} 网络错误`))
-        }
-
-        xhr.send(formData)
+        sendChunkXHR()
       }
     }
 
