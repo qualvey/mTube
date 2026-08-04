@@ -1056,7 +1056,9 @@
     </el-form>
     <template #footer>
       <el-button @click="showAddDialog = false">取消</el-button>
-      <el-button type="warning" class="font-bold" @click="submitAddVideo">立即提交发布</el-button>
+      <el-button type="warning" class="font-bold" :loading="uploadLoading" :disabled="uploadLoading" @click="submitAddVideo">
+        {{ uploadLoading ? '视频传输中...' : '立即提交发布' }}
+      </el-button>
     </template>
   </el-dialog>
 
@@ -1149,7 +1151,9 @@
     </el-form>
     <template #footer>
       <el-button @click="showEditDialog = false">取消</el-button>
-      <el-button type="warning" class="font-bold" @click="submitEditVideo">保存更新</el-button>
+      <el-button type="warning" class="font-bold" :loading="uploadLoading" :disabled="uploadLoading" @click="submitEditVideo">
+        {{ uploadLoading ? '视频传输中...' : '保存更新' }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -1910,8 +1914,16 @@ const openAddVideoDialog = () => {
 }
 
 const submitAddVideo = async () => {
-  if (!newVideoForm.value.title || !newVideoForm.value.videoUrl) {
-    ElMessage.warning('请填写完整的标题和视频播放地址')
+  if (uploadLoading.value) {
+    ElMessage.warning('视频仍在传输或拼接处理中，请稍候再提交发布')
+    return
+  }
+  if (!newVideoForm.value.title) {
+    ElMessage.warning('请填写视频标题')
+    return
+  }
+  if (!newVideoForm.value.videoUrl) {
+    ElMessage.warning('请先成功上传本地视频或手动填写视频播放地址')
     return
   }
 
@@ -1977,8 +1989,16 @@ const openEditDialog = (video) => {
 }
 
 const submitEditVideo = async () => {
-  if (!editVideoForm.value.title || !editVideoForm.value.videoUrl) {
-    ElMessage.warning('请填写完整的标题和视频播放地址')
+  if (uploadLoading.value) {
+    ElMessage.warning('视频仍在传输或拼接处理中，请稍候再保存')
+    return
+  }
+  if (!editVideoForm.value.title) {
+    ElMessage.warning('请填写视频标题')
+    return
+  }
+  if (!editVideoForm.value.videoUrl) {
+    ElMessage.warning('请先成功上传本地视频或手动填写视频播放地址')
     return
   }
 
