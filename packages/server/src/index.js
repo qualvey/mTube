@@ -1189,19 +1189,23 @@ app.get('/api/v1/admin/storage-nodes', async (req, res) => {
     nodes.map(async (n) => {
       let isOnline = false
       let videoCount = 0
+      const cleanBase = (n.baseUrl || '').replace(/\/$/, '')
       try {
-        const resp = await fetch(`${n.baseUrl}/api/v1/storage/status`, { signal: AbortSignal.timeout(2000) })
-        if (resp.ok) {
-          const json = await resp.json()
-          isOnline = true
-          videoCount = json.data?.videoCount || 0
+        if (cleanBase) {
+          const resp = await fetch(`${cleanBase}/api/v1/storage/status`, { signal: AbortSignal.timeout(3000) })
+          if (resp.ok) {
+            const json = await resp.json()
+            isOnline = true
+            videoCount = json.data?.videoCount || 0
+          }
         }
       } catch (e) {
         isOnline = false
       }
       return {
         ...n,
-        status: isOnline ? 'ONLINE' : 'OFFLINE',
+        status: isOnline ? 'HEALTHY' : 'UNHEALTHY',
+        isOnline,
         videoCount
       }
     })

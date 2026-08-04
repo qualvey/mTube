@@ -32,8 +32,8 @@
               <span class="font-bold text-slate-800 text-base">{{ node.name }}</span>
               <el-tag v-if="node.isDefault" size="small" type="warning" effect="dark" class="font-bold">⭐ 默认节点</el-tag>
             </div>
-            <el-tag :type="node.status === 'HEALTHY' ? 'success' : 'danger'" size="small" class="font-bold">
-              {{ node.status === 'HEALTHY' ? '🟢 连通正常' : '🔴 连通异常' }}
+            <el-tag :type="(node.status === 'HEALTHY' || node.status === 'ONLINE' || node.isOnline) ? 'success' : 'danger'" size="small" class="font-bold">
+              {{ (node.status === 'HEALTHY' || node.status === 'ONLINE' || node.isOnline) ? '🟢 连通正常' : '🔴 连通异常' }}
             </el-tag>
           </div>
 

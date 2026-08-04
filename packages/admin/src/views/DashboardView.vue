@@ -91,15 +91,15 @@
           v-for="node in storageNodes"
           :key="node.id"
           class="p-4 rounded-xl border flex flex-col justify-between transition-all"
-          :class="node.status === 'HEALTHY' ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/50 border-rose-200'"
+          :class="(node.status === 'HEALTHY' || node.status === 'ONLINE' || node.isOnline) ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/50 border-rose-200'"
         >
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="font-bold text-slate-800 text-sm">{{ node.name }}</span>
               <el-tag v-if="node.isDefault" size="small" type="warning" effect="dark">默认上传</el-tag>
             </div>
-            <el-tag :type="node.status === 'HEALTHY' ? 'success' : 'danger'" size="small" class="font-bold">
-              {{ node.status === 'HEALTHY' ? '🟢 连通正常' : '🔴 连通异常' }}
+            <el-tag :type="(node.status === 'HEALTHY' || node.status === 'ONLINE' || node.isOnline) ? 'success' : 'danger'" size="small" class="font-bold">
+              {{ (node.status === 'HEALTHY' || node.status === 'ONLINE' || node.isOnline) ? '🟢 连通正常' : '🔴 连通异常' }}
             </el-tag>
           </div>
 
