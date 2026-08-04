@@ -178,26 +178,41 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
     }
   }
 
+  // sessionBaseBytes: bytes already done before this session (from resumable restore)
+  // Speed is measured only against NEW bytes uploaded in this session
+  const sessionBaseBytes = chunkDoneBytes.reduce((a, b) => a + b, 0)
   let lastReportTime = Date.now()
-  let lastReportedBytes = chunkDoneBytes.reduce((a, b) => a + b, 0)
+  let lastReportedBytes = sessionBaseBytes
 
-  const reportProgress = () => {
+  const reportProgress = (forceUpdate = false) => {
     const totalDone = chunkDoneBytes.reduce((a, b) => a + b, 0)
     const pct = Math.floor((totalDone / file.size) * 100)
     if (uploadProgress) uploadProgress.value = Math.min(pct, 99)
 
     const now = Date.now()
     const elapsed = (now - lastReportTime) / 1000
-    if (elapsed >= 0.4) {
-      const delta = totalDone - lastReportedBytes
-      const speed = delta / elapsed
-      if (uploadSpeed) uploadSpeed.value = formatSpeed(speed)
+    if (forceUpdate || elapsed >= 0.4) {
+      // Only count bytes uploaded in THIS session for speed display
+      const newBytesThisInterval = totalDone - lastReportedBytes
+      const speed = elapsed > 0 ? newBytesThisInterval / elapsed : 0
+
+      if (uploadSpeed) {
+        if (speed > 0) {
+          uploadSpeed.value = formatSpeed(speed)
+        } else if (forceUpdate && resumedChunks.size > 0) {
+          uploadSpeed.value = '⏸ 恢复中'
+        }
+      }
+
       if (uploadDetailText) {
         const tag = resumedChunks.size > 0 ? `${CONCURRENCY}通道+断点恢复` : `${CONCURRENCY}通道暴力直传`
         uploadDetailText.value = `${formatBytes(totalDone)} / ${formatBytes(file.size)} (${tag})`
       }
-      lastReportTime = now
-      lastReportedBytes = totalDone
+
+      if (!forceUpdate) {
+        lastReportTime = now
+        lastReportedBytes = totalDone
+      }
     }
   }
 
@@ -276,7 +291,7 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
             // ✅ Chunk uploaded successfully
             chunkDoneBytes[chunkIndex] = end - start
             active--
-            reportProgress()
+            reportProgress(false)
             next()
           } catch (err) {
             if (retry < MAX_RETRIES) {
@@ -299,7 +314,7 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
       }
     }
 
-    reportProgress() // Show initial restored progress
+    reportProgress(true) // Force initial render with correct byte count
     next()
   })
 }
