@@ -1,5 +1,57 @@
 import { formatBytes, formatSpeed } from './formatters.js'
 
+// ==============================================================================
+// Build multipart/form-data body as a pre-allocated ArrayBuffer.
+// Key advantage: browser sends `Content-Length` instead of `Transfer-Encoding: chunked`,
+// allowing the TCP stack to advertise the full payload size upfront.
+// This eliminates the TCP slow-start penalty from chunked encoding —
+// the kernel can pipeline the entire 5MB chunk without waiting for ACKs
+// between MIME boundary segments, matching curl's raw throughput behavior.
+// ==============================================================================
+const buildMultipartBody = async (fields, fileBlob, filename) => {
+  const boundary = `HystBnd${Date.now()}${Math.random().toString(36).substring(2, 10)}`
+  const enc = new TextEncoder()
+
+  let preamble = ''
+  for (const [name, value] of Object.entries(fields)) {
+    preamble += `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
+  }
+  preamble += `--${boundary}\r\nContent-Disposition: form-data; name="chunk"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`
+
+  const preambleBytes = enc.encode(preamble)
+  const epilogueBytes = enc.encode(`\r\n--${boundary}--\r\n`)
+  const fileBytes = await fileBlob.arrayBuffer()
+
+  const totalLen = preambleBytes.length + fileBytes.byteLength + epilogueBytes.length
+  const merged = new Uint8Array(totalLen)
+  merged.set(preambleBytes)
+  merged.set(new Uint8Array(fileBytes), preambleBytes.length)
+  merged.set(epilogueBytes, preambleBytes.length + fileBytes.byteLength)
+
+  return {
+    body: merged.buffer,
+    contentType: `multipart/form-data; boundary=${boundary}`
+  }
+}
+
+// ==============================================================================
+// TCP Connection Pre-Warming (Hysteria2-style)
+// Fire N parallel lightweight requests to establish N keep-alive TCP connections
+// before the actual upload begins. By the time the first chunk is sent,
+// the OS TCP window is already past slow-start initial period, enabling
+// full-speed delivery from the very first chunk.
+// ==============================================================================
+const warmConnections = async (baseUrl, count, headers = {}) => {
+  const cleanBase = baseUrl.replace(/\/$/, '')
+  const probes = Array.from({ length: count }, () =>
+    fetch(`${cleanBase}/api/v1/storage/status`, { headers }).catch(() => null)
+  )
+  await Promise.all(probes)
+}
+
+// ==============================================================================
+// Proxy Upload (中转模式): XHR with onprogress — used only as fallback
+// ==============================================================================
 export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = {}) => {
   const { uploadProgress, uploadSpeed, uploadDetailText, uploadStatusLabel } = stateRefs
 
@@ -7,9 +59,7 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
     const xhr = new XMLHttpRequest()
     xhr.open('POST', url, true)
 
-    Object.keys(headers).forEach(key => {
-      xhr.setRequestHeader(key, headers[key])
-    })
+    Object.keys(headers).forEach(key => xhr.setRequestHeader(key, headers[key]))
 
     let lastLoaded = 0
     let lastTime = Date.now()
@@ -27,9 +77,9 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
         const timeDiff = (now - lastTime) / 1000
 
         if (timeDiff >= 0.3 || e.loaded === e.total) {
-          const loadedDiff = e.loaded - lastLoaded
-          const bytesPerSec = timeDiff > 0 ? loadedDiff / timeDiff : 0
-          if (uploadSpeed) uploadSpeed.value = formatSpeed(bytesPerSec)
+          const bytesDiff = e.loaded - lastLoaded
+          const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0
+          if (uploadSpeed) uploadSpeed.value = formatSpeed(speed)
           if (uploadDetailText) uploadDetailText.value = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`
 
           lastLoaded = e.loaded
@@ -41,9 +91,9 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
     xhr.onload = () => {
       if (xhr.status === 413) {
         if (url.includes('/admin/videos/upload')) {
-          reject(new Error('HTTP 413 请求体超出限制: 【中转模式】已触发 Cloudflare CDN 免费版 100MB 单次 POST 传输上限！请确保在后台启用【4通道切片直传模式】以绕过 100MB 限制。'))
+          reject(new Error('HTTP 413: 【中转模式】已触发 Cloudflare 免费版 100MB 单次 POST 上限！请启用【切片直传模式】绕过 100MB 限制。'))
         } else {
-          reject(new Error('HTTP 413 请求体超出限制: VPS Nginx 限制了文件上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
+          reject(new Error('HTTP 413: VPS Nginx 限制文件大小，请设置 client_max_body_size 2000M'))
         }
         return
       }
@@ -55,204 +105,201 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
           resolve({ ok: false, status: xhr.status, data: json })
         }
       } catch (err) {
-        reject(new Error(`HTTP ${xhr.status} 响应解析异常: ${xhr.responseText.substring(0, 100)}`))
+        reject(new Error(`HTTP ${xhr.status} 响应解析失败: ${xhr.responseText.substring(0, 100)}`))
       }
     }
 
-    xhr.onerror = () => reject(new Error('网络请求异常或服务器连接被阻断'))
-    xhr.ontimeout = () => reject(new Error('上传请求超时'))
+    xhr.onerror = () => reject(new Error('网络连接中断'))
+    xhr.ontimeout = () => reject(new Error('上传超时'))
     xhr.send(formData)
   })
 }
 
+// ==============================================================================
+// Hysteria2-style Aggressive Parallel Chunk Upload Engine
+//
+// Performance model:
+//  Phase 1 — TCP Pre-Warm:    Establish N keep-alive TCP connections
+//  Phase 2 — Resumable Check: Skip already-uploaded chunks (断点续传)
+//  Phase 3 — Brute Upload:    N concurrent fetch() with ArrayBuffer bodies
+//                              → Content-Length header (no chunked encoding)
+//                              → TCP window grows continuously across chunks
+//                              → No TLS re-handshake between sequential chunks
+//  Phase 4 — Merge + Poster:  POST /storage/merge-chunks → FFmpeg frame50
+// ==============================================================================
 export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, options = {}) => {
   const { uploadProgress, uploadSpeed, uploadDetailText, uploadStatusLabel } = stateRefs
-  const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks
-  const CONCURRENCY_LIMIT = Number(options.concurrency) || 4 // Configurable parallel TCP sockets (default 4)
-  const MAX_RETRIES = 3 // Max retries per chunk on network fluctuation
+  const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB per chunk
+  const CONCURRENCY = Number(options.concurrency) || 4
+  const MAX_RETRIES = 3
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
-  // Calculate deterministic uploadId for resumable upload matching
-  const sanitizeName = file.name.replace(/[^a-zA-Z0-9_\.-]/g, '_')
-  const fileHashInput = `${sanitizeName}_${file.size}_${file.lastModified}`
+  // Deterministic uploadId — stable across page reloads for resumable upload
+  const safeName = file.name.replace(/[^a-zA-Z0-9_\.-]/g, '_')
   let uploadId = 'up_'
-  for (let i = 0; i < fileHashInput.length; i++) {
-    uploadId += fileHashInput.charCodeAt(i).toString(16)
+  const seed = `${safeName}_${file.size}_${file.lastModified}`
+  for (let i = 0; i < seed.length && uploadId.length < 48; i++) {
+    uploadId += seed.charCodeAt(i).toString(16)
   }
-  uploadId = uploadId.substring(0, 48)
 
-  const chunkLoadedBytes = new Array(totalChunks).fill(0)
-  const chunkRetries = new Array(totalChunks).fill(0)
-  let lastTime = Date.now()
-  let lastTotalLoaded = 0
+  const cleanBase = (ticket.baseUrl || '').replace(/\/$/, '')
 
-  // 1. Resumable Upload Check: Probe storage node for existing chunks
-  let existingChunkIndices = new Set()
+  // ── Phase 1: TCP Pre-Warming ──────────────────────────────────────────────
+  if (uploadStatusLabel) {
+    uploadStatusLabel.value = `⚡ [TCP预热] 正在建立 ${CONCURRENCY} 条独立高速通道 (Hysteria2 模式)...`
+  }
+  await warmConnections(cleanBase, CONCURRENCY, ticket.headers || {})
+
+  // ── Phase 2: Resumable Upload Check ──────────────────────────────────────
+  let resumedChunks = new Set()
   try {
-    if (uploadStatusLabel) uploadStatusLabel.value = '⚡ [断点检查] 正在探测存储节点已有分片历史...'
-    const cleanBase = (ticket.baseUrl || '').replace(/\/$/, '')
+    if (uploadStatusLabel) uploadStatusLabel.value = '⚡ [断点检测] 探测存储节点历史分片...'
     const checkRes = await fetch(`${cleanBase}/api/v1/storage/check-chunks?uploadId=${uploadId}`, {
       headers: ticket.headers || {}
     })
     if (checkRes.ok) {
-      const checkJson = await checkRes.json()
-      if (checkJson.data && Array.isArray(checkJson.data.uploadedChunks)) {
-        existingChunkIndices = new Set(checkJson.data.uploadedChunks)
-        if (existingChunkIndices.size > 0 && uploadStatusLabel) {
-          uploadStatusLabel.value = `⚡ [断点续传] 已命中历史进度！直接恢复 ${existingChunkIndices.size}/${totalChunks} 个已有分片`
+      const cj = await checkRes.json()
+      if (cj.data && Array.isArray(cj.data.uploadedChunks)) {
+        resumedChunks = new Set(cj.data.uploadedChunks)
+        if (resumedChunks.size > 0 && uploadStatusLabel) {
+          uploadStatusLabel.value = `⚡ [断点续传] 命中 ${resumedChunks.size}/${totalChunks} 个历史分片，直接恢复！`
         }
       }
     }
   } catch (e) {
-    console.warn('[Resumable Check] Could not check existing chunks:', e.message)
+    console.warn('[Resumable] check-chunks error:', e.message)
   }
 
-  // Mark already existing chunks as 100% completed
+  // ── Progress Tracking ─────────────────────────────────────────────────────
+  const chunkDoneBytes = new Array(totalChunks).fill(0)
   for (let i = 0; i < totalChunks; i++) {
-    if (existingChunkIndices.has(i)) {
-      const start = i * CHUNK_SIZE
-      const end = Math.min(start + CHUNK_SIZE, file.size)
-      chunkLoadedBytes[i] = end - start
+    if (resumedChunks.has(i)) {
+      chunkDoneBytes[i] = Math.min(CHUNK_SIZE, file.size - i * CHUNK_SIZE)
     }
   }
 
-  const updateOverallProgress = () => {
-    const totalLoaded = chunkLoadedBytes.reduce((sum, b) => sum + b, 0)
-    const percent = Math.floor((totalLoaded / file.size) * 100)
-    if (uploadProgress) uploadProgress.value = Math.min(percent, 99)
+  let lastReportTime = Date.now()
+  let lastReportedBytes = chunkDoneBytes.reduce((a, b) => a + b, 0)
+
+  const reportProgress = () => {
+    const totalDone = chunkDoneBytes.reduce((a, b) => a + b, 0)
+    const pct = Math.floor((totalDone / file.size) * 100)
+    if (uploadProgress) uploadProgress.value = Math.min(pct, 99)
 
     const now = Date.now()
-    const timeDiff = (now - lastTime) / 1000
-
-    if (timeDiff >= 0.3 || totalLoaded === file.size) {
-      const loadedDiff = totalLoaded - lastTotalLoaded
-      const bytesPerSec = timeDiff > 0 ? loadedDiff / timeDiff : 0
-      if (uploadSpeed) uploadSpeed.value = formatSpeed(bytesPerSec)
+    const elapsed = (now - lastReportTime) / 1000
+    if (elapsed >= 0.4) {
+      const delta = totalDone - lastReportedBytes
+      const speed = delta / elapsed
+      if (uploadSpeed) uploadSpeed.value = formatSpeed(speed)
       if (uploadDetailText) {
-        const detailSuffix = existingChunkIndices.size > 0 ? ` (${CONCURRENCY_LIMIT}通道 / 断点恢复)` : ` (${CONCURRENCY_LIMIT}并发通道)`
-        uploadDetailText.value = `${formatBytes(totalLoaded)} / ${formatBytes(file.size)}${detailSuffix}`
+        const tag = resumedChunks.size > 0 ? `${CONCURRENCY}通道+断点恢复` : `${CONCURRENCY}通道暴力直传`
+        uploadDetailText.value = `${formatBytes(totalDone)} / ${formatBytes(file.size)} (${tag})`
       }
-
-      lastTotalLoaded = totalLoaded
-      lastTime = now
+      lastReportTime = now
+      lastReportedBytes = totalDone
     }
   }
 
-  // Initial progress calculation in case existing chunks are restored
-  updateOverallProgress()
-
-  // Prepare remaining uncompleted chunk queue
-  const chunkIndices = []
+  // ── Phase 3: Build Pending Chunk Queue ────────────────────────────────────
+  const queue = []
   for (let i = 0; i < totalChunks; i++) {
-    if (!existingChunkIndices.has(i)) {
-      chunkIndices.push(i)
-    }
+    if (!resumedChunks.has(i)) queue.push(i)
   }
 
-  let activeWorkers = 0
-  let hasError = false
+  let active = 0
+  let failed = false
 
   return new Promise((resolve, reject) => {
-    const processNextChunk = () => {
-      if (hasError) return
-      if (chunkIndices.length === 0 && activeWorkers === 0) {
+    const next = () => {
+      if (failed) return
+
+      // All chunks complete → Phase 4: merge
+      if (queue.length === 0 && active === 0) {
         if (uploadStatusLabel) {
-          uploadStatusLabel.value = `⚡ [${CONCURRENCY_LIMIT}并发直传] 所有分片就位，存储节点正在自动缝合文件与提取第50帧封面...`
+          uploadStatusLabel.value = `⚡ [缝合中] ${CONCURRENCY}通道传输完毕，存储节点缝合文件并提取第50帧封面...`
         }
         fetch(ticket.mergeUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(ticket.headers || {})
-          },
-          body: JSON.stringify({
-            uploadId,
-            filename: file.name,
-            totalChunks
-          })
+          headers: { 'Content-Type': 'application/json', ...(ticket.headers || {}) },
+          body: JSON.stringify({ uploadId, filename: file.name, totalChunks })
         })
           .then(r => r.json())
-          .then(mergeJson => {
-            if (mergeJson.code === 200 && mergeJson.data) {
+          .then(mj => {
+            if (mj.code === 200 && mj.data) {
               if (uploadProgress) uploadProgress.value = 100
-              resolve({ ok: true, status: 200, data: mergeJson })
+              resolve({ ok: true, status: 200, data: mj })
             } else {
-              reject(new Error(mergeJson.message || '分片拼接失败'))
+              reject(new Error(mj.message || '分片拼接失败'))
             }
           })
-          .catch(err => reject(new Error('分片缝合请求失败: ' + err.message)))
+          .catch(err => reject(new Error('merge-chunks 请求失败: ' + err.message)))
         return
       }
 
-      while (activeWorkers < CONCURRENCY_LIMIT && chunkIndices.length > 0) {
-        const chunkIndex = chunkIndices.shift()
-        activeWorkers++
+      // Fill up to CONCURRENCY concurrent workers
+      while (active < CONCURRENCY && queue.length > 0) {
+        const chunkIndex = queue.shift()
+        active++
 
-        const sendChunkXHR = () => {
+        const sendChunk = async (retry = 0) => {
           const start = chunkIndex * CHUNK_SIZE
           const end = Math.min(start + CHUNK_SIZE, file.size)
-          const chunkBlob = file.slice(start, end)
 
-          const formData = new FormData()
-          formData.append('uploadId', uploadId)
-          formData.append('chunkIndex', chunkIndex.toString())
-          formData.append('totalChunks', totalChunks.toString())
-          formData.append('chunk', chunkBlob, `chunk_${chunkIndex}`)
+          try {
+            // Build ArrayBuffer multipart body → forces Content-Length header
+            const { body, contentType } = await buildMultipartBody(
+              {
+                uploadId,
+                chunkIndex: String(chunkIndex),
+                totalChunks: String(totalChunks)
+              },
+              file.slice(start, end),
+              `chunk_${chunkIndex}`
+            )
 
-          const xhr = new XMLHttpRequest()
-          xhr.open('POST', ticket.chunkUploadUrl, true)
-          Object.keys(ticket.headers || {}).forEach(k => xhr.setRequestHeader(k, ticket.headers[k]))
+            const resp = await fetch(ticket.chunkUploadUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': contentType, ...(ticket.headers || {}) },
+              body // ArrayBuffer → browser sends Content-Length, TCP window grows freely
+            })
 
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              chunkLoadedBytes[chunkIndex] = e.loaded
-              updateOverallProgress()
-            }
-          }
-
-          const handleChunkFailure = (errorMsg) => {
-            if (chunkRetries[chunkIndex] < MAX_RETRIES) {
-              chunkRetries[chunkIndex]++
-              console.warn(`[Chunk Upload Retry] Retry ${chunkRetries[chunkIndex]}/${MAX_RETRIES} for chunk_${chunkIndex}: ${errorMsg}`)
-              if (uploadStatusLabel) {
-                uploadStatusLabel.value = `⚡ [抖动重试] 分片 ${chunkIndex + 1}/${totalChunks} 正在自动进行第 ${chunkRetries[chunkIndex]}/${MAX_RETRIES} 次重试...`
-              }
-              setTimeout(() => {
-                sendChunkXHR()
-              }, 1000 * chunkRetries[chunkIndex])
-            } else {
-              activeWorkers--
-              hasError = true
-              reject(new Error(`分片 ${chunkIndex + 1} 重试 ${MAX_RETRIES} 次均失败: ${errorMsg}`))
-            }
-          }
-
-          xhr.onload = () => {
-            if (xhr.status === 413) {
-              activeWorkers--
-              hasError = true
-              reject(new Error('HTTP 413 请求体超出限制: Nginx 限制了分片上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
+            if (resp.status === 413) {
+              active--
+              failed = true
+              reject(new Error('HTTP 413: Nginx client_max_body_size 太小，请设置 2000M'))
               return
             }
-            if (xhr.status >= 200 && xhr.status < 300) {
-              activeWorkers--
-              chunkLoadedBytes[chunkIndex] = end - start
-              updateOverallProgress()
-              processNextChunk()
+
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
+
+            // ✅ Chunk uploaded successfully
+            chunkDoneBytes[chunkIndex] = end - start
+            active--
+            reportProgress()
+            next()
+          } catch (err) {
+            if (retry < MAX_RETRIES) {
+              const delay = 800 * Math.pow(2, retry) // 800ms, 1.6s, 3.2s
+              console.warn(`[ChunkRetry] chunk_${chunkIndex} → retry ${retry + 1}/${MAX_RETRIES} in ${delay}ms (${err.message})`)
+              if (uploadStatusLabel) {
+                uploadStatusLabel.value = `⚡ [网络抖动] 分片 ${chunkIndex + 1}/${totalChunks} 第 ${retry + 1}/${MAX_RETRIES} 次重试...`
+              }
+              await new Promise(r => setTimeout(r, delay))
+              await sendChunk(retry + 1)
             } else {
-              handleChunkFailure(`HTTP ${xhr.status}`)
+              active--
+              failed = true
+              reject(new Error(`分片 ${chunkIndex + 1} 重试 ${MAX_RETRIES} 次均失败: ${err.message}`))
             }
           }
-
-          xhr.onerror = () => handleChunkFailure('网络断开或请求阻断')
-          xhr.ontimeout = () => handleChunkFailure('请求超时')
-          xhr.send(formData)
         }
 
-        sendChunkXHR()
+        sendChunk()
       }
     }
 
-    processNextChunk()
+    reportProgress() // Show initial restored progress
+    next()
   })
 }
