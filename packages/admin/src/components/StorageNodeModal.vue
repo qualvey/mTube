@@ -45,6 +45,11 @@ const handleSubmit = () => {
     ElMessage.warning('请填写完整的节点 ID、名称和 Base URL')
     return
   }
+  let url = props.form.baseUrl.trim()
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url
+  }
+  props.form.baseUrl = url.replace(/\/$/, '')
   emit('submit')
 }
 </script>

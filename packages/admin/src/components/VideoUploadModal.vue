@@ -185,7 +185,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DEFAULT_UA, formatBytes } from '../utils/formatters.js'
 import { uploadFileWithProgress, uploadFileParallelChunks } from '../utils/uploader.js'
@@ -201,12 +201,25 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'submit'])
 
+const videoFileInput = ref(null)
+const posterFileInput = ref(null)
+
 const uploadLoading = ref(false)
 const submitLoading = ref(false)
 const uploadProgress = ref(0)
 const uploadSpeed = ref('0 KB/s')
 const uploadDetailText = ref('')
 const uploadStatusLabel = ref('')
+
+watch(() => props.visible, (newVal) => {
+  if (newVal) {
+    uploadLoading.value = false
+    uploadProgress.value = 0
+    uploadSpeed.value = '0 KB/s'
+    uploadDetailText.value = ''
+    uploadStatusLabel.value = ''
+  }
+})
 
 const handleFileUpload = async (event, fieldName) => {
   const file = event.target.files[0]
