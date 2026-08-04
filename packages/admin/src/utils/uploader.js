@@ -154,6 +154,11 @@ export const uploadFileParallelChunks = (ticket, file, stateRefs = {}) => {
 
         xhr.onload = () => {
           activeWorkers--
+          if (xhr.status === 413) {
+            hasError = true
+            reject(new Error('HTTP 413 请求体超出限制: Nginx 限制了分片上传大小，请在 VPS Nginx 增加 client_max_body_size 2000M; 配置'))
+            return
+          }
           if (xhr.status >= 200 && xhr.status < 300) {
             chunkLoadedBytes[chunkIndex] = end - start
             updateOverallProgress()
