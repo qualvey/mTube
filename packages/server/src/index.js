@@ -1235,6 +1235,25 @@ app.post('/api/v1/admin/storage-nodes/:id/set-default', (req, res) => {
   sendResponse(res, node, 200, `存储节点 [${node.name}] 已成功设为默认上传节点`)
 })
 
+// POST /api/v1/admin/login - Admin authentication login endpoint
+app.post('/api/v1/admin/login', (req, res) => {
+  const { username, password } = req.body || {}
+  const expectedUsername = process.env.ADMIN_USERNAME || 'admin'
+  const expectedPassword = process.env.ADMIN_PASSWORD || 'admin123'
+
+  if (username === expectedUsername && password === expectedPassword) {
+    logger.info(`[Admin Auth] Admin user [${username}] logged in successfully`)
+    return sendResponse(res, {
+      username,
+      isLoggedIn: true,
+      token: 'admin-token-' + Date.now()
+    }, 200, '登录成功')
+  }
+
+  logger.warn(`[Admin Auth] Failed login attempt for user [${username}]`)
+  return sendResponse(res, null, 401, '管理员账号或密码错误')
+})
+
 // GET /api/v1/admin/upload-config - Check if direct upload mode is enabled
 app.get('/api/v1/admin/upload-config', (req, res) => {
   const enableDirectUpload = process.env.ENABLE_DIRECT_UPLOAD !== 'false'
