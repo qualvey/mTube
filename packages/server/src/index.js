@@ -1296,6 +1296,7 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
     .update(`${payloadStr}.${timestamp}.${nonce}`)
     .digest('hex')
 
+  const baseUrl = targetNode.baseUrl || 'http://localhost:3001'
   const cleanBase = baseUrl.replace(/\/$/, '')
   const uploadUrl = `${cleanBase}/api/v1/storage/upload`
   const chunkUploadUrl = `${cleanBase}/api/v1/storage/upload-chunk`
@@ -1305,7 +1306,7 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
     enableDirectUpload,
     storageNodeId: targetNode.id,
     storageNodeName: targetNode.name,
-    baseUrl,
+    baseUrl: cleanBase,
     uploadUrl,
     chunkUploadUrl,
     mergeUrl,
@@ -1329,7 +1330,7 @@ app.post('/api/v1/admin/videos/upload', uploadMemory.single('video'), async (req
     targetNode = db.getDefaultStorageNode()
   }
 
-  const storageNodeUrl = targetNode.baseUrl || 'http://localhost:3001'
+  const storageNodeUrl = (targetNode.baseUrl || 'http://localhost:3001').replace(/\/$/, '')
 
   try {
     logger.info(`[Admin Upload] Proxying video file (${(req.file.size / 1024 / 1024).toFixed(2)} MB) to Storage Node [${targetNode.name}] (${targetNode.id}): ${storageNodeUrl}`)
