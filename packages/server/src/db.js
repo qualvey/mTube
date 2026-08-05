@@ -82,6 +82,22 @@ database.exec(`
     value TEXT NOT NULL
   );
 
+  -- i18n 动态内容翻译表：通用设计，新增语言零表结构变更
+  -- entityType: video | plan | site（站点级文案：公告/协议/Hero 等）
+  -- entityId: 对应实体主键（site 固定为 'site'）
+  -- locale: 'en' 等目标语言；中文为源语言不存译文（无译文自动回退中文）
+  CREATE TABLE IF NOT EXISTS translations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entityType TEXT NOT NULL,
+    entityId TEXT NOT NULL,
+    locale TEXT NOT NULL,
+    field TEXT NOT NULL,
+    value TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    UNIQUE(entityType, entityId, locale, field)
+  );
+
   CREATE TABLE IF NOT EXISTS access_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
@@ -325,7 +341,113 @@ const formatVideoRow = (row) => {
 }
 
 export const db = {
+  // ── i18n 动态内容翻译（通用翻译表抽象，新增语言零代码改动） ────────────────
+  // 可翻译字段白名单（按实体类型）
+  TRANSLATABLE_FIELDS: {
+    video: ['title', 'description', 'author'],
+    plan: ['name', 'description', 'badgeText'],
+    site: ['heroTitle', 'heroSubtitle', 'noticeTitle', 'noticeContent', 'paywallNotice', 'userAgreement', 'customerServiceText']
+  },
+
+  getTranslations(options = {}) {
+    const { entityType, entityId, locale } = options
+    let sql = 'SELECT * FROM translations WHERE 1=1'
+    const params = []
+    if (entityType) { sql += ' AND entityType = ?'; params.push(entityType) }
+    if (entityId) { sql += ' AND entityId = ?'; params.push(String(entityId)) }
+    if (locale) { sql += ' AND locale = ?'; params.push(locale) }
+    sql += ' ORDER BY entityType, entityId, locale, field'
+    return database.prepare(sql).all(...params)
+  },
+
+  upsertTranslation({ entityType, entityId, locale, field, value }) {
+    if (!entityType || entityId === undefined || entityId === null || !locale || !field) return null
+    const now = new Date().toISOString()
+    database.prepare(`
+      INSERT INTO translations (entityType, entityId, locale, field, value, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(entityType, entityId, locale, field)
+      DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
+    `).run(entityType, String(entityId), locale, field, String(value ?? ''), now, now)
+    return this.getTranslations({ entityType, entityId, locale })
+  },
+
+  // 批量保存一个实体的多个字段译文（fields: { title: '...', description: '...' }）
+  saveTranslations({ entityType, entityId, locale, fields }) {
+    if (!entityType || entityId === undefined || entityId === null || !locale || !fields || typeof fields !== 'object') return null
+    for (const [field, value] of Object.entries(fields)) {
+      this.upsertTranslation({ entityType, entityId, locale, field, value })
+    }
+    return this.getTranslations({ entityType, entityId, locale })
+  },
+
+  // 内部：翻译应用到单个实体（无译文回退源语言字段）
+  applyLangToEntity(entityType, entity, locale) {
+    if (!locale || locale === 'zh' || !entity) return entity
+    const rows = database.prepare(
+      'SELECT field, value FROM translations WHERE entityType = ? AND entityId = ? AND locale = ?'
+    ).all(entityType, String(entity.id), locale)
+    if (!rows.length) return entity
+    const out = { ...entity }
+    for (const r of rows) {
+      if (r.value && this.TRANSLATABLE_FIELDS[entityType]?.includes(r.field)) {
+        out[r.field] = r.value
+      }
+    }
+    return out
+  },
+
+  // 内部：批量应用翻译（单次 SQL 查询，避免 N+1）
+  applyLangToEntities(entityType, entities, locale) {
+    if (!locale || locale === 'zh' || !entities || entities.length === 0) return entities
+    const ids = entities.map(e => e.id)
+    const placeholders = ids.map(() => '?').join(',')
+    const rows = database.prepare(
+      `SELECT entityId, field, value FROM translations
+       WHERE entityType = ? AND locale = ? AND entityId IN (${placeholders})`
+    ).all(entityType, locale, ...ids)
+    if (!rows.length) return entities
+    const map = {}
+    for (const r of rows) {
+      if (!map[r.entityId]) map[r.entityId] = {}
+      map[r.entityId][r.field] = r.value
+    }
+    const fields = this.TRANSLATABLE_FIELDS[entityType] || []
+    return entities.map(e => {
+      const t = map[e.id]
+      if (!t) return e
+      const out = { ...e }
+      for (const f of fields) {
+        if (t[f]) out[f] = t[f]
+      }
+      return out
+    })
+  },
+
+  // 管理端概览：每个实体 + 已录入译文摘要（{ locale: [fields...] }）
+  getTranslationOverview(entityType = 'video') {
+    const entities = entityType === 'plan'
+      ? this.getPlans()
+      : entityType === 'site'
+        ? [{ id: 'site', title: '站点级文案（公告/协议/Hero/客服）' }]
+        : this.getVideos()
+    const rows = database.prepare(
+      'SELECT entityId, locale, field FROM translations WHERE entityType = ? ORDER BY entityId, locale'
+    ).all(entityType)
+    const map = {}
+    for (const r of rows) {
+      if (!map[r.entityId]) map[r.entityId] = {}
+      if (!map[r.entityId][r.locale]) map[r.entityId][r.locale] = []
+      map[r.entityId][r.locale].push(r.field)
+    }
+    return entities.map(e => ({
+      ...e,
+      translations: map[e.id] || {}
+    }))
+  },
+
   getVideos(options = {}) {
+    const lang = typeof options === 'object' ? options.lang : null
     const filter = typeof options === 'string' ? options : options.filter
     const tag = typeof options === 'object' ? options.tag : null
     const pageParam = options.page !== undefined ? parseInt(options.page) : null
@@ -343,6 +465,9 @@ export const db = {
       results = results.filter(v => v.tags && v.tags.some(t => String(t).toLowerCase() === targetTag))
     }
 
+    // i18n：按 lang 覆盖 title/description/author（无译文自动回退中文）
+    results = this.applyLangToEntities('video', results, lang)
+
     // \u5206\u9875\u6a21\u5f0f\uff08\u4f20\u5165 page/limit \u65f6\uff09
     if (pageParam !== null && limitParam !== null) {
       const total = results.length
@@ -356,9 +481,10 @@ export const db = {
     return results
   },
 
-  getVideoById(id) {
+  getVideoById(id, lang) {
     const row = database.prepare('SELECT * FROM videos WHERE id = ?').get(id)
-    return formatVideoRow(row)
+    const video = formatVideoRow(row)
+    return video ? this.applyLangToEntity('video', video, lang) : null
   },
 
   updateVideoPoster(id, posterUrl) {
@@ -605,9 +731,10 @@ export const db = {
     return result.changes > 0
   },
 
-  getPlans() {
+  getPlans(lang) {
     const rows = database.prepare('SELECT * FROM plans').all()
-    return rows.map(r => ({ ...r, isHot: Boolean(r.isHot) }))
+    const plans = rows.map(r => ({ ...r, isHot: Boolean(r.isHot) }))
+    return this.applyLangToEntities('plan', plans, lang)
   },
 
   updatePlans(newPlans) {
@@ -816,7 +943,7 @@ export const db = {
     }
   },
 
-  getSettings() {
+  getSettings(lang) {
     const rows = database.prepare('SELECT * FROM settings').all()
     const settings = {
       enableSeekPreview: true,
@@ -838,6 +965,15 @@ export const db = {
         settings[r.key] = Number(r.value) || 4
       } else {
         settings[r.key] = r.value
+      }
+    }
+    // i18n：站点级文案按 lang 覆盖（公告/协议/Hero/客服等，无译文回退中文）
+    if (lang && lang !== 'zh') {
+      const tRows = this.getTranslations({ entityType: 'site', entityId: 'site', locale: lang })
+      for (const r of tRows) {
+        if (r.value && this.TRANSLATABLE_FIELDS.site.includes(r.field)) {
+          settings[r.field] = r.value
+        }
       }
     }
     return settings

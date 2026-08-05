@@ -713,7 +713,7 @@ app.get('/api/v1/videos', (req, res) => {
   const { filter, tag } = req.query
   const page = req.query.page ? parseInt(req.query.page) : 1
   const limit = req.query.limit ? parseInt(req.query.limit) : 10
-  const result = db.getVideos({ filter, tag, page, limit })
+  const result = db.getVideos({ filter, tag, page, limit, lang: req.query.lang })
   sendResponse(res, result)
 })
 
@@ -724,12 +724,12 @@ app.get('/api/v1/tags', (req, res) => {
 
 app.get('/api/v1/videos/tag/:tag', (req, res) => {
   const { tag } = req.params
-  const videoList = db.getVideos({ tag })
+  const videoList = db.getVideos({ tag, lang: req.query.lang })
   sendResponse(res, videoList)
 })
 
 app.get('/api/v1/videos/:id', (req, res) => {
-  const video = db.getVideoById(req.params.id)
+  const video = db.getVideoById(req.params.id, req.query.lang)
   if (!video) {
     return sendResponse(res, null, 404, 'Video not found')
   }
@@ -747,7 +747,7 @@ app.post('/api/v1/videos/:id/like', (req, res) => {
 
 app.get('/api/v1/settings', (req, res) => {
   // 公开接口只暴露 C 端展示所需配置项，绝不返回支付私钥等敏感字段
-  const settings = db.getSettings()
+  const settings = db.getSettings(req.query.lang)
   sendResponse(res, {
     heroImageUrl: settings.heroImageUrl,
     heroTitle: settings.heroTitle,
@@ -763,7 +763,7 @@ app.get('/api/v1/settings', (req, res) => {
 })
 
 app.get('/api/v1/notice', (req, res) => {
-  const settings = db.getSettings()
+  const settings = db.getSettings(req.query.lang)
   const title = settings.noticeTitle || '📢 官方重要公告'
   const content = settings.noticeContent || ''
 
@@ -816,7 +816,7 @@ app.post('/api/v1/upload', (req, res) => {
 })
 
 app.get('/api/v1/paywall/config', (req, res) => {
-  const plans = db.getPlans()
+  const plans = db.getPlans(req.query.lang)
   sendResponse(res, { plans })
 })
 
@@ -888,7 +888,7 @@ function verifyAlipayNotifySign(params, alipayPublicKey) {
 // Public Site Config (Includes siteTitle, hero settings, notice, etc.)
 app.get(['/api/v1/site-config', '/api/v1/paywall/config', '/api/v1/settings'], (req, res) => {
 
-  const settings = db.getSettings()
+  const settings = db.getSettings(req.query.lang)
   sendResponse(res, {
     siteTitle: settings.siteTitle || 'StreamVIP - 独家超清视频流与VIP特权',
     heroImageUrl: settings.heroImageUrl,
@@ -1391,6 +1391,47 @@ app.get('/api/v1/admin/stats', (_req, res) => {
     paidOrderCount,
     totalOrderCount: orders.length
   }, 200, 'Dashboard stats retrieved')
+})
+
+// -------------------------------------------------------------
+// i18n 翻译管理 APIs（动态内容多语言，通用翻译表抽象）
+// -------------------------------------------------------------
+
+// GET /api/v1/admin/translations - 查询译文（可按 entityType/entityId/locale 过滤）
+app.get('/api/v1/admin/translations', (req, res) => {
+  const { entityType, entityId, locale } = req.query
+  const list = db.getTranslations({ entityType, entityId, locale })
+  sendResponse(res, list, 200, 'Translations retrieved')
+})
+
+// PUT /api/v1/admin/translations - 批量保存译文
+// body: { entityType: 'video'|'plan'|'site', entityId: 'vid-xxx'|'site', locale: 'en', fields: { title: '...', description: '...' } }
+// 重复调用为更新（UNIQUE 约束），无副作用；新增语言只需换 locale
+app.put('/api/v1/admin/translations', (req, res) => {
+  const { entityType, entityId, locale, fields } = req.body || {}
+  if (!entityType || entityId === undefined || entityId === null || !locale || !fields || typeof fields !== 'object') {
+    return sendResponse(res, null, 400, '缺少 entityType / entityId / locale / fields 参数')
+  }
+  if (!db.TRANSLATABLE_FIELDS[entityType]) {
+    return sendResponse(res, null, 400, `不支持的实体类型: ${entityType}（支持: ${Object.keys(db.TRANSLATABLE_FIELDS).join(', ')}）`)
+  }
+  const unknown = Object.keys(fields).filter(f => !db.TRANSLATABLE_FIELDS[entityType].includes(f))
+  if (unknown.length > 0) {
+    return sendResponse(res, null, 400, `不支持翻译的字段: ${unknown.join(', ')}（${entityType} 支持: ${db.TRANSLATABLE_FIELDS[entityType].join(', ')}）`)
+  }
+  const list = db.saveTranslations({ entityType, entityId: String(entityId), locale, fields })
+  sendResponse(res, list, 200, `译文保存成功 (${entityType} / ${entityId} / ${locale})`)
+})
+
+// GET /api/v1/admin/translations/overview - 实体翻译状态概览（管理端列表用）
+// ?entityType=video|plan|site → 每个实体 + 已录入译文摘要 { locale: [field...] }
+app.get('/api/v1/admin/translations/overview', (req, res) => {
+  const entityType = req.query.entityType || 'video'
+  if (!db.TRANSLATABLE_FIELDS[entityType]) {
+    return sendResponse(res, null, 400, `不支持的实体类型: ${entityType}`)
+  }
+  const overview = db.getTranslationOverview(entityType)
+  sendResponse(res, overview, 200, 'Translation overview retrieved')
 })
 
 // POST /api/v1/admin/login - Admin authentication login endpoint
