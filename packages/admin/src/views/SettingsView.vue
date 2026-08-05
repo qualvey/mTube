@@ -123,6 +123,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { apiFetch } from '../utils/api.js'
 
 const saveLoading = ref(false)
 const settings = ref({
@@ -145,7 +146,7 @@ const settings = ref({
 
 const fetchSettings = async () => {
   try {
-    const res = await fetch('/api/v1/admin/settings')
+    const res = await apiFetch('/api/v1/admin/settings')
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
@@ -162,7 +163,7 @@ onMounted(() => {
 const saveSettings = async () => {
   saveLoading.value = true
   try {
-    const res = await fetch('/api/v1/admin/settings', {
+    const res = await apiFetch('/api/v1/admin/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings.value)

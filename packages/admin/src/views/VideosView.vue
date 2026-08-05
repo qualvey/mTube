@@ -134,6 +134,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import VideoUploadModal from '../components/VideoUploadModal.vue'
 import { DEFAULT_UA, buildHeadersJson } from '../utils/formatters.js'
+import { apiFetch } from '../utils/api.js'
 
 const videoList = ref([])
 const storageNodes = ref([])
@@ -162,7 +163,7 @@ const availableTagOptions = ref(['独家', '高能', '超清', '无删减', '热
 
 const fetchUploadConfig = async () => {
   try {
-    const res = await fetch('/api/v1/admin/upload-config')
+    const res = await apiFetch('/api/v1/admin/upload-config')
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
@@ -174,7 +175,7 @@ const fetchUploadConfig = async () => {
 
 const fetchStorageNodes = async () => {
   try {
-    const res = await fetch('/api/v1/admin/storage-nodes')
+    const res = await apiFetch('/api/v1/admin/storage-nodes')
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
@@ -186,7 +187,7 @@ const fetchStorageNodes = async () => {
 
 const fetchVideos = async () => {
   try {
-    const res = await fetch('/api/v1/admin/videos')
+    const res = await apiFetch('/api/v1/admin/videos')
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
@@ -280,7 +281,7 @@ const handleModalSubmit = async () => {
 
   try {
     if (isEdit.value) {
-      const res = await fetch(`/api/v1/admin/videos/${videoForm.value.id}`, {
+      const res = await apiFetch(`/api/v1/admin/videos/${videoForm.value.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -296,7 +297,7 @@ const handleModalSubmit = async () => {
         ElMessage.success('视频信息更新成功！')
       }
     } else {
-      const res = await fetch('/api/v1/admin/videos', {
+      const res = await apiFetch('/api/v1/admin/videos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -318,7 +319,7 @@ const handleModalSubmit = async () => {
 
 const toggleVipStatus = async (video) => {
   try {
-    await fetch(`/api/v1/admin/videos/${video.id}`, {
+    await apiFetch(`/api/v1/admin/videos/${video.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isVip: video.isVip })
@@ -336,7 +337,7 @@ const handleDeleteVideo = (id) => {
     type: 'warning'
   }).then(async () => {
     try {
-      const res = await fetch(`/api/v1/admin/videos/${id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/v1/admin/videos/${id}`, { method: 'DELETE' })
       if (res.ok) {
         videoList.value = videoList.value.filter(v => v.id !== id)
         ElMessage.success('视频资源已成功删除')

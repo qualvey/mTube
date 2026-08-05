@@ -39,6 +39,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { setAdminToken } from '../utils/api.js'
 
 const router = useRouter()
 const loginForm = ref({ username: 'admin', password: '' })
@@ -59,6 +60,7 @@ const handleLogin = async () => {
     })
     const json = await res.json()
     if (res.ok && json.code === 200) {
+      setAdminToken(json.data?.token)
       localStorage.setItem('isLoggedIn', 'true')
       ElMessage.success('登录成功！欢迎回来，管理员')
       router.push('/dashboard')
