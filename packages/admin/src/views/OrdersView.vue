@@ -140,13 +140,14 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { apiFetch } from '../utils/api.js'
 
 const allOrders = ref([])
 const searchOrderKeyword = ref('')
 
 const fetchOrders = async () => {
   try {
-    const res = await fetch('/api/v1/admin/orders')
+    const res = await apiFetch('/api/v1/admin/orders')
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {

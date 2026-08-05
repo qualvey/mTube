@@ -99,6 +99,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import StorageNodeModal from '../components/StorageNodeModal.vue'
+import { apiFetch } from '../utils/api.js'
 
 const storageNodes = ref([])
 const nodeModalVisible = ref(false)
@@ -111,7 +112,7 @@ const nodeForm = ref({
 
 const fetchStorageNodes = async () => {
   try {
-    const res = await fetch('/api/v1/admin/storage-nodes')
+    const res = await apiFetch('/api/v1/admin/storage-nodes')
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
@@ -139,7 +140,7 @@ const openAddNodeModal = () => {
 
 const handleModalSubmit = async () => {
   try {
-    const res = await fetch('/api/v1/admin/storage-nodes', {
+    const res = await apiFetch('/api/v1/admin/storage-nodes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nodeForm.value)
@@ -159,7 +160,7 @@ const handleModalSubmit = async () => {
 
 const setDefaultNode = async (nodeId) => {
   try {
-    const res = await fetch(`/api/v1/admin/storage-nodes/${nodeId}/set-default`, {
+    const res = await apiFetch(`/api/v1/admin/storage-nodes/${nodeId}/set-default`, {
       method: 'POST'
     })
     const json = await res.json()
@@ -179,7 +180,7 @@ const handleDeleteNode = (nodeId) => {
     type: 'warning'
   }).then(async () => {
     try {
-      const res = await fetch(`/api/v1/admin/storage-nodes/${nodeId}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/v1/admin/storage-nodes/${nodeId}`, { method: 'DELETE' })
       if (res.ok) {
         ElMessage.success('存储节点已注销')
         fetchStorageNodes()
