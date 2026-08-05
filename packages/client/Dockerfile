@@ -12,7 +12,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/client/package.json ./packages/client/
 
 # Install client build dependencies
-RUN pnpm install --filter client...
+RUN pnpm install --frozen-lockfile --filter client...
 
 COPY packages/client ./packages/client
 
