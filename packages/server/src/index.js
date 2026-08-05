@@ -746,7 +746,20 @@ app.post('/api/v1/videos/:id/like', (req, res) => {
 })
 
 app.get('/api/v1/settings', (req, res) => {
-  sendResponse(res, db.getSettings())
+  // 公开接口只暴露 C 端展示所需配置项，绝不返回支付私钥等敏感字段
+  const settings = db.getSettings()
+  sendResponse(res, {
+    heroImageUrl: settings.heroImageUrl,
+    heroTitle: settings.heroTitle,
+    heroSubtitle: settings.heroSubtitle,
+    enableNotice: settings.enableNotice === 'true' || settings.enableNotice === true,
+    noticeTitle: settings.noticeTitle,
+    noticeContent: settings.noticeContent,
+    enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true,
+    paywallNotice: settings.paywallNotice,
+    userAgreement: settings.userAgreement,
+    customerServiceText: settings.customerServiceText
+  })
 })
 
 app.get('/api/v1/notice', (req, res) => {

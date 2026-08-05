@@ -163,6 +163,8 @@ onMounted(() => {
 const saveSettings = async () => {
   saveLoading.value = true
   try {
+    // 并发连接数强制收敛到 2-8 通道（防止 el-input-number 未失焦越界值入库）
+    settings.value.uploadChunkConcurrency = Math.min(8, Math.max(2, Number(settings.value.uploadChunkConcurrency) || 4))
     const res = await apiFetch('/api/v1/admin/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
