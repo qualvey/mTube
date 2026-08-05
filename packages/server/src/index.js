@@ -110,8 +110,42 @@ const normalizeHeaders = (input) => {
   return headers
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Single-Stream-Per-Device Guard
+// 同一设备指纹（deviceId）同时只允许一条流式连接，新请求到来时主动终止旧连接
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * activeStreams: Map<deviceId, { proxyReq: http.ClientRequest, res: express.Response, videoId: string }>
+ * 保存每个设备当前正在进行的代理连接
+ */
+const activeStreams = new Map()
+
+/**
+ * 如果设备当前有活跃的代理连接，主动终止并清除
+ * @param {string} deviceId
+ */
+const abortActiveStream = (deviceId) => {
+  if (!deviceId) return
+  const existing = activeStreams.get(deviceId)
+  if (existing) {
+    try {
+      if (existing.proxyReq && !existing.proxyReq.destroyed) {
+        existing.proxyReq.destroy()
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      if (existing.res && !existing.res.writableEnded) {
+        existing.res.end()
+      }
+    } catch (e) { /* ignore */ }
+    activeStreams.delete(deviceId)
+    logger.info(`[StreamGuard] 设备 ${deviceId} 的旧流已主动终止 (videoId: ${existing.videoId || 'N/A'})`)
+  }
+}
+
 // Helper to proxy direct media/fragment stream with Range & Custom Request Headers
-const proxyDirectUrl = (videoUrl, req, res, customHeaders = {}, retryCount = 0) => {
+const proxyDirectUrl = (videoUrl, req, res, customHeaders = {}, retryCount = 0, deviceId = null) => {
   if (!videoUrl || res.headersSent) return
   const cleanUrl = videoUrl.trim()
 
@@ -133,6 +167,12 @@ const proxyDirectUrl = (videoUrl, req, res, customHeaders = {}, retryCount = 0) 
 
     const proxyReq = protocol.get(cleanUrl, options, (streamRes) => {
       if (res.headersSent) return
+
+      // 连接建立后，将此条流登许到 activeStreams
+      if (deviceId) {
+        activeStreams.set(deviceId, { proxyReq, res, videoId: req.query.id || null })
+        logger.info(`[StreamGuard] 设备 ${deviceId} 开始拉流 (videoId: ${req.query.id || 'N/A'}, url: ${cleanUrl.substring(0, 80)}...)`)
+      }
 
       // Handle 3xx Redirects (e.g. HTTP -> HTTPS 301 Redirect)
       if (streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
@@ -170,13 +210,25 @@ const proxyDirectUrl = (videoUrl, req, res, customHeaders = {}, retryCount = 0) 
       })
 
       streamRes.pipe(res)
+
+      // 流结束后从活跃表中清除
+      const cleanupStream = () => {
+        if (deviceId && activeStreams.get(deviceId)?.proxyReq === proxyReq) {
+          activeStreams.delete(deviceId)
+          logger.info(`[StreamGuard] 设备 ${deviceId} 拉流完成，已释放占用`)
+        }
+      }
+      streamRes.on('end', cleanupStream)
+      streamRes.on('error', cleanupStream)
+      res.on('finish', cleanupStream)
+      res.on('close', cleanupStream)
     })
 
     proxyReq.on('error', (err) => {
       // Automatic retry on transient Keep-Alive socket drops
       if (err.message.includes('socket hang up') && retryCount < 2 && !res.headersSent) {
         logger.info(`[Proxy Direct Stream] Transient socket hang up, retrying fresh connection (${retryCount + 1}/2)...`)
-        return proxyDirectUrl(cleanUrl, req, res, customHeaders, retryCount + 1)
+        return proxyDirectUrl(cleanUrl, req, res, customHeaders, retryCount + 1, deviceId)
       }
       logger.error('Video proxy stream request error:', err.message)
       if (!res.headersSent) {
@@ -385,6 +437,13 @@ app.get('/api/v1/proxy/video', async (req, res) => {
     return sendResponse(res, null, 400, 'Missing video url query parameter')
   }
 
+  // ── Single-Stream-Per-Device Guard ──────────────────────────────────────────
+  // 终止同一设备的上一条流式连接（如果有）
+  if (deviceId) {
+    abortActiveStream(deviceId)
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   // Handle local server uploaded video files (/uploads/...)
   if (targetUrl.startsWith('/uploads/') || targetUrl.includes('/uploads/')) {
     const fileName = targetUrl.split('/uploads/').pop()
@@ -412,16 +471,16 @@ app.get('/api/v1/proxy/video', async (req, res) => {
       })
 
       if (format && format.url) {
-        return proxyDirectUrl(format.url, req, res, customHeaders)
+        return proxyDirectUrl(format.url, req, res, customHeaders, 0, deviceId)
       }
     } catch (err) {
       logger.warn(`Dynamic YouTube resolution fallback for ${youtubeFullUrl}:`, err.message)
     }
 
-    return proxyDirectUrl('https://vjs.zencdn.net/v/oceans.mp4', req, res, customHeaders)
+    return proxyDirectUrl('https://vjs.zencdn.net/v/oceans.mp4', req, res, customHeaders, 0, deviceId)
   }
 
-  proxyDirectUrl(targetUrl, req, res, customHeaders)
+  proxyDirectUrl(targetUrl, req, res, customHeaders, 0, deviceId)
 })
 
 /**
