@@ -16,7 +16,7 @@
         v-if="video.poster"
         :src="video.poster"
         class="absolute inset-0 w-full h-full object-cover"
-        loading="lazy"
+        loading="eager"
       />
       <!-- 暗色蒙层 -->
       <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/30 transition-opacity group-hover:from-black/80" />
@@ -385,6 +385,16 @@ const loadVideoToMemory = async () => {
     loading.value = false
     progress.value = 100
 
+    const hlsEl = videoRef.value
+
+    // HLS 就绪后自动播放
+    const onHlsCanPlay = () => {
+      if (props.active && plyrInstance) {
+        try { plyrInstance.play() } catch {}
+      }
+    }
+    hlsEl.addEventListener('canplay', onHlsCanPlay, { once: true })
+
     if (Hls.isSupported()) {
       hlsInstance = new Hls({
         enableWorker: true,
@@ -394,9 +404,9 @@ const loadVideoToMemory = async () => {
         fragLoadingTimeOut: 60000
       })
       hlsInstance.loadSource(proxyUrl)
-      hlsInstance.attachMedia(videoRef.value)
-    } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
-      videoRef.value.src = proxyUrl
+      hlsInstance.attachMedia(hlsEl)
+    } else if (hlsEl.canPlayType('application/vnd.apple.mpegurl')) {
+      hlsEl.src = proxyUrl
     }
 
     initializePlyr()
@@ -411,6 +421,12 @@ const loadVideoToMemory = async () => {
   const onCanPlay = () => {
     loading.value = false
     progress.value = 100
+    // 缓冲就绪后自动播放（如果当前仍是激活状态）
+    if (props.active && plyrInstance) {
+      nextTick(() => {
+        try { plyrInstance!.play() } catch {}
+      })
+    }
     el.removeEventListener('canplay', onCanPlay)
     el.removeEventListener('error', onError)
   }
@@ -518,16 +534,23 @@ watch(
         hasStarted.value = true
         nextTick(() => loadVideoToMemory())
       } else if (!loading.value && plyrInstance) {
-        // 已加载过，重新 play（从暂停恢复）
+        // 已加载就绪，从暂停恢复
         try { plyrInstance.play() } catch {}
       }
+      // 若 loading.value=true，说明正在加载中，let it continue
     } else {
-      // 停用 → 仅暂停，保留 hasStarted 状态（不重置封面）
+      // 停用：中止进行中的拉流
       if (currentAbortController) {
         currentAbortController.abort()
         currentAbortController = null
       }
-      if (plyrInstance) {
+      if (loading.value) {
+        // 还在加载中被停用 → 回到 idle 封面状态（不卡 spinner）
+        loading.value = false
+        hasStarted.value = false
+        cleanupPlayerInstances()
+      } else if (plyrInstance) {
+        // 已就绪 → 仅暂停，保留 hasStarted（滚回来可继续）
         try { plyrInstance.pause() } catch {}
       }
     }
