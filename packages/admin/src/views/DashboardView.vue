@@ -61,7 +61,7 @@
           <div>
             <div class="text-xs font-bold text-slate-400">在线存储节点数</div>
             <div class="text-2xl font-black text-slate-800 mt-1 font-mono">
-              {{ storageNodes.length }} <span class="text-xs text-slate-400 font-normal">个</span>
+              {{ stats.onlineNodes || 0 }} <span class="text-xs text-slate-400 font-normal">个</span>
             </div>
           </div>
           <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-lg">
@@ -199,31 +199,26 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { apiFetch } from '../utils/api.js'
 
 const stats = ref({
   totalRevenue: 0,
   paidOrderCount: 0,
-  totalVideos: 0
+  totalVideos: 0,
+  onlineNodes: 0
 })
 
 const storageNodes = ref([])
 const topVideos = ref([])
-const trafficTrend = ref([
-  { date: '07-29', pv: 4200, uv: 1200, pvHeight: 50, uvHeight: 25 },
-  { date: '07-30', pv: 5800, uv: 1800, pvHeight: 65, uvHeight: 35 },
-  { date: '07-31', pv: 7200, uv: 2300, pvHeight: 80, uvHeight: 45 },
-  { date: '08-01', pv: 8900, uv: 3100, pvHeight: 95, uvHeight: 60 },
-  { date: '08-02', pv: 6500, uv: 2100, pvHeight: 70, uvHeight: 40 },
-  { date: '08-03', pv: 7800, uv: 2600, pvHeight: 85, uvHeight: 50 },
-  { date: '今日', pv: 9400, uv: 3400, pvHeight: 100, uvHeight: 65 }
-])
+const trafficTrend = ref([])
 
 const fetchDashboardData = async () => {
   try {
-    const [statsRes, nodesRes, videosRes] = await Promise.all([
-      fetch('/api/v1/admin/stats'),
-      fetch('/api/v1/admin/storage-nodes'),
-      fetch('/api/v1/admin/videos')
+    const [statsRes, nodesRes, videosRes, trendRes] = await Promise.all([
+      apiFetch('/api/v1/admin/stats'),
+      apiFetch('/api/v1/admin/storage-nodes'),
+      apiFetch('/api/v1/admin/videos'),
+      apiFetch('/api/v1/admin/analytics/trend?days=7')
     ])
 
     if (statsRes.ok) {
@@ -237,7 +232,9 @@ const fetchDashboardData = async () => {
     if (nodesRes.ok) {
       const json = await nodesRes.json()
       if (json.data) {
-        storageNodes.value = json.data
+        const list = Array.isArray(json.data) ? json.data : []
+        storageNodes.value = list
+        stats.value.onlineNodes = list.filter(n => n.status === 'HEALTHY' || n.status === 'ONLINE' || n.isOnline).length
       }
     }
 
@@ -247,6 +244,23 @@ const fetchDashboardData = async () => {
         const list = Array.isArray(json.data) ? json.data : []
         stats.value.totalVideos = list.length
         topVideos.value = [...list].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 10)
+      }
+    }
+
+    if (trendRes.ok) {
+      const json = await trendRes.json()
+      const data = json && json.data
+      if (data && Array.isArray(data.dates)) {
+        const pvArr = Array.isArray(data.pv) ? data.pv : []
+        const uvArr = Array.isArray(data.uv) ? data.uv : []
+        const max = Math.max(1, ...pvArr, ...uvArr)
+        trafficTrend.value = data.dates.map((date, i) => ({
+          date,
+          pv: pvArr[i] || 0,
+          uv: uvArr[i] || 0,
+          pvHeight: Math.max(2, Math.round(((pvArr[i] || 0) / max) * 100)),
+          uvHeight: Math.max(2, Math.round(((uvArr[i] || 0) / max) * 100))
+        }))
       }
     }
   } catch (e) {

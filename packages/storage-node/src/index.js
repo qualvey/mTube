@@ -22,6 +22,18 @@ const postersDir = path.resolve(publicDir, 'uploads/posters')
 
 const tempChunksDir = path.resolve(publicDir, 'uploads/temp_chunks')
 
+// Parallel chunk upload engine constants (must match client: packages/admin/src/utils/uploader.js)
+const CHUNK_SIZE = 5 * 1024 * 1024
+
+/**
+ * Sanitize uploadId against path traversal (../../) attacks.
+ * Client-generated ids are hex-only; anything else is rejected.
+ */
+const sanitizeUploadId = (id) => {
+  const s = String(id || '')
+  return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : null
+}
+
 if (!fs.existsSync(videosDir)) fs.mkdirSync(videosDir, { recursive: true })
 if (!fs.existsSync(postersDir)) fs.mkdirSync(postersDir, { recursive: true })
 if (!fs.existsSync(tempChunksDir)) fs.mkdirSync(tempChunksDir, { recursive: true })
@@ -59,6 +71,92 @@ app.use((req, res, next) => {
   next()
 })
 
+// Allowed source origins for static media & API fallback auth (comma-separated env)
+// e.g. ALLOWED_ORIGINS=https://91cso.com,https://admin.91cso.com,http://localhost:5173
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim().replace(/\/$/, ''))
+  .filter(Boolean)
+
+/**
+ * Verify cluster auth for storage-node API requests.
+ * Order: 1) HMAC ticket signature (issued by main server upload-ticket / proxy upload)
+ *        2) TOKEN mode (X-Cluster-Token / clusterSecret / Bearer == CLUSTER_SECRET)
+ *        3) Source-origin whitelist (ALLOWED_ORIGINS)
+ * HMAC payload = { nodeId: NODE_ID, timestamp } — matches main server createClusterSignedHeaders().
+ * Window is 12h because long direct-upload sessions outlive the 5min register/heartbeat window.
+ */
+const verifyClusterTicketSignature = (req) => {
+  const secret = CLUSTER_SECRET
+  const timestamp = req.get('X-Cluster-Timestamp')
+  const nonce = req.get('X-Cluster-Nonce')
+  const signature = req.get('X-Cluster-Signature')
+
+  if (timestamp && nonce && signature) {
+    const now = Date.now()
+    const reqTime = Number(timestamp)
+    if (isNaN(reqTime) || Math.abs(now - reqTime) > 12 * 60 * 60 * 1000) {
+      return { valid: false, reason: '签名已过期（超过 12 小时）' }
+    }
+    const payloadStr = JSON.stringify({ nodeId: NODE_ID, timestamp })
+    const expectedSig = crypto
+      .createHmac('sha256', secret)
+      .update(`${payloadStr}.${timestamp}.${nonce}`)
+      .digest('hex')
+    if (signature !== expectedSig) {
+      return { valid: false, reason: 'HMAC 签名不匹配' }
+    }
+    return { valid: true, mode: 'HMAC-SHA256' }
+  }
+
+  // TOKEN mode fallback
+  const reqSecret = req.get('X-Cluster-Token') || req.body?.clusterSecret || req.get('Authorization')?.replace('Bearer ', '')
+  if (reqSecret && reqSecret === secret) {
+    return { valid: true, mode: 'TOKEN' }
+  }
+
+  // Source-origin whitelist fallback
+  const origin = req.get('origin') || req.get('referer') || ''
+  let originHost = ''
+  try {
+    originHost = origin ? new URL(origin).origin : ''
+  } catch (e) { /* ignore */ }
+  if (originHost && ALLOWED_ORIGINS.includes(originHost)) {
+    return { valid: true, mode: 'ORIGIN' }
+  }
+
+  return { valid: false, reason: '缺少有效签名/密钥，且来源域名不在白名单' }
+}
+
+// Lock ALL /api/v1/storage/* endpoints (upload / upload-chunk / merge-chunks /
+// check-chunks / status / debug) behind cluster auth
+app.use('/api/v1/storage', (req, res, next) => {
+  const auth = verifyClusterTicketSignature(req)
+  if (auth.valid) {
+    return next()
+  }
+  console.warn(`[Storage Node 🔒] Rejected ${req.method} ${req.originalUrl || req.url}: ${auth.reason}`)
+  return res.status(401).json({ code: 401, message: `存储节点接口鉴权失败: ${auth.reason}` })
+})
+
+// Static media source-origin whitelist: enforced ONLY when ALLOWED_ORIGINS is configured.
+// <video>/<img> tags cannot send custom headers, so media access is gated by Referer/Origin.
+app.use('/uploads', (req, res, next) => {
+  if (ALLOWED_ORIGINS.length === 0) {
+    console.warn('[Storage Node ⚠️] ALLOWED_ORIGINS 未配置，静态媒体当前允许任意来源访问（建议配置 C 端/后台域名）')
+    return next()
+  }
+  const origin = req.get('origin') || req.get('referer') || ''
+  let originHost = ''
+  try {
+    originHost = origin ? new URL(origin).origin : ''
+  } catch (e) { /* ignore */ }
+  if (originHost && ALLOWED_ORIGINS.includes(originHost)) {
+    return next()
+  }
+  return res.status(403).json({ code: 403, message: '来源域名不在白名单，拒绝访问媒体资源' })
+})
+
 // Serve static uploaded files (videos & posters with HTTP Range support)
 app.use('/uploads', express.static(path.resolve(publicDir, 'uploads')))
 
@@ -82,7 +180,10 @@ const upload = multer({
 // Multer storage config for parallel chunks
 const chunkStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const uploadId = req.body.uploadId || 'temp_upload'
+    const uploadId = sanitizeUploadId(req.body.uploadId)
+    if (!uploadId) {
+      return cb(new Error('非法 uploadId（仅允许字母数字与_-，长度≤64）'))
+    }
     const targetDir = path.join(tempChunksDir, uploadId)
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
     cb(null, targetDir)
@@ -235,13 +336,17 @@ app.post('/api/v1/storage/upload', upload.single('video'), async (req, res) => {
   })
 })
 
-// GET /api/v1/storage/check-chunks - Resumable upload check: Query existing uploaded chunks for uploadId
+// GET /api/v1/storage/check-chunks - Resumable upload check: query existing VALID chunks for uploadId
+// Only chunks with the exact expected size count as resumed. 0-byte / partial / stale chunks are
+// deleted on the spot so the client re-uploads them (self-healing resume, prevents corrupt merges).
 app.get('/api/v1/storage/check-chunks', (req, res) => {
-  const uploadId = req.query.uploadId
+  const uploadId = sanitizeUploadId(req.query.uploadId)
   if (!uploadId) {
-    return res.status(400).json({ code: 400, message: 'Missing uploadId parameter' })
+    return res.status(400).json({ code: 400, message: 'Missing or invalid uploadId parameter' })
   }
 
+  const fileSize = Number(req.query.fileSize) || 0
+  const totalChunks = Number(req.query.totalChunks) || 0
   const chunkDir = path.join(tempChunksDir, uploadId)
   const existingChunks = []
 
@@ -249,14 +354,30 @@ app.get('/api/v1/storage/check-chunks', (req, res) => {
     try {
       const files = fs.readdirSync(chunkDir)
       files.forEach(file => {
-        if (file.startsWith('chunk_')) {
-          const index = parseInt(file.replace('chunk_', ''), 10)
-          if (!isNaN(index)) {
-            existingChunks.push(index)
+        if (!file.startsWith('chunk_')) return
+        const index = parseInt(file.replace('chunk_', ''), 10)
+        if (isNaN(index) || index < 0) return
+
+        const chunkPath = path.join(chunkDir, file)
+        try {
+          const stat = fs.statSync(chunkPath)
+          if (stat.size <= 0) {
+            // Corrupt empty chunk — remove so the client re-uploads it
+            fs.rmSync(chunkPath, { force: true })
+            return
           }
-        }
+          if (fileSize > 0 && totalChunks > 0 && index < totalChunks) {
+            const expected = Math.min(CHUNK_SIZE, fileSize - index * CHUNK_SIZE)
+            if (stat.size !== expected) {
+              // Partial/oversized chunk from a crashed session — remove and let client re-upload
+              fs.rmSync(chunkPath, { force: true })
+              return
+            }
+          }
+          existingChunks.push(index)
+        } catch (e) { /* ignore race */ }
       })
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
 
   res.json({
@@ -275,23 +396,87 @@ app.post('/api/v1/storage/upload-chunk', uploadChunkMulter.single('chunk'), (req
   if (!uploadId || chunkIndex === undefined) {
     return res.status(400).json({ code: 400, message: '缺少 uploadId 或 chunkIndex 参数' })
   }
+
+  const idx = Number(chunkIndex)
+  if (!Number.isInteger(idx) || idx < 0) {
+    if (req.file && req.file.path) fs.rmSync(req.file.path, { force: true })
+    return res.status(400).json({ code: 400, message: 'chunkIndex 必须是非负整数' })
+  }
+
+  if (totalChunks !== undefined && totalChunks !== '') {
+    const tc = Number(totalChunks)
+    if (Number.isInteger(tc) && tc > 0 && idx >= tc) {
+      if (req.file && req.file.path) fs.rmSync(req.file.path, { force: true })
+      return res.status(400).json({ code: 400, message: `chunkIndex ${idx} 超出总分片数 ${tc}` })
+    }
+  }
+
   res.json({
     code: 200,
     message: `分片 ${chunkIndex}/${totalChunks} 保存成功`,
-    data: { uploadId, chunkIndex: Number(chunkIndex) }
+    data: { uploadId, chunkIndex: idx }
   })
 })
 
 // POST /api/v1/storage/merge-chunks - Stitch parallel chunks into final video & extract frame 50 poster
 app.post('/api/v1/storage/merge-chunks', async (req, res) => {
-  const { uploadId, filename, totalChunks } = req.body
+  const { uploadId, filename, totalChunks, fileSize } = req.body
   if (!uploadId || !totalChunks) {
     return res.status(400).json({ code: 400, message: '缺少 uploadId 或 totalChunks 参数' })
   }
 
-  const chunkDir = path.join(tempChunksDir, uploadId)
+  const safeId = sanitizeUploadId(uploadId)
+  if (!safeId) {
+    return res.status(400).json({ code: 400, message: '非法 uploadId' })
+  }
+
+  const total = Number(totalChunks)
+  if (!Number.isInteger(total) || total <= 0) {
+    return res.status(400).json({ code: 400, message: 'totalChunks 必须为正整数' })
+  }
+
+  // ── Idempotency: if this uploadId was already merged, return the stored result.
+  //    Handles client timeout + retry after server-side success → prevents duplicate videos.
+  const recordPath = path.join(tempChunksDir, `merge_result_${safeId}.json`)
+  if (fs.existsSync(recordPath)) {
+    try {
+      const record = JSON.parse(fs.readFileSync(recordPath, 'utf8'))
+      if (record && record.filename && fs.existsSync(path.join(videosDir, record.filename))) {
+        console.log(`[Storage Node 📦] Merge idempotent hit for ${safeId}, returning stored result`)
+        return res.json({ code: 200, message: '分片拼接已完成（幂等命中）', data: record })
+      }
+    } catch (e) { /* ignore corrupt record */ }
+  }
+
+  const chunkDir = path.join(tempChunksDir, safeId)
   if (!fs.existsSync(chunkDir)) {
     return res.status(404).json({ code: 404, message: '未找到分片文件临时目录' })
+  }
+
+  const fileSizeNum = Number(fileSize) || 0
+  const expectedChunkSize = (i) => (fileSizeNum > 0 ? Math.min(CHUNK_SIZE, fileSizeNum - i * CHUNK_SIZE) : null)
+
+  // ── Pre-validate ALL chunks (existence + exact size) BEFORE touching the final file,
+  //    so a missing/corrupt chunk never leaves a half-written video in the library.
+  const invalidChunks = []
+  for (let i = 0; i < total; i++) {
+    const chunkPath = path.join(chunkDir, `chunk_${i}`)
+    let size = 0
+    try {
+      size = fs.statSync(chunkPath).size
+    } catch (e) {
+      size = -1
+    }
+    const expected = expectedChunkSize(i)
+    if (size <= 0 || (expected !== null && size !== expected)) {
+      invalidChunks.push(i)
+    }
+  }
+  if (invalidChunks.length > 0) {
+    return res.status(400).json({
+      code: 400,
+      message: `分片校验失败，缺失或损坏分片: ${invalidChunks.join(', ')}，请重新上传这些分片后再试`
+    })
   }
 
   const ext = path.extname(filename || 'video.mp4') || '.mp4'
@@ -302,14 +487,8 @@ app.post('/api/v1/storage/merge-chunks', async (req, res) => {
   try {
     const writeStream = fs.createWriteStream(finalVideoPath)
 
-    for (let i = 0; i < Number(totalChunks); i++) {
-      const chunkPath = path.join(chunkDir, `chunk_${i}`)
-      if (!fs.existsSync(chunkPath)) {
-        writeStream.close()
-        return res.status(400).json({ code: 400, message: `缺失分片文件: chunk_${i}` })
-      }
-      const chunkBuffer = fs.readFileSync(chunkPath)
-      writeStream.write(chunkBuffer)
+    for (let i = 0; i < total; i++) {
+      writeStream.write(fs.readFileSync(path.join(chunkDir, `chunk_${i}`)))
     }
     writeStream.end()
 
@@ -318,10 +497,12 @@ app.post('/api/v1/storage/merge-chunks', async (req, res) => {
       writeStream.on('error', reject)
     })
 
-    // Clean up temporary chunks directory
-    try {
-      fs.rmSync(chunkDir, { recursive: true, force: true })
-    } catch (e) {}
+    // Final integrity check: merged size must exactly match the original file size
+    const finalStat = fs.statSync(finalVideoPath)
+    if (fileSizeNum > 0 && finalStat.size !== fileSizeNum) {
+      fs.rmSync(finalVideoPath, { force: true })
+      return res.status(400).json({ code: 400, message: `缝合后文件大小校验失败 (${finalStat.size} ≠ ${fileSizeNum})，请重新上传` })
+    }
 
     const publicVideoPath = `/uploads/videos/${finalFilename}`
     const publicPosterPath = await generateFrame50Poster(finalVideoPath)
@@ -333,25 +514,35 @@ app.post('/api/v1/storage/merge-chunks', async (req, res) => {
       ? nodePublicUrl.replace(/\/$/, '')
       : `${protocol}://${hostHeader}`
 
-    const stats = fs.statSync(finalVideoPath)
+    const record = {
+      nodeId: NODE_ID,
+      filename: finalFilename,
+      sizeBytes: finalStat.size,
+      videoPath: publicVideoPath,
+      posterPath: publicPosterPath,
+      videoUrl: `${fullBaseUrl}${publicVideoPath}`,
+      posterUrl: publicPosterPath ? `${fullBaseUrl}${publicPosterPath}` : ''
+    }
 
-    console.log(`[Storage Node 📦] Parallel chunks merged successfully: ${finalFilename} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`)
+    // Persist idempotency record BEFORE deleting chunks (crash-safe), then cleanup temp chunks
+    try {
+      fs.writeFileSync(recordPath, JSON.stringify(record))
+    } catch (e) {
+      console.error(`[Storage Node 📦] Failed to persist merge record for ${safeId}:`, e.message)
+    }
+    try {
+      fs.rmSync(chunkDir, { recursive: true, force: true })
+    } catch (e) {}
+
+    console.log(`[Storage Node 📦] Parallel chunks merged successfully: ${finalFilename} (${(finalStat.size / 1024 / 1024).toFixed(2)} MB)`)
 
     res.json({
       code: 200,
       message: '多分片并发传输与缝合完成！',
-      data: {
-        nodeId: NODE_ID,
-        filename: finalFilename,
-        sizeBytes: stats.size,
-        videoPath: publicVideoPath,
-        posterPath: publicPosterPath,
-        videoUrl: `${fullBaseUrl}${publicVideoPath}`,
-        posterUrl: publicPosterPath ? `${fullBaseUrl}${publicPosterPath}` : ''
-      }
+      data: record
     })
   } catch (err) {
-    console.error(`[Storage Node 📦] Chunk merge error for ${uploadId}:`, err.message)
+    console.error(`[Storage Node 📦] Chunk merge error for ${safeId}:`, err.message)
     res.status(500).json({ code: 500, message: `分片合并处理失败: ${err.message}` })
   }
 })
@@ -464,4 +655,17 @@ app.listen(PORT, async () => {
   console.log(`[Storage Node 📦] ${NODE_NAME} (${NODE_ID}) running on port ${PORT}`)
   await registerWithMainServer()
   setInterval(sendHeartbeat, HEARTBEAT_INTERVAL * 1000)
+})
+
+// Final error handler → clean JSON 400/500 instead of HTML error pages.
+// Must be registered AFTER all routes to catch multer/route errors (invalid
+// uploadId path-traversal attempts, oversized files, missing fields, etc.)
+app.use((err, _req, res, _next) => {
+  const msg = (err && err.message) || '上传处理失败'
+  if (err instanceof multer.MulterError) {
+    const reason = err.code === 'LIMIT_FILE_SIZE' ? `文件大小超过限制 (${err.field || 'unknown'})` : err.message
+    return res.status(400).json({ code: 400, message: `上传参数/文件校验失败: ${reason}` })
+  }
+  // Non-multer storage errors (e.g. rejected uploadId from destination callback)
+  return res.status(400).json({ code: 400, message: `上传被拒绝: ${msg}` })
 })

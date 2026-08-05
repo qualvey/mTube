@@ -188,6 +188,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DEFAULT_UA, formatBytes } from '../utils/formatters.js'
+import { apiFetch } from '../utils/api.js'
 import { uploadFileWithProgress, uploadFileParallelChunks } from '../utils/uploader.js'
 
 const props = defineProps({
@@ -242,7 +243,7 @@ const handleFileUpload = async (event, fieldName) => {
       if (props.enableDirectUpload) {
         try {
           uploadStatusLabel.value = '⚡ [直传模式] 正在获取存储节点直传凭证...'
-          const ticketRes = await fetch('/api/v1/admin/videos/upload-ticket', {
+          const ticketRes = await apiFetch('/api/v1/admin/videos/upload-ticket', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ nodeId: props.form.storageNodeId })
@@ -254,11 +255,11 @@ const handleFileUpload = async (event, fieldName) => {
             if (ticket.chunkUploadUrl && ticket.mergeUrl && file.size >= 5 * 1024 * 1024) {
               let concurrencyLimit = 4
               try {
-                const settingsRes = await fetch('/api/v1/admin/settings')
+                const settingsRes = await apiFetch('/api/v1/admin/settings')
                 if (settingsRes.ok) {
                   const sJson = await settingsRes.json()
                   if (sJson.data && sJson.data.uploadChunkConcurrency) {
-                    concurrencyLimit = Number(sJson.data.uploadChunkConcurrency) || 4
+                    concurrencyLimit = Math.min(8, Math.max(2, Number(sJson.data.uploadChunkConcurrency) || 4))
                   }
                 }
               } catch (e) {}
@@ -325,7 +326,7 @@ const handleFileUpload = async (event, fieldName) => {
       const reader = new FileReader()
       reader.onload = async (e) => {
         const base64Data = e.target.result
-        const res = await fetch('/api/v1/upload', {
+        const res = await apiFetch('/api/v1/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: file.name, fileData: base64Data })

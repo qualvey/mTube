@@ -63,6 +63,61 @@ const sendResponse = (res, data, code = 200, message = 'success') => {
   })
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin Session Auth (B端管理接口鉴权)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// In-memory admin session tokens (revoked on server restart → re-login required)
+const adminTokens = new Set()
+
+const issueAdminToken = () => {
+  const token = 'adm_' + crypto.randomBytes(24).toString('hex')
+  adminTokens.add(token)
+  return token
+}
+
+const requireAdminAuth = (req, res, next) => {
+  const auth = req.get('authorization') || ''
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : (req.get('x-admin-token') || '').trim()
+  if (token && adminTokens.has(token)) {
+    return next()
+  }
+  return res.status(401).json({ code: 401, message: '未登录或登录已过期，请重新登录' })
+}
+
+// Lock ALL /api/v1/admin/* endpoints (except login) behind an admin session token
+app.use('/api/v1/admin', (req, res, next) => {
+  const p = req.path
+  if (p === '/login' || p === '/login/' || p === '/auth/login' || p === '/auth/login/') {
+    return next()
+  }
+  return requireAdminAuth(req, res, next)
+})
+
+// /api/v1/upload (admin cover image upload) is admin-only too
+app.use('/api/v1/upload', requireAdminAuth)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cluster HMAC Ticket Signing (主站 → 存储节点 双向鉴权凭证)
+// payload = { nodeId, timestamp }, matches storage-node's verifyClusterTicketSignature
+// ─────────────────────────────────────────────────────────────────────────────
+const createClusterSignedHeaders = (nodeId) => {
+  const configuredSecret = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
+  const timestamp = Date.now().toString()
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const payloadStr = JSON.stringify({ nodeId, timestamp })
+  const signature = crypto
+    .createHmac('sha256', configuredSecret)
+    .update(`${payloadStr}.${timestamp}.${nonce}`)
+    .digest('hex')
+
+  return {
+    'X-Cluster-Timestamp': timestamp,
+    'X-Cluster-Nonce': nonce,
+    'X-Cluster-Signature': signature
+  }
+}
+
 /**
  * Strict Header Normalizer
  * Strictly parses and uses the exact headers provided by the admin panel,
@@ -975,13 +1030,12 @@ app.post('/api/v1/admin/auth/login', (req, res) => {
   const { username, password } = req.body
   const expectedUsername = process.env.ADMIN_USERNAME || 'admin'
   const expectedPassword = process.env.ADMIN_PASSWORD || 'admin123'
-  const jwtSecret = process.env.JWT_SECRET || 'jwt-token-admin-secret-888'
 
   if (username === expectedUsername && password === expectedPassword) {
     return sendResponse(res, {
-      token: jwtSecret,
+      token: issueAdminToken(),
       user: { username: expectedUsername, role: 'SUPER_ADMIN' }
-    })
+    }, 200, '登录成功')
   }
   sendResponse(res, null, 401, '用户名或密码错误')
 })
@@ -1160,7 +1214,9 @@ app.get('/api/v1/admin/storage/status', async (req, res) => {
   const storageNodeUrl = defaultNode.baseUrl || 'http://localhost:3001'
 
   try {
-    const response = await fetch(`${storageNodeUrl}/api/v1/storage/status`)
+    const response = await fetch(`${storageNodeUrl}/api/v1/storage/status`, {
+      headers: createClusterSignedHeaders(defaultNode.id || 'node-01')
+    })
     if (response.ok) {
       const data = await response.json()
       return sendResponse(res, data.data || data)
@@ -1258,7 +1314,10 @@ app.get('/api/v1/admin/storage-nodes', async (req, res) => {
       const cleanBase = (n.baseUrl || '').replace(/\/$/, '')
       try {
         if (cleanBase) {
-          const resp = await fetch(`${cleanBase}/api/v1/storage/status`, { signal: AbortSignal.timeout(3000) })
+          const resp = await fetch(`${cleanBase}/api/v1/storage/status`, {
+            headers: createClusterSignedHeaders(n.id),
+            signal: AbortSignal.timeout(3000)
+          })
           if (resp.ok) {
             const json = await resp.json()
             isOnline = true
@@ -1308,7 +1367,8 @@ app.post('/api/v1/admin/storage-nodes/:id/set-default', (req, res) => {
 // GET /api/v1/admin/stats - Overview statistics (total revenue strictly from PAID orders)
 app.get('/api/v1/admin/stats', (_req, res) => {
   const orders = db.getOrders() || []
-  const paidOrders = orders.filter(o => o.status === 'PAID' || o.status === 'SUCCESS' || o.paid === true)
+  // 严格过滤：只统计状态为 PAID 的已完成支付订单，防水单/待支付混入
+  const paidOrders = orders.filter(o => o.status === 'PAID')
 
   const totalRevenue = paidOrders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0)
   const paidOrderCount = paidOrders.length
@@ -1331,7 +1391,7 @@ app.post('/api/v1/admin/login', (req, res) => {
     return sendResponse(res, {
       username,
       isLoggedIn: true,
-      token: 'admin-token-' + Date.now()
+      token: issueAdminToken()
     }, 200, '登录成功')
   }
 
@@ -1357,7 +1417,10 @@ app.get('/api/v1/admin/debug', async (req, res) => {
       let details = null
       try {
         if (cleanBase) {
-          const r = await fetch(`${cleanBase}/api/v1/storage/status`, { signal: AbortSignal.timeout(2000) })
+          const r = await fetch(`${cleanBase}/api/v1/storage/status`, {
+            headers: createClusterSignedHeaders(n.id),
+            signal: AbortSignal.timeout(2000)
+          })
           isReachable = r.ok
           if (r.ok) details = await r.json()
         }
@@ -1403,15 +1466,6 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
     return sendResponse(res, null, 404, '无可用存储节点')
   }
 
-  const configuredSecret = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
-  const timestamp = Date.now().toString()
-  const nonce = crypto.randomBytes(16).toString('hex')
-  const payloadStr = JSON.stringify({ nodeId: targetNode.id, timestamp })
-  const signature = crypto
-    .createHmac('sha256', configuredSecret)
-    .update(`${payloadStr}.${timestamp}.${nonce}`)
-    .digest('hex')
-
   const baseUrl = targetNode.baseUrl || 'http://localhost:3001'
   const cleanBase = baseUrl.replace(/\/$/, '')
   const uploadUrl = `${cleanBase}/api/v1/storage/upload`
@@ -1426,11 +1480,7 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
     uploadUrl,
     chunkUploadUrl,
     mergeUrl,
-    headers: {
-      'X-Cluster-Timestamp': timestamp,
-      'X-Cluster-Nonce': nonce,
-      'X-Cluster-Signature': signature
-    }
+    headers: createClusterSignedHeaders(targetNode.id)
   }, 200, '直传凭证生成成功')
 })
 
@@ -1457,6 +1507,7 @@ app.post('/api/v1/admin/videos/upload', uploadMemory.single('video'), async (req
 
     const response = await fetch(`${storageNodeUrl}/api/v1/storage/upload`, {
       method: 'POST',
+      headers: createClusterSignedHeaders(targetNode.id),
       body: formData
     })
 
