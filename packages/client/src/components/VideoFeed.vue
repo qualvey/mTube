@@ -44,7 +44,9 @@
         :key="video.id"
         :video="video"
         :is-vip-unlocked="isVip"
+        :active="activeVideoId === video.id"
         @trigger-paywall="$emit('trigger-paywall', $event)"
+        @request-activate="onRequestActivate"
       />
 
       <!-- End of Feed Indicator -->
@@ -82,6 +84,9 @@ const loading = ref(true)
 const videos = ref([])
 const activeFilter = ref('all')
 
+/** 当前激活（拉流/播放）的视频 ID，同一时间只允许一个 */
+const activeVideoId = ref(null)
+
 const filters = [
   { key: 'all', label: '推荐' },
   { key: 'vip', label: 'VIP独家' },
@@ -91,6 +96,10 @@ const filters = [
 onMounted(async () => {
   try {
     videos.value = await videoService.getVideos()
+    // 默认激活第一个视频开始拉流
+    if (videos.value.length > 0) {
+      activeVideoId.value = videos.value[0].id
+    }
   } finally {
     loading.value = false
   }
@@ -105,4 +114,14 @@ const filteredVideos = computed(() => {
   }
   return videos.value
 })
+
+/**
+ * 某个视频请求成为唯一激活视频（用户点击播放时触发）
+ * 切换后其他视频的 MemoryVideoPlayer 收到 active=false 会自动 abort + 暂停
+ */
+const onRequestActivate = (videoId) => {
+  if (activeVideoId.value !== videoId) {
+    activeVideoId.value = videoId
+  }
+}
 </script>

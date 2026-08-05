@@ -23,7 +23,7 @@
 
       <div class="flex flex-col gap-1 items-center max-w-xs">
         <h5 class="text-sm font-bold text-white tracking-wide">正在安全拉取视频流数据</h5>
-        <p class="text-[11px] text-zinc-400">注入自定义请求头 & 写入前端内存 ArrayBuffer / Blob</p>
+        <p class="text-[11px] text-zinc-400">正在快速加载，请稍候</p>
       </div>
 
       <!-- Download Progress Bar -->
@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import Plyr from 'plyr'
 import Hls from 'hls.js'
 import 'plyr/dist/plyr.css'
@@ -116,6 +116,8 @@ export interface ComponentProps {
   enableSeekPreview?: boolean
   isVipUnlocked?: boolean
   previewDuration?: number
+  /** 控制此播放器是否为当前激活（加载+播放）状态，默认 true 保持向后兼容 */
+  active?: boolean
 }
 
 const props = withDefaults(defineProps<ComponentProps>(), {
@@ -123,7 +125,8 @@ const props = withDefaults(defineProps<ComponentProps>(), {
   loop: false,
   muted: true,
   enableSeekPreview: true,
-  isVipUnlocked: false
+  isVipUnlocked: false,
+  active: true
 })
 
 const emit = defineEmits<{
@@ -132,6 +135,8 @@ const emit = defineEmits<{
   (e: 'play'): void
   (e: 'pause'): void
   (e: 'trial-ended', limit: number): void
+  /** 播放器请求成为唯一激活视频（由父层响应，abort 其他） */
+  (e: 'request-activate'): void
 }>()
 
 // Reactive States
@@ -526,7 +531,10 @@ const initializePlyr = () => {
     handleLoadedMetadata()
   })
 
-  plyrInstance.on('play', () => emit('play'))
+  plyrInstance.on('play', () => {
+    emit('request-activate')
+    emit('play')
+  })
   plyrInstance.on('pause', () => emit('pause'))
 
   let trialTriggered = false
@@ -547,10 +555,32 @@ const initializePlyr = () => {
   })
 }
 
+// 当 active 从 false -> true 时开始加载；从 true -> false 时 abort 并清理
+watch(
+  () => props.active,
+  (isActive) => {
+    if (isActive) {
+      nextTick(() => loadVideoToMemory())
+    } else {
+      // 非激活状态：中止拉流，暂停播放，释放资源
+      if (currentAbortController) {
+        currentAbortController.abort()
+        currentAbortController = null
+      }
+      if (plyrInstance) {
+        try { plyrInstance.pause() } catch {}
+      }
+    }
+  }
+)
+
+// 视频 URL 变化时重新加载（仅在激活状态下）
 watch(
   () => [props.video.videoUrl, props.video.headers],
   () => {
-    loadVideoToMemory()
+    if (props.active) {
+      loadVideoToMemory()
+    }
   },
   { deep: true }
 )
@@ -571,7 +601,10 @@ const fetchGlobalSettings = async () => {
 
 onMounted(() => {
   fetchGlobalSettings()
-  loadVideoToMemory()
+  // 只有 active=true 时才立即加载（默认 true 保持向后兼容）
+  if (props.active) {
+    loadVideoToMemory()
+  }
 })
 
 onUnmounted(() => {
