@@ -5,9 +5,32 @@
     @mousemove="handleContainerMouseMove"
     @mouseleave="hoveringProgress = false"
   >
+    <!-- Idle State: 封面 + 播放按钮（未激活/未开始时展示） -->
+    <div
+      v-if="!hasStarted"
+      class="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
+      @click="onManualPlay"
+    >
+      <!-- 封面图 -->
+      <img
+        v-if="video.poster"
+        :src="video.poster"
+        class="absolute inset-0 w-full h-full object-cover"
+        loading="lazy"
+      />
+      <!-- 暗色蒙层 -->
+      <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/30 transition-opacity group-hover:from-black/80" />
+      <!-- 播放按钮 -->
+      <div class="relative z-10 w-16 h-16 rounded-full bg-yellow-500/90 backdrop-blur-sm flex items-center justify-center shadow-[0_0_30px_rgba(234,179,8,0.5)] transition-all duration-200 hover:scale-110 hover:bg-yellow-400 active:scale-95">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-8 h-8 text-black ml-1">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+      </div>
+    </div>
+
     <!-- Loading Overlay with Progress Bar -->
     <div 
-      v-if="loading" 
+      v-else-if="loading" 
       class="absolute inset-0 z-30 bg-zinc-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center"
     >
       <div class="relative w-16 h-16 mb-4 flex items-center justify-center">
@@ -47,7 +70,7 @@
       </div>
       <p class="text-xs text-red-300 font-semibold mb-3 max-w-xs">{{ errorMessage }}</p>
       <button 
-        @click="loadVideoToMemory" 
+        @click="onManualPlay" 
         class="px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-lg border border-zinc-600 transition-all"
       >
         重新拉取
@@ -141,9 +164,12 @@ const emit = defineEmits<{
 
 // Reactive States
 const videoRef = ref<HTMLVideoElement | null>(null)
-const loading = ref<boolean>(true)
+const loading = ref<boolean>(false)   // 初始 false，idle 状态下不显示 spinner
 const progress = ref<number>(0)
 const errorMessage = ref<string | null>(null)
+
+/** 是否已开始拉流（false = idle 状态，展示封面+播放按钮） */
+const hasStarted = ref<boolean>(false)
 
 // Aspect Ratio State for Landscape / Portrait Auto Adaptation
 const videoAspectRatio = ref<string>('16 / 9')
@@ -317,6 +343,8 @@ const cleanupPlayerInstances = () => {
 const loadVideoToMemory = async () => {
   cleanupPlayerInstances()
 
+  // 标记已开始，切换到 loading UI
+  hasStarted.value = true
   loading.value = true
   progress.value = 0
   errorMessage.value = null
@@ -467,14 +495,34 @@ const initializePlyr = () => {
   })
 }
 
-// 当 active 从 false -> true 时开始加载；从 true -> false 时 abort 并清理
+/**
+ * 用户手动点击封面播放按钮 → 请求激活并开始加载
+ */
+const onManualPlay = () => {
+  emit('request-activate')
+  // 如果已经是 active 状态（自己就是激活的），直接开始加载
+  if (props.active) {
+    hasStarted.value = true
+    loadVideoToMemory()
+  }
+  // 否则等 watch(active) 监听到 true 后再开始
+}
+
+// 当 active 变化时协调加载/暂停
 watch(
   () => props.active,
   (isActive) => {
     if (isActive) {
-      nextTick(() => loadVideoToMemory())
+      if (!hasStarted.value) {
+        // 首次激活 → 开始加载
+        hasStarted.value = true
+        nextTick(() => loadVideoToMemory())
+      } else if (!loading.value && plyrInstance) {
+        // 已加载过，重新 play（从暂停恢复）
+        try { plyrInstance.play() } catch {}
+      }
     } else {
-      // 非激活状态：中止拉流，暂停播放，释放资源
+      // 停用 → 仅暂停，保留 hasStarted 状态（不重置封面）
       if (currentAbortController) {
         currentAbortController.abort()
         currentAbortController = null
@@ -513,10 +561,12 @@ const fetchGlobalSettings = async () => {
 
 onMounted(() => {
   fetchGlobalSettings()
-  // 只有 active=true 时才立即加载（默认 true 保持向后兼容）
+  // 第一个视频（active=true）立即激活
   if (props.active) {
+    hasStarted.value = true
     loadVideoToMemory()
   }
+  // 其他视频保持 idle 状态，等待 IntersectionObserver 或手动点击激活
 })
 
 onUnmounted(() => {

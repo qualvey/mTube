@@ -1,5 +1,6 @@
 <template>
   <div 
+    ref="cardRef"
     class="relative w-full rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 shadow-2xl transition-all duration-300 hover:border-zinc-700/80"
   >
     <!-- Video Player Area -->
@@ -105,7 +106,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 import MemoryVideoPlayer from './MemoryVideoPlayer.vue'
 import { trackAnalytics } from '../services/videoService'
@@ -158,4 +159,37 @@ const formatCount = (count) => {
   }
   return count
 }
+
+// ── IntersectionObserver — YouTube 式自动激活逻辑 ────────────────────────────
+// 当卡片进入视口中心区域时，自动 emit request-activate 让 VideoFeed 切换活跃视频
+const cardRef = ref(null)
+let intersectionObserver = null
+
+onMounted(() => {
+  intersectionObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0]
+      if (entry.isIntersecting) {
+        // 进入视口中心区域 → 请求激活
+        emit('request-activate', props.video.id)
+      }
+    },
+    {
+      // rootMargin 分别从上/下将视口缩小，只有位于中心区域的卡片才会触发
+      // 偏上（-20%）是因为向下滚动时卡片先出现在下半屏
+      rootMargin: '-20% 0px -30% 0px',
+      threshold: 0
+    }
+  )
+  if (cardRef.value) {
+    intersectionObserver.observe(cardRef.value)
+  }
+})
+
+onUnmounted(() => {
+  if (intersectionObserver) {
+    intersectionObserver.disconnect()
+    intersectionObserver = null
+  }
+})
 </script>
