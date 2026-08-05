@@ -17,6 +17,7 @@
         :src="video.poster"
         class="absolute inset-0 w-full h-full object-cover"
         loading="eager"
+        @load="handlePosterLoad"
       />
       <!-- 暗色蒙层 -->
       <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/30 transition-opacity group-hover:from-black/80" />
@@ -157,8 +158,18 @@ const videoAspectRatio = ref<string>('16 / 9')
 const isPortrait = ref<boolean>(false)
 
 /**
- * Handle video loadedmetadata to detect resolution and aspect ratio dynamically
+ * 封面图加载完成 → 检测实际尺寸 → 更新容器比例
+ * 只在 idle 状态下更新，避免覆盖视频元数据提供的就绪比例
  */
+const handlePosterLoad = (e: Event) => {
+  if (hasStarted.value) return  // 视频已开始，由 handleLoadedMetadata 控制
+  const img = e.target as HTMLImageElement
+  if (img.naturalWidth && img.naturalHeight) {
+    videoAspectRatio.value = `${img.naturalWidth} / ${img.naturalHeight}`
+    isPortrait.value = img.naturalHeight > img.naturalWidth
+  }
+}
+
 const handleLoadedMetadata = (e?: Event) => {
   const el = (e?.target as HTMLVideoElement) || videoRef.value
   if (el && el.videoWidth && el.videoHeight) {

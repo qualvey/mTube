@@ -95,24 +95,34 @@ export const trackAnalytics = async (action = 'PV', videoId = null) => {
 export const videoService = {
 
   // Fetch video list from backend REST API or fallback to mock data
-  async getVideos(filter = null, tag = null) {
+  async getVideos(filter = null, tag = null, page = 1, limit = 10) {
     try {
       const params = new URLSearchParams()
       if (filter) params.append('filter', filter)
       if (tag) params.append('tag', tag)
+      params.append('page', page)
+      params.append('limit', limit)
 
-      const url = `/api/v1/videos${params.toString() ? '?' + params.toString() : ''}`
+      const url = `/api/v1/videos?${params.toString()}`
       const res = await fetch(url)
       if (res.ok) {
         const json = await res.json()
         if (json && json.data) {
-          return json.data
+          // \u5206\u9875\u7ed3\u6784: { items, total, page, limit, totalPages }
+          if (json.data.items !== undefined) return json.data
+          // \u65e7\u683c\u5f0f\u517c\u5bb9\uff08\u6570\u7ec4\uff09
+          if (Array.isArray(json.data)) {
+            return { items: json.data, total: json.data.length, page: 1, limit: json.data.length, totalPages: 1 }
+          }
         }
       }
     } catch (e) {
       console.warn('Backend API connection failed, using local dataset fallback:', e)
     }
-    return JSON.parse(JSON.stringify(mockFallbackVideos))
+    // Fallback \u6570\u636e\u5206\u9875
+    const start = (page - 1) * limit
+    const items = JSON.parse(JSON.stringify(mockFallbackVideos.slice(start, start + limit)))
+    return { items, total: mockFallbackVideos.length, page, limit, totalPages: Math.ceil(mockFallbackVideos.length / limit) }
   },
 
   // Fetch all tags with video counts
