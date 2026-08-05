@@ -173,7 +173,6 @@ const globalSeekPreviewEnabled = ref<boolean>(true)
 
 let plyrInstance: Plyr | null = null
 let hlsInstance: Hls | null = null
-let activeObjectUrl: string | null = null
 let currentAbortController: AbortController | null = null
 
 const parseHeaders = (rawHeaders?: CustomHeaders | string | null): Record<string, string> => {
@@ -274,30 +273,6 @@ const handleContainerMouseMove = (e: MouseEvent) => {
 }
 
 /**
- * Safely revokes Object URL with a 1.5s grace period so Chrome media decoder never hits ERR_FILE_NOT_FOUND
- */
-const safeRevokeObjectUrl = () => {
-  if (activeObjectUrl) {
-    const urlToRevoke = activeObjectUrl
-    activeObjectUrl = null
-
-    if (videoRef.value && videoRef.value.src === urlToRevoke) {
-      videoRef.value.removeAttribute('src')
-      try {
-        videoRef.value.load()
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    setTimeout(() => {
-      console.log(`[MemoryVideoPlayer Debug] 🗑️ Safely revoked Blob URL from RAM: ${urlToRevoke}`)
-      URL.revokeObjectURL(urlToRevoke)
-    }, 1500)
-  }
-}
-
-/**
  * Destroys Plyr player and HLS instance
  */
 const cleanupPlayerInstances = () => {
@@ -323,10 +298,21 @@ const cleanupPlayerInstances = () => {
     }
     plyrInstance = null
   }
+
+  // 清空 video src，避免旧流继续占用
+  if (videoRef.value) {
+    try {
+      videoRef.value.pause()
+      videoRef.value.removeAttribute('src')
+      videoRef.value.load()
+    } catch (e) { /* ignore */ }
+  }
 }
 
 /**
- * Main Video Loader with 5-Step Step-by-Step Debug Log Tracing
+ * Main Video Loader — 直接流式播放
+ * 后端代理已处理所有自定义 headers，客户端直接将代理 URL 赋给 video.src，
+ * 浏览器通过原生 Range 请求实现分片流式播放，无需全量下载。
  */
 const loadVideoToMemory = async () => {
   cleanupPlayerInstances()
@@ -336,8 +322,6 @@ const loadVideoToMemory = async () => {
   errorMessage.value = null
   videoAspectRatio.value = '16 / 9'
   isPortrait.value = false
-
-  currentAbortController = new AbortController()
 
   const { video } = props
   if (!video || !video.videoUrl) {
@@ -349,33 +333,27 @@ const loadVideoToMemory = async () => {
   const customHeaders = parseHeaders(video.headers)
   const cleanUrl = video.videoUrl.trim()
   const isM3u8 = cleanUrl.includes('.m3u8')
-  const isYoutube = cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')
   const hasHeaders = Object.keys(customHeaders).length > 0
 
-  let fetchTargetUrl = cleanUrl
+  // 构建后端代理 URL（后端负责注入所有自定义 headers）
   const deviceId = localStorage.getItem('mp_device_id') || ''
-  if (isYoutube || hasHeaders || video.id || isM3u8) {
-    const params = new URLSearchParams()
-    if (video.id) params.append('id', video.id)
-    if (deviceId) params.append('deviceId', deviceId)
-    params.append('url', cleanUrl)
-    if (hasHeaders) params.append('headers', JSON.stringify(customHeaders))
-    fetchTargetUrl = `/api/v1/proxy/video?${params.toString()}`
+  const params = new URLSearchParams()
+  if (video.id) params.append('id', video.id)
+  if (deviceId) params.append('deviceId', deviceId)
+  params.append('url', cleanUrl)
+  if (hasHeaders) params.append('headers', JSON.stringify(customHeaders))
+  const proxyUrl = `/api/v1/proxy/video?${params.toString()}`
+
+  console.log(`[StreamPlayer] 模式: ${isM3u8 ? 'HLS' : 'MP4 直接流'} | URL: ${proxyUrl}`)
+
+  if (!videoRef.value) {
+    errorMessage.value = '播放器初始化失败'
+    loading.value = false
+    return
   }
 
-  console.group(`[MemoryVideoPlayer Step-by-Step Debug] Video: ${video.id || 'N/A'}`)
-  console.log(`[Step 1/5 - URL Prep] Target Fetch URL:`, fetchTargetUrl)
-  console.log(`[Step 1/5 - Headers] Parsed Headers:`, customHeaders)
-  console.log(`[Step 1/5 - Mode] Stream Mode: ${isM3u8 ? 'HLS Playlist (.m3u8)' : 'MP4 Direct Memory Blob'}`)
-
-  // Case A: HLS Stream (.m3u8) -> Use hls.js with Plyr
+  // ── Case A: HLS (.m3u8) → hls.js 分片流 ────────────────────────────────────
   if (isM3u8) {
-    console.log(`[Step 2/5 - HLS] Initializing Hls.js on proxy endpoint:`, fetchTargetUrl)
-    if (!videoRef.value) {
-      console.error(`[Step 2/5 - HLS] Failed: videoRef DOM element is null`)
-      console.groupEnd()
-      return
-    }
     loading.value = false
     progress.value = 100
 
@@ -387,121 +365,55 @@ const loadVideoToMemory = async () => {
         levelLoadingTimeOut: 60000,
         fragLoadingTimeOut: 60000
       })
-      hlsInstance.loadSource(fetchTargetUrl)
+      hlsInstance.loadSource(proxyUrl)
       hlsInstance.attachMedia(videoRef.value)
-      console.log(`[Step 3/5 - HLS] Hls.js source loaded & attached to HTML5 video element.`)
     } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
-      videoRef.value.src = fetchTargetUrl
-      console.log(`[Step 3/5 - HLS] Native Safari HLS src assigned:`, fetchTargetUrl)
+      videoRef.value.src = proxyUrl
     }
 
-    console.log(`[Step 4/5 - HLS] Initializing Plyr UI player...`)
     initializePlyr()
-    console.log(`[Step 5/5 - HLS] Success! HLS Player mounted and ready for playback.`)
-    console.groupEnd()
-    emit('loaded', fetchTargetUrl)
+    emit('loaded', proxyUrl)
     return
   }
 
-  // Case B: MP4 Stream -> Fetch into memory Blob -> Object URL
-  try {
-    console.log(`[Step 2/5 - Fetch] Initiating HTTP GET request to backend proxy... with url: \n ${fetchTargetUrl}`)
-    const response = await fetch(fetchTargetUrl, {
-      method: 'GET',
-      headers: customHeaders,
-      signal: currentAbortController.signal
-    })
+  // ── Case B: MP4 → 直接赋值 video.src，浏览器 Range 请求分片流 ──────────────
+  // loading 状态由 video 事件驱动
+  const el = videoRef.value
 
-    console.log(`[Step 2/5 - Response] HTTP Status: ${response.status} ${response.statusText}`)
-    console.log(`[Step 2/5 - Response] Content-Type: ${response.headers.get('content-type')}`)
-    console.log(`[Step 2/5 - Response] Content-Length: ${response.headers.get('content-length')} bytes`)
-
-    if (!response.ok) {
-      throw new Error(`HTTP 错误代码: ${response.status} ${response.statusText}`)
-    }
-
-    const contentLengthHeader = response.headers.get('content-length')
-    const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0
-    const contentType = response.headers.get('content-type') || 'video/mp4'
-
-    const reader = response.body?.getReader()
-    const chunks: Uint8Array[] = []
-    let receivedBytes = 0
-
-    if (reader) {
-      console.log(`[Step 3/5 - Stream] Reading stream chunks from response body...`)
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value) {
-          chunks.push(value)
-          receivedBytes += value.length
-          if (totalBytes > 0) {
-            progress.value = Math.min(100, (receivedBytes / totalBytes) * 100)
-          } else {
-            progress.value = Math.min(95, progress.value + 5)
-          }
-        }
-      }
-    } else {
-      console.log(`[Step 3/5 - ArrayBuffer] Reading arrayBuffer directly...`)
-      const arrayBuffer = await response.arrayBuffer()
-      chunks.push(new Uint8Array(arrayBuffer))
-      receivedBytes = arrayBuffer.byteLength
-    }
-
-    progress.value = 100
-    console.log(`[Step 3/5 - Assembly] All chunks received! Total Chunks: ${chunks.length}, Total Size: ${(receivedBytes / 1024 / 1024).toFixed(2)} MB`)
-
-    // Revoke previous Blob URL gracefully
-    safeRevokeObjectUrl()
-
-    console.log(`[Step 4/5 - Blob] Assembling new Blob({ type: '${contentType}' })...`)
-    const videoBlob = new Blob(chunks, { type: contentType })
-
-    console.log(`[Step 4/5 - ObjectURL] Calling URL.createObjectURL(videoBlob)...`)
-    activeObjectUrl = URL.createObjectURL(videoBlob)
-
-    console.log(`[Step 4/5 - ObjectURL] SUCCESS! Generated RAM Object URL:`, activeObjectUrl)
-
-    if (!videoRef.value) {
-      console.error(`[Step 5/5 - Mount] Failed: videoRef DOM element is null`)
-      console.groupEnd()
-      return
-    }
-
-    console.log(`[Step 5/5 - Mount] Assigning videoRef.src = '${activeObjectUrl}'`)
-    videoRef.value.src = activeObjectUrl
+  const onCanPlay = () => {
     loading.value = false
+    progress.value = 100
+    el.removeEventListener('canplay', onCanPlay)
+    el.removeEventListener('error', onError)
+  }
 
-    console.log(`[Step 5/5 - Plyr] Initializing Plyr UI player on video element...`)
-    initializePlyr()
-
-    console.log(`[Step 5/5 - Complete] Memory Video Stream player fully mounted and ready!`)
-    console.groupEnd()
-    emit('loaded', activeObjectUrl)
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      console.log(`[Step X - Abort] Fetch request was aborted cleanly.`)
-      console.groupEnd()
-      safeRevokeObjectUrl()
-      return
-    }
-    console.error(`[Step X - FAILED] Memory stream fetch failed:`, err)
-    console.groupEnd()
-
-    if (videoRef.value) {
-      safeRevokeObjectUrl()
-      videoRef.value.src = fetchTargetUrl
-      loading.value = false
-      initializePlyr()
-      emit('loaded', fetchTargetUrl)
-    } else {
-      errorMessage.value = `视频加载失败: ${err.message}`
-      loading.value = false
-      emit('error', err)
+  const onProgress = () => {
+    // 用 buffered 范围计算已缓冲百分比用于进度条显示
+    if (el.buffered.length > 0 && el.duration > 0) {
+      const bufferedEnd = el.buffered.end(el.buffered.length - 1)
+      progress.value = Math.min(99, (bufferedEnd / el.duration) * 100)
     }
   }
+
+  const onError = () => {
+    errorMessage.value = '视频加载失败，请重试'
+    loading.value = false
+    el.removeEventListener('canplay', onCanPlay)
+    el.removeEventListener('progress', onProgress)
+    el.removeEventListener('error', onError)
+    emit('error', new Error('Video load error'))
+  }
+
+  el.addEventListener('canplay', onCanPlay, { once: true })
+  el.addEventListener('progress', onProgress)
+  el.addEventListener('error', onError, { once: true })
+
+  // 直接赋值代理 URL，浏览器自动发 Range 请求，立即开始缓冲
+  el.src = proxyUrl
+  el.load()
+
+  initializePlyr()
+  emit('loaded', proxyUrl)
 }
 
 /**
@@ -609,7 +521,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   cleanupPlayerInstances()
-  safeRevokeObjectUrl()
 })
 </script>
 
