@@ -294,6 +294,7 @@ const handleFileUpload = async (event, fieldName) => {
           }
         } catch (directErr) {
           console.warn('[Direct Upload] Direct upload failed, falling back to proxy upload:', directErr.message)
+          ElMessage.warning('直传失败，已降级为主控中转模式：' + directErr.message)
         }
       }
 
