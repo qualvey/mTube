@@ -10,7 +10,9 @@
         :video="video"
         :muted="isMuted"
         :is-vip-unlocked="isVipUnlocked"
+        :active="active"
         @trial-ended="handleTrialEnded"
+        @request-activate="$emit('request-activate', video.id)"
       />
 
       <!-- VIP Locked Overlay when trial ended -->
@@ -116,10 +118,15 @@ const props = defineProps({
   isVipUnlocked: {
     type: Boolean,
     default: false
+  },
+  /** 是否为当前激活（拉流/播放）的视频 */
+  active: {
+    type: Boolean,
+    default: true
   }
 })
 
-const emit = defineEmits(['trigger-paywall'])
+const emit = defineEmits(['trigger-paywall', 'request-activate'])
 
 const isMuted = ref(true)
 const isLiked = ref(props.video.isLiked)
