@@ -139,8 +139,10 @@ app.use('/api/v1/storage', (req, res, next) => {
   return res.status(401).json({ code: 401, message: `存储节点接口鉴权失败: ${auth.reason}` })
 })
 
-// Static media source-origin whitelist: enforced ONLY when ALLOWED_ORIGINS is configured.
-// <video>/<img> tags cannot send custom headers, so media access is gated by Referer/Origin.
+// Static media source-origin protection: enforced ONLY when ALLOWED_ORIGINS is configured.
+// Hotlink policy (industry standard): requests WITHOUT an Origin/Referer header (mobile WebViews,
+// privacy mode, direct URL visits) are allowed; requests WITH an Origin/Referer must match the
+// whitelist — otherwise 403. Strict mode (blocking no-referer) would break mobile playback.
 app.use('/uploads', (req, res, next) => {
   if (ALLOWED_ORIGINS.length === 0) {
     console.warn('[Storage Node ⚠️] ALLOWED_ORIGINS 未配置，静态媒体当前允许任意来源访问（建议配置 C 端/后台域名）')
@@ -151,7 +153,11 @@ app.use('/uploads', (req, res, next) => {
   try {
     originHost = origin ? new URL(origin).origin : ''
   } catch (e) { /* ignore */ }
-  if (originHost && ALLOWED_ORIGINS.includes(originHost)) {
+  // No source header → allow (mobile WebView / privacy mode / direct link)
+  if (!originHost) {
+    return next()
+  }
+  if (ALLOWED_ORIGINS.includes(originHost)) {
     return next()
   }
   return res.status(403).json({ code: 403, message: '来源域名不在白名单，拒绝访问媒体资源' })
