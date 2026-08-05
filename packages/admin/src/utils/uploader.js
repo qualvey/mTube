@@ -130,7 +130,8 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
 export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, options = {}) => {
   const { uploadProgress, uploadSpeed, uploadDetailText, uploadStatusLabel } = stateRefs
   const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB per chunk
-  const CONCURRENCY = Number(options.concurrency) || 4
+  // Clamp to the 2-8 channel range enforced by the admin settings UI
+  const CONCURRENCY = Math.min(8, Math.max(2, Number(options.concurrency) || 4))
   const MAX_RETRIES = 3
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
@@ -154,7 +155,9 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
   let resumedChunks = new Set()
   try {
     if (uploadStatusLabel) uploadStatusLabel.value = '⚡ [断点检测] 探测存储节点历史分片...'
-    const checkRes = await fetch(`${cleanBase}/api/v1/storage/check-chunks?uploadId=${uploadId}`, {
+    // Pass fileSize/totalChunks so the node can size-validate resumed chunks
+    // (0-byte or partial chunks from a crashed session are discarded → self-healing resume)
+    const checkRes = await fetch(`${cleanBase}/api/v1/storage/check-chunks?uploadId=${uploadId}&fileSize=${file.size}&totalChunks=${totalChunks}`, {
       headers: ticket.headers || {}
     })
     if (checkRes.ok) {
@@ -234,21 +237,42 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
         if (uploadStatusLabel) {
           uploadStatusLabel.value = `⚡ [缝合中] ${CONCURRENCY}通道传输完毕，存储节点缝合文件并提取第50帧封面...`
         }
-        fetch(ticket.mergeUrl, {
+
+        const mergePayload = { uploadId, filename: file.name, totalChunks, fileSize: file.size }
+
+        const callMerge = () => fetch(ticket.mergeUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(ticket.headers || {}) },
-          body: JSON.stringify({ uploadId, filename: file.name, totalChunks })
-        })
-          .then(r => r.json())
-          .then(mj => {
+          body: JSON.stringify(mergePayload),
+          // 10 min: includes FFmpeg frame-50 poster extraction on the storage node
+          signal: AbortSignal.timeout(600000)
+        }).then(r => r.json())
+
+        // Merge is idempotent on the storage node (merge_result_<uploadId> record):
+        // if the first attempt actually succeeded server-side but the response was lost
+        // (timeout/network blip), the retry returns the stored result instead of re-uploading.
+        const attemptMerge = async (attempt) => {
+          try {
+            const mj = await callMerge()
             if (mj.code === 200 && mj.data) {
               if (uploadProgress) uploadProgress.value = 100
               resolve({ ok: true, status: 200, data: mj })
-            } else {
-              reject(new Error(mj.message || '分片拼接失败'))
+              return
             }
-          })
-          .catch(err => reject(new Error('merge-chunks 请求失败: ' + err.message)))
+            throw new Error(mj.message || '分片拼接失败')
+          } catch (err) {
+            if (attempt < 2) {
+              console.warn(`[MergeRetry] merge attempt ${attempt}/2 failed (${err.message}), retrying...`)
+              if (uploadStatusLabel) {
+                uploadStatusLabel.value = `⚡ [缝合重试] 第 ${attempt + 1}/2 次...`
+              }
+              await new Promise(r => setTimeout(r, 2000))
+              return attemptMerge(attempt + 1)
+            }
+            reject(new Error('merge-chunks 请求失败: ' + err.message))
+          }
+        }
+        attemptMerge(1)
         return
       }
 
