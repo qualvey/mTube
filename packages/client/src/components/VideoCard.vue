@@ -127,7 +127,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['trigger-paywall', 'request-activate'])
+const emit = defineEmits(['trigger-paywall', 'request-activate', 'request-pause'])
 
 const isMuted = ref(true)
 const isLiked = ref(props.video.isLiked)
@@ -170,8 +170,11 @@ onMounted(() => {
     (entries) => {
       const entry = entries[0]
       if (entry.isIntersecting) {
-        // 进入视口中心区域 → 请求激活
+        // 进入视口中心区域 → 激活并播放
         emit('request-activate', props.video.id)
+      } else {
+        // 离开视口中心区域 → 暂停
+        emit('request-pause', props.video.id)
       }
     },
     {

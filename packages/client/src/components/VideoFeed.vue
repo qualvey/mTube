@@ -47,6 +47,7 @@
         :active="activeVideoId === video.id"
         @trigger-paywall="$emit('trigger-paywall', $event)"
         @request-activate="onRequestActivate"
+        @request-pause="onRequestPause"
       />
 
       <!-- End of Feed Indicator -->
@@ -116,12 +117,20 @@ const filteredVideos = computed(() => {
 })
 
 /**
- * 某个视频请求成为唯一激活视频（用户点击播放时触发）
- * 切换后其他视频的 MemoryVideoPlayer 收到 active=false 会自动 abort + 暂停
+ * 某个视频请求成为唯一激活视频（用户点击播放或进入视口中心时触发）
  */
 const onRequestActivate = (videoId) => {
   if (activeVideoId.value !== videoId) {
     activeVideoId.value = videoId
+  }
+}
+
+/**
+ * 某个视频离开视口中心 → 清除 activeVideoId 触发 pause
+ */
+const onRequestPause = (videoId) => {
+  if (activeVideoId.value === videoId) {
+    activeVideoId.value = null
   }
 }
 </script>
