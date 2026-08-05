@@ -328,21 +328,31 @@ export const db = {
   getVideos(options = {}) {
     const filter = typeof options === 'string' ? options : options.filter
     const tag = typeof options === 'object' ? options.tag : null
+    const pageParam = options.page !== undefined ? parseInt(options.page) : null
+    const limitParam = options.limit !== undefined ? parseInt(options.limit) : null
 
-    let sql = 'SELECT * FROM videos ORDER BY createdAt DESC'
-    if (filter === 'vip') {
-      sql = 'SELECT * FROM videos WHERE isVip = 1 ORDER BY createdAt DESC'
-    } else if (filter === 'free') {
-      sql = 'SELECT * FROM videos WHERE isVip = 0 ORDER BY createdAt DESC'
-    }
-    const rows = database.prepare(sql).all()
-    let results = rows.map(formatVideoRow)
+    let where = ''
+    if (filter === 'vip') where = 'WHERE isVip = 1'
+    else if (filter === 'free') where = 'WHERE isVip = 0'
+
+    const allRows = database.prepare(`SELECT * FROM videos ${where} ORDER BY createdAt DESC`).all()
+    let results = allRows.map(formatVideoRow)
 
     if (tag && tag.trim()) {
       const targetTag = tag.trim().toLowerCase()
       results = results.filter(v => v.tags && v.tags.some(t => String(t).toLowerCase() === targetTag))
     }
 
+    // \u5206\u9875\u6a21\u5f0f\uff08\u4f20\u5165 page/limit \u65f6\uff09
+    if (pageParam !== null && limitParam !== null) {
+      const total = results.length
+      const totalPages = Math.ceil(total / limitParam) || 1
+      const offset = (pageParam - 1) * limitParam
+      const items = results.slice(offset, offset + limitParam)
+      return { items, total, page: pageParam, limit: limitParam, totalPages }
+    }
+
+    // \u65e0\u5206\u9875\u65f6\u8fd4\u56de\u6570\u7ec4\uff08\u5185\u90e8\u8c03\u7528\u65b9\u5411\u540e\u517c\u5bb9\uff09
     return results
   },
 

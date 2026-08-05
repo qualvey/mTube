@@ -656,8 +656,10 @@ app.all('/api/v1/admin/loglevel', (req, res) => {
 
 app.get('/api/v1/videos', (req, res) => {
   const { filter, tag } = req.query
-  const videoList = db.getVideos({ filter, tag })
-  sendResponse(res, videoList)
+  const page = req.query.page ? parseInt(req.query.page) : 1
+  const limit = req.query.limit ? parseInt(req.query.limit) : 10
+  const result = db.getVideos({ filter, tag, page, limit })
+  sendResponse(res, result)
 })
 
 app.get('/api/v1/tags', (req, res) => {
