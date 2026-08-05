@@ -19,15 +19,19 @@
         :style="{ opacity: progress > 0.2 ? 1 : 0 }"
       >
         <h2 class="text-3xl font-bold text-white mb-2 shadow-black drop-shadow-xl" :style="{ transform: `translateY(${(1 - progress) * 50}px)` }">
-          即将解锁...
+          {{ t('scrollTransition.title') }}
         </h2>
-        <p class="text-zinc-200">正在为您准备高清画集与独家视频</p>
+        <p class="text-zinc-200">{{ t('scrollTransition.desc') }}</p>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps({
   progress: {
     type: Number,

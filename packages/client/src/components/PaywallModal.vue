@@ -30,15 +30,15 @@
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5 text-yellow-400">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
-          <span class="font-medium">下滑收起，返回视频流</span>
+          <span class="font-medium">{{ t('paywall.swipeDown') }}</span>
         </div>
       </div>
       
       <h3 class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500 mb-1 text-center">
-        开通 VIP 尊享完整超清视频
+        {{ t('paywall.title') }}
       </h3>
       <p class="text-zinc-400 text-xs mb-5 text-center">
-        全网独家原画内存流，支持支付宝与 USDT 加密货币无感开通
+        {{ t('paywall.subtitle') }}
       </p>
 
       <!-- Payment Channel Tabs -->
@@ -51,7 +51,7 @@
           <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z"/>
           </svg>
-          <span>支付宝支付</span>
+          <span>{{ t('paywall.tabAlipay') }}</span>
         </button>
 
         <button 
@@ -62,7 +62,7 @@
           <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
             <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
           </svg>
-          <span>USDT 加密货币</span>
+          <span>{{ t('paywall.tabCrypto') }}</span>
         </button>
 
         <button 
@@ -70,21 +70,21 @@
           class="flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5"
           :class="activePayTab === 'restore' ? 'bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-md' : 'text-zinc-400 hover:text-white'"
         >
-          <span>凭订单号恢复</span>
+          <span>{{ t('paywall.tabRestore') }}</span>
         </button>
       </div>
 
       <!-- Created Order ID Banner -->
       <div v-if="createdOrderId" class="w-full p-3.5 mb-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between shadow-md">
         <div class="flex flex-col gap-0.5">
-          <span class="text-[10px] text-zinc-400 font-medium">已创建订单号 (支付凭证)</span>
+          <span class="text-[10px] text-zinc-400 font-medium">{{ t('paywall.orderCreated') }}</span>
           <span class="text-xs font-mono font-black text-yellow-400 select-all tracking-wide">{{ createdOrderId }}</span>
         </div>
         <button 
           @click="copyOrderId" 
           class="px-3 py-1 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-black font-black text-xs rounded-xl transition-all shadow"
         >
-          {{ copiedOrderId ? '✓ 已复制' : '复制订单号' }}
+          {{ copiedOrderId ? t('paywall.copiedTick') : t('paywall.copyOrderId') }}
         </button>
       </div>
 
@@ -100,7 +100,7 @@
           >
             <!-- Recommended Badge -->
             <div v-if="plan.badgeText || plan.isHot" class="absolute top-0 right-0 bg-yellow-500 text-black text-[10px] font-black px-2.5 py-0.5 rounded-bl-lg shadow">
-              {{ plan.badgeText || '限时特惠' }}
+              {{ plan.badgeText || t('paywall.hotDeal') }}
             </div>
 
             <div class="w-5 h-5 rounded-full border-2 border-zinc-500 mr-4 flex items-center justify-center" :class="{ 'border-yellow-500 bg-yellow-500': selectedPlanId === plan.id || selectedPlanId === plan.key }">
@@ -110,7 +110,7 @@
               <div class="font-bold text-white text-sm flex items-center gap-2">
                 <span>{{ plan.name }}</span>
               </div>
-              <div class="text-xs text-zinc-400 mt-0.5">{{ plan.description || '解锁全部超清内存流视频' }}</div>
+              <div class="text-xs text-zinc-400 mt-0.5">{{ plan.description || t('paywall.defaultPlanDesc') }}</div>
             </div>
             <div class="text-right">
               <div v-if="activePayTab === 'alipay'" class="font-bold text-yellow-500 text-lg">¥{{ plan.price }}</div>
@@ -123,8 +123,8 @@
         <!-- Crypto USDT Address & Live QR Code Box -->
         <div v-if="activePayTab === 'crypto'" class="w-full p-4 mb-6 rounded-2xl bg-zinc-800/90 border border-emerald-500/40 flex flex-col items-center gap-3 shadow-lg">
           <div class="w-full flex items-center justify-between">
-            <span class="text-xs font-bold text-emerald-400">TRC-20 (TRON) 收款地址</span>
-            <span v-if="cryptoOrderInfo" class="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded font-mono">单据号: {{ cryptoOrderInfo.orderId }}</span>
+            <span class="text-xs font-bold text-emerald-400">{{ t('paywall.cryptoAddressTitle') }}</span>
+            <span v-if="cryptoOrderInfo" class="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded font-mono">{{ t('paywall.orderNo') }} {{ cryptoOrderInfo.orderId }}</span>
           </div>
 
           <!-- Live QR Code Card for TronLink / Binance / OKX / TokenPocket Wallet Scan -->
@@ -136,20 +136,20 @@
             />
             <span class="text-[10px] font-bold text-zinc-800 mt-1.5 flex items-center gap-1">
               <svg class="w-3.5 h-3.5 fill-emerald-600" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-              使用 欧易/币安/TronLink 钱包扫码
+              {{ t('paywall.scanWithWallet') }}
             </span>
           </div>
 
           <div v-if="cryptoOrderInfo" class="w-full flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-700/60">
             <span class="text-xs font-mono text-zinc-200 select-all truncate mr-2">{{ cryptoOrderInfo.usdtAddress }}</span>
             <button @click="copyAddress" class="px-3 py-1 bg-emerald-500 text-black text-xs font-bold rounded-lg shrink-0 hover:bg-emerald-400 transition-colors">
-              {{ copied ? '已复制' : '复制地址' }}
+              {{ copied ? t('paywall.copied') : t('paywall.copyAddress') }}
             </button>
           </div>
 
           <div v-if="cryptoOrderInfo" class="w-full flex items-center justify-between text-xs text-zinc-300">
-            <span>应付代币: <strong class="text-emerald-400 font-mono text-base">${{ cryptoOrderInfo.cryptoAmount }} USDT</strong></span>
-            <span class="text-[11px] text-zinc-400">扫码转账后将自动开通 VIP</span>
+            <span>{{ t('paywall.amountDue') }} <strong class="text-emerald-400 font-mono text-base">${{ cryptoOrderInfo.cryptoAmount }} USDT</strong></span>
+            <span class="text-[11px] text-zinc-400">{{ t('paywall.autoActivateAfterTransfer') }}</span>
           </div>
         </div>
 
@@ -160,9 +160,9 @@
           class="w-full py-4 font-extrabold rounded-2xl shadow-lg hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
           :class="activePayTab === 'alipay' ? 'bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 text-black shadow-[0_0_30px_rgba(234,179,8,0.3)]' : 'bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-600 text-black shadow-[0_0_30px_rgba(16,185,129,0.3)]'"
         >
-          <span v-if="paying">正在发起支付...</span>
-          <span v-else-if="activePayTab === 'alipay'">立即跳转支付宝完成开通</span>
-          <span v-else>生成/刷新 USDT 链上二维码单据</span>
+          <span v-if="paying">{{ t('paywall.paying') }}</span>
+          <span v-else-if="activePayTab === 'alipay'">{{ t('paywall.payAlipay') }}</span>
+          <span v-else>{{ t('paywall.payCrypto') }}</span>
         </button>
       </template>
 
@@ -171,18 +171,18 @@
         <div class="w-full flex flex-col gap-4 my-2">
           <div class="p-4 rounded-2xl bg-zinc-800/80 border border-amber-500/30 flex flex-col gap-3">
             <div class="text-sm font-bold text-amber-400 flex items-center gap-1.5">
-              <span>🔑 凭已购买订单号恢复设备 VIP 权限</span>
+              <span>{{ t('paywall.restoreTitle') }}</span>
             </div>
             <p class="text-xs text-zinc-300 leading-relaxed">
-              因设备更换、清除浏览器缓存或切换无痕模式导致 VIP 丢失？输入您的订单号（如 <code class="text-amber-300 font-mono">ORD-...</code> 或支付宝交易单号）即可**免费恢复 1 次** VIP 权限绑定至当前设备。
+              {{ t('paywall.restoreDesc') }}
             </p>
             
             <div class="flex flex-col gap-2 mt-1">
-              <label class="text-xs font-bold text-zinc-300">请输入您的订单号 / 交易号：</label>
+              <label class="text-xs font-bold text-zinc-300">{{ t('paywall.restoreInputLabel') }}</label>
               <input 
                 v-model="restoreOrderInput"
                 type="text"
-                placeholder="例如：ORD-1785..."
+                :placeholder="t('paywall.restoreInputPlaceholder')"
                 class="w-full px-4 py-3 bg-zinc-950 border border-zinc-700 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-yellow-500 transition-colors"
               />
             </div>
@@ -197,7 +197,7 @@
             :disabled="restoring"
             class="w-full py-4 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 text-black font-extrabold rounded-2xl shadow-lg hover:scale-[1.02] active:scale-95 transition-all"
           >
-            {{ restoring ? '正在核验订单号...' : '立即验证并恢复当前设备 VIP' }}
+            {{ restoring ? t('paywall.restoring') : t('paywall.restoreBtn') }}
           </button>
         </div>
       </template>
@@ -211,9 +211,9 @@
           🎧 {{ customerServiceText }}
         </p>
         <p class="text-zinc-500">
-          开通即表示您已阅读并同意
+          {{ t('paywall.agreePrefix') }}
           <button @click="showAgreementModal = true" class="text-yellow-400 underline hover:text-yellow-300">
-            《用户服务协议与隐私条款》
+            {{ t('paywall.agreementLink') }}
           </button>
         </p>
       </div>
@@ -226,7 +226,7 @@
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-lg w-full p-5 flex flex-col gap-4 max-h-[80vh] overflow-y-auto text-left shadow-2xl">
           <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
-            <h4 class="text-base font-bold text-yellow-400">📜 用户服务协议与隐私条款</h4>
+            <h4 class="text-base font-bold text-yellow-400">{{ t('paywall.agreementTitle') }}</h4>
             <button @click="showAgreementModal = false" class="text-zinc-400 hover:text-white font-bold text-lg px-2">✕</button>
           </div>
           <div class="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
@@ -236,7 +236,7 @@
             @click="showAgreementModal = false" 
             class="w-full py-2.5 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-400 transition-colors mt-2"
           >
-            我已完全阅读并理解协议
+            {{ t('paywall.agreementConfirm') }}
           </button>
         </div>
       </div>
@@ -246,7 +246,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3">
           <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
         </svg>
-        设备指纹 ID: <span class="font-mono text-zinc-400 select-all">{{ deviceId }}</span>
+        {{ t('paywall.deviceIdLabel') }} <span class="font-mono text-zinc-400 select-all">{{ deviceId }}</span>
       </p>
     </div>
   </div>
@@ -254,6 +254,10 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { getCurrentLocale, LOCALE_CHANGED_EVENT } from '../i18n'
+
+const { t } = useI18n()
 
 const emit = defineEmits(['close', 'vip-unlocked'])
 
@@ -325,16 +329,10 @@ const userAgreement = ref('【StreamVIP 用户服务协议与隐私条款】\n\n
 const customerServiceText = ref('')
 const showAgreementModal = ref(false)
 
-onMounted(async () => {
-  deviceId.value = getOrCreateDeviceId()
-  createdOrderId.value = localStorage.getItem('mp_latest_order_id') || ''
-
-  // Start polling for payment completion every 3 seconds
-  checkVipStatus()
-  vipPollTimer = setInterval(checkVipStatus, 3000)
-
+const loadPaywallConfig = async () => {
   try {
-    const res = await fetch('/api/v1/paywall/config')
+    const lang = getCurrentLocale()
+    const res = await fetch(`/api/v1/paywall/config?lang=${lang}`)
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
@@ -352,10 +350,25 @@ onMounted(async () => {
   } catch (e) {
     console.warn('Failed to load live paywall plans:', e)
   }
+}
+
+onMounted(async () => {
+  deviceId.value = getOrCreateDeviceId()
+  createdOrderId.value = localStorage.getItem('mp_latest_order_id') || ''
+
+  // Start polling for payment completion every 3 seconds
+  checkVipStatus()
+  vipPollTimer = setInterval(checkVipStatus, 3000)
+
+  await loadPaywallConfig()
+
+  // 语言切换时刷新套餐/文案（modal 打开状态下）
+  window.addEventListener(LOCALE_CHANGED_EVENT, loadPaywallConfig)
 })
 
 onUnmounted(() => {
   if (vipPollTimer) clearInterval(vipPollTimer)
+  window.removeEventListener(LOCALE_CHANGED_EVENT, loadPaywallConfig)
 })
 
 const handlePay = async () => {
@@ -397,7 +410,7 @@ const handlePay = async () => {
       }
     }
   } catch (e) {
-    alert('支付发起失败，请稍后重试')
+    alert(t('paywall.errPay'))
   } finally {
     paying.value = false
   }
@@ -413,7 +426,7 @@ const copyAddress = () => {
 
 const handleRestore = async () => {
   if (!restoreOrderInput.value) {
-    restoreMsg.value = '请先输入已付费的订单号'
+    restoreMsg.value = t('paywall.errNoOrder')
     restoreSuccess.value = false
     return
   }
@@ -439,11 +452,11 @@ const handleRestore = async () => {
       }, 1500)
     } else {
       restoreSuccess.value = false
-      restoreMsg.value = json.message || '订单验证失败'
+      restoreMsg.value = json.message || t('paywall.errRestoreFail')
     }
   } catch (e) {
     restoreSuccess.value = false
-    restoreMsg.value = '网络请求失败，请稍后再试'
+    restoreMsg.value = t('paywall.errNetwork')
   } finally {
     restoring.value = false
   }

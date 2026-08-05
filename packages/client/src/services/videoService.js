@@ -1,4 +1,5 @@
 // Video API & Service layer for Client (Connects to /api/v1/videos with mock fallback)
+import { getCurrentLocale } from '../i18n'
 
 const mockFallbackVideos = [
   {
@@ -102,6 +103,8 @@ export const videoService = {
       if (tag) params.append('tag', tag)
       params.append('page', page)
       params.append('limit', limit)
+      // i18n：按当前语言拉取动态内容（标题/描述/作者译文，无译文回退中文）
+      params.append('lang', getCurrentLocale())
 
       const url = `/api/v1/videos?${params.toString()}`
       const res = await fetch(url)
@@ -158,7 +161,8 @@ export const videoService = {
   // Get dynamic paywall config from backend
   async getPaywallConfig() {
     try {
-      const res = await fetch('/api/v1/paywall/config')
+      const lang = getCurrentLocale()
+      const res = await fetch(`/api/v1/paywall/config?lang=${lang}`)
       if (res.ok) {
         const json = await res.json()
         return json.data

@@ -1,0 +1,95 @@
+{
+  "app": {
+    "openVip": "开通 VIP",
+    "vipMember": "VIP 会员",
+    "wantMoreTitle": "想看更多无删减高清视频？",
+    "wantMoreDesc": "解禁全部 100,000+ 专属超清音视频库，无广告，随心看。",
+    "unlockNow": "立即解锁尊享 VIP 特权",
+    "defaultNoticeTitle": "📢 官方重要公告"
+  },
+  "lang": {
+    "buttonLabel": "EN",
+    "buttonLabelAlt": "中"
+  },
+  "ageGate": {
+    "title": "年龄确认",
+    "description": "本站包含成人内容。\n如果您未满 18 岁，或者您所在地区的法律禁止查看此类内容，请立即离开。",
+    "enter": "我已满 18 岁，进入",
+    "leave": "我未满 18 岁，离开"
+  },
+  "notice": {
+    "defaultTitle": "📢 官方重要公告",
+    "doNotShowToday": "今日不再提醒",
+    "acknowledge": "我知道了"
+  },
+  "hero": {
+    "swipeUp": "上滑探索",
+    "defaultTitle": "极致诱惑",
+    "defaultSubtitle": "滑动探索更多独家无删减内容"
+  },
+  "scrollTransition": {
+    "title": "即将解锁...",
+    "desc": "正在为您准备高清画集与独家视频"
+  },
+  "feed": {
+    "title": "热门视频",
+    "filterAll": "推荐",
+    "filterVip": "VIP独家",
+    "filterFree": "免费试看",
+    "loadingMore": "加载更多...",
+    "endOfFeed": "已加载全部免费体验视频",
+    "unlockAll": "开通 VIP 解锁全部 5000+ 原画库"
+  },
+  "card": {
+    "vipPreview": "VIP 试看 {minutes}分钟",
+    "trialEndedTitle": "试看时长已结束 ({minutes}分钟)",
+    "trialEndedDesc": "解锁 VIP 尊享无限制观看全片与全部 4K 原画库",
+    "unlockNow": "立即解锁尊享 VIP 特权",
+    "vipUnlocked": "VIP 尊享解禁",
+    "verifiedCreator": "官方认证创作者"
+  },
+  "player": {
+    "invalidUrl": "视频 URL 无效",
+    "initFailed": "播放器初始化失败",
+    "loadFailed": "视频加载失败，请重试",
+    "retry": "重新拉取"
+  },
+  "paywall": {
+    "swipeDown": "下滑收起，返回视频流",
+    "title": "开通 VIP 尊享完整超清视频",
+    "subtitle": "全网独家原画内存流，支持支付宝与 USDT 加密货币无感开通",
+    "tabAlipay": "支付宝支付",
+    "tabCrypto": "USDT 加密货币",
+    "tabRestore": "凭订单号恢复",
+    "orderCreated": "已创建订单号 (支付凭证)",
+    "copyOrderId": "复制订单号",
+    "copied": "已复制",
+    "copiedTick": "✓ 已复制",
+    "hotDeal": "限时特惠",
+    "defaultPlanDesc": "解锁全部超清内存流视频",
+    "cryptoAddressTitle": "TRC-20 (TRON) 收款地址",
+    "orderNo": "单据号:",
+    "scanWithWallet": "使用 欧易/币安/TronLink 钱包扫码",
+    "copyAddress": "复制地址",
+    "amountDue": "应付代币:",
+    "autoActivateAfterTransfer": "扫码转账后将自动开通 VIP",
+    "paying": "正在发起支付...",
+    "payAlipay": "立即跳转支付宝完成开通",
+    "payCrypto": "生成/刷新 USDT 链上二维码单据",
+    "restoreTitle": "🔑 凭已购买订单号恢复设备 VIP 权限",
+    "restoreDesc": "因设备更换、清除浏览器缓存或切换无痕模式导致 VIP 丢失？输入您的订单号（如 ORD-... 或支付宝交易单号）即可免费恢复 1 次 VIP 权限绑定至当前设备。",
+    "restoreInputLabel": "请输入您的订单号 / 交易号：",
+    "restoreInputPlaceholder": "例如：ORD-1785...",
+    "restoring": "正在核验订单号...",
+    "restoreBtn": "立即验证并恢复当前设备 VIP",
+    "agreePrefix": "开通即表示您已阅读并同意",
+    "agreementLink": "《用户服务协议与隐私条款》",
+    "agreementTitle": "📜 用户服务协议与隐私条款",
+    "agreementConfirm": "我已完全阅读并理解协议",
+    "deviceIdLabel": "设备指纹 ID:",
+    "errNoOrder": "请先输入已付费的订单号",
+    "errRestoreFail": "订单验证失败",
+    "errNetwork": "网络请求失败，请稍后再试",
+    "errPay": "支付发起失败，请稍后重试"
+  }
+}

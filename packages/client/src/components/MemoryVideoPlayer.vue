@@ -55,7 +55,7 @@
         @click="onManualPlay" 
         class="px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-lg border border-zinc-600 transition-all"
       >
-        重新拉取
+        {{ t('player.retry') }}
       </button>
     </div>
 
@@ -95,6 +95,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import Plyr from 'plyr'
 import Hls from 'hls.js'
 import 'plyr/dist/plyr.css'
@@ -133,6 +134,8 @@ const props = withDefaults(defineProps<ComponentProps>(), {
   isVipUnlocked: false,
   active: true
 })
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
   (e: 'loaded', objectUrl: string): void
@@ -346,7 +349,7 @@ const loadVideoToMemory = async () => {
 
   const { video } = props
   if (!video || !video.videoUrl) {
-    errorMessage.value = '视频 URL 无效'
+    errorMessage.value = t('player.invalidUrl')
     loading.value = false
     return
   }
@@ -368,7 +371,7 @@ const loadVideoToMemory = async () => {
   console.log(`[StreamPlayer] 模式: ${isM3u8 ? 'HLS' : 'MP4 直接流'} | URL: ${proxyUrl}`)
 
   if (!videoRef.value) {
-    errorMessage.value = '播放器初始化失败'
+    errorMessage.value = t('player.initFailed')
     loading.value = false
     return
   }
@@ -433,7 +436,7 @@ const loadVideoToMemory = async () => {
   }
 
   const onError = () => {
-    errorMessage.value = '视频加载失败，请重试'
+    errorMessage.value = t('player.loadFailed')
     loading.value = false
     el.removeEventListener('canplay', onCanPlay)
     el.removeEventListener('progress', onProgress)
