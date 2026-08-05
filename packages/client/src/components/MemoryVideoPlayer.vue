@@ -159,10 +159,10 @@ const isPortrait = ref<boolean>(false)
 
 /**
  * 封面图加载完成 → 检测实际尺寸 → 更新容器比例
- * 只在 idle 状态下更新，避免覆盖视频元数据提供的就绪比例
+ * 无论是否已激活都应用：拉流过程中容器保持封面比例（不跳横屏），
+ * 视频元数据到达后由 handleLoadedMetadata 覆盖为真实比例。
  */
 const handlePosterLoad = (e: Event) => {
-  if (hasStarted.value) return  // 视频已开始，由 handleLoadedMetadata 控制
   const img = e.target as HTMLImageElement
   if (img.naturalWidth && img.naturalHeight) {
     videoAspectRatio.value = `${img.naturalWidth} / ${img.naturalHeight}`
@@ -340,8 +340,9 @@ const loadVideoToMemory = async () => {
   loading.value = true
   progress.value = 0
   errorMessage.value = null
-  videoAspectRatio.value = '16 / 9'
-  isPortrait.value = false
+  // 注意：不重置 videoAspectRatio —— 保留封面(poster)提供的比例，
+  // 直到视频元数据到达后再由 handleLoadedMetadata 更新。
+  // 否则激活瞬间容器会跳回 16:9 横屏，导致 loading overlay 恢复横屏比例（非预期行为）。
 
   const { video } = props
   if (!video || !video.videoUrl) {
