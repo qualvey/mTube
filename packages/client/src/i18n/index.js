@@ -8,7 +8,7 @@
 // 语言切换后通过 window 'app-locale-changed' 事件通知各组件重拉动态内容（带 lang 参数）
 // ==============================================================================
 import { createI18n } from 'vue-i18n'
-import { locales, localeMeta, DEFAULT_LOCALE, FALLBACK_LOCALE } from '../locales'
+import { locales, localeMeta, DEFAULT_LOCALE, FALLBACK_LOCALE } from '../locales/index.js'
 
 export const LOCALE_STORAGE_KEY = 'mp_lang'
 export const LOCALE_CHANGED_EVENT = 'app-locale-changed'
