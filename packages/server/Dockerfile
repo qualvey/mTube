@@ -15,7 +15,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/server/package.json ./packages/server/
 
 # Install server dependencies
-RUN pnpm install --filter server...
+RUN pnpm install --frozen-lockfile --filter server...
 
 # Copy server source code
 COPY packages/server ./packages/server

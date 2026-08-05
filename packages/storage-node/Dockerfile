@@ -13,7 +13,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/storage-node/package.json ./packages/storage-node/
 
 # Install storage-node dependencies
-RUN pnpm install --filter storage-node...
+RUN pnpm install --frozen-lockfile --filter storage-node...
 
 # Copy storage-node source code
 COPY packages/storage-node ./packages/storage-node

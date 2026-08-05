@@ -12,7 +12,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/admin/package.json ./packages/admin/
 
 # Install admin build dependencies
-RUN pnpm install --filter admin...
+RUN pnpm install --frozen-lockfile --filter admin...
 
 COPY packages/admin ./packages/admin
 
