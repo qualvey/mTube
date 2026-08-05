@@ -10,19 +10,28 @@
           StreamVIP
         </span>
       </div>
-      <button 
-        v-if="!isVip"
-        @click="showPaywall = true" 
-        class="px-3.5 py-1.5 bg-gradient-to-r from-yellow-400 to-amber-500 text-black text-xs font-black rounded-full shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:scale-105 active:scale-95 transition-all"
-      >
-        开通 VIP
-      </button>
-      <div 
-        v-else 
-        class="px-3 py-1 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-yellow-500/40 text-yellow-400 text-xs font-bold rounded-full flex items-center gap-1 shadow-[0_0_10px_rgba(234,179,8,0.15)]"
-      >
-        <span>👑</span>
-        <span>VIP 会员</span>
+      <div class="flex items-center gap-2">
+        <!-- Language Switcher (Top Right) -->
+        <button
+          @click="handleToggleLang"
+          class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-black rounded-full backdrop-blur-md transition-all active:scale-95"
+        >
+          {{ langToggleLabel }}
+        </button>
+        <button 
+          v-if="!isVip"
+          @click="showPaywall = true" 
+          class="px-3.5 py-1.5 bg-gradient-to-r from-yellow-400 to-amber-500 text-black text-xs font-black rounded-full shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:scale-105 active:scale-95 transition-all"
+        >
+          {{ t('app.openVip') }}
+        </button>
+        <div 
+          v-else 
+          class="px-3 py-1 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-yellow-500/40 text-yellow-400 text-xs font-bold rounded-full flex items-center gap-1 shadow-[0_0_10px_rgba(234,179,8,0.15)]"
+        >
+          <span>👑</span>
+          <span>{{ t('app.vipMember') }}</span>
+        </div>
       </div>
     </header>
 
@@ -47,13 +56,13 @@
       
       <!-- Paywall Trigger Footer Section -->
       <div v-if="!isVip" class="py-16 w-full flex flex-col items-center justify-center bg-zinc-950/90 border-t border-zinc-800 text-center px-4">
-        <h4 class="text-xl font-bold text-white mb-2">想看更多无删减高清视频？</h4>
-        <p class="text-xs text-zinc-400 mb-6 max-w-xs">解禁全部 100,000+ 专属超清音视频库，无广告，随心看。</p>
+        <h4 class="text-xl font-bold text-white mb-2">{{ t('app.wantMoreTitle') }}</h4>
+        <p class="text-xs text-zinc-400 mb-6 max-w-xs">{{ t('app.wantMoreDesc') }}</p>
         <button 
           @click="showPaywall = true" 
           class="px-8 py-3.5 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 text-black font-black text-sm rounded-2xl shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:scale-105 active:scale-95 transition-all"
         >
-          立即解锁尊享 VIP 特权
+          {{ t('app.unlockNow') }}
         </button>
       </div>
     </div>
@@ -74,8 +83,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useScroll } from '@vueuse/core'
+import { useI18n } from 'vue-i18n'
 import AgeGateModal from './components/AgeGateModal.vue'
 import NoticeModal from './components/NoticeModal.vue'
 import HeroSection from './components/HeroSection.vue'
@@ -83,6 +93,16 @@ import VideoFeed from './components/VideoFeed.vue'
 import ScrollTransition from './components/ScrollTransition.vue'
 import PaywallModal from './components/PaywallModal.vue'
 import { trackAnalytics } from './services/videoService'
+import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT } from './i18n'
+
+const { t } = useI18n()
+
+const langToggleLabel = ref(getToggleLabel())
+
+const handleToggleLang = async () => {
+  await toggleLocale()
+  langToggleLabel.value = getToggleLabel()
+}
 
 const scrollContainer = ref(null)
 
@@ -140,7 +160,8 @@ const getNoticeHash = (title, content) => {
 
 const fetchSiteConfig = async () => {
   try {
-    const res = await fetch('/api/v1/site-config')
+    const lang = getCurrentLocale()
+    const res = await fetch(`/api/v1/site-config?lang=${lang}`)
     if (res.ok) {
       const json = await res.json()
       if (json && json.data && json.data.siteTitle) {
@@ -150,26 +171,16 @@ const fetchSiteConfig = async () => {
   } catch (e) {}
 }
 
-onMounted(async () => {
-  // Dynamically set HTML Document Title from backend B-side configuration
+// 语言切换后重拉动态内容（site-config / notice）
+const onLocaleChanged = () => {
   fetchSiteConfig()
+  fetchNotice()
+}
 
-  // Trigger PV Analytics Tracking
-  trackAnalytics('PV')
-
-
-  const verified = localStorage.getItem('age_verified_18')
-
-  if (verified === 'true') {
-    ageVerified.value = true
-  }
-
-  // Check initial VIP status
-  await checkVipStatus()
-
-  // Explicitly pull notice from backend REST API GET /api/v1/notice
+const fetchNotice = async () => {
   try {
-    const res = await fetch('/api/v1/notice')
+    const lang = getCurrentLocale()
+    const res = await fetch(`/api/v1/notice?lang=${lang}`)
     if (res.ok) {
       const json = await res.json()
       if (json && json.data && json.data.enableNotice) {
@@ -192,6 +203,33 @@ onMounted(async () => {
   } catch (e) {
     console.warn('Failed to pull notice from backend API:', e)
   }
+}
+
+onMounted(async () => {
+  // Dynamically set HTML Document Title from backend B-side configuration
+  fetchSiteConfig()
+
+  // Trigger PV Analytics Tracking
+  trackAnalytics('PV')
+
+
+  const verified = localStorage.getItem('age_verified_18')
+
+  if (verified === 'true') {
+    ageVerified.value = true
+  }
+
+  // Check initial VIP status
+  await checkVipStatus()
+
+  // Explicitly pull notice from backend REST API GET /api/v1/notice
+  fetchNotice()
+
+  window.addEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
+})
+
+onUnmounted(() => {
+  window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
 })
 
 const onAgeVerified = () => {

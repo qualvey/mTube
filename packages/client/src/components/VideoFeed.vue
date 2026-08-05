@@ -5,7 +5,7 @@
       <div class="flex items-center gap-2">
         <div class="w-3 h-3 rounded-full bg-red-500 animate-ping"></div>
         <h3 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
-          热门视频
+          {{ t('feed.title') }}
         </h3>
       </div>
       <div class="flex items-center gap-1 bg-zinc-800/80 p-1 rounded-xl border border-zinc-700/50 text-xs">
@@ -16,7 +16,7 @@
           class="px-2.5 py-1 rounded-lg font-medium transition-all"
           :class="activeFilter === filter.key ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-bold shadow' : 'text-zinc-400 hover:text-white'"
         >
-          {{ filter.label }}
+          {{ t(`feed.filter${filter.key === 'all' ? 'All' : filter.key === 'vip' ? 'Vip' : 'Free'}`) }}
         </button>
       </div>
     </div>
@@ -58,7 +58,7 @@
             <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
             <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <span>加载更多...</span>
+          <span>{{ t('feed.loadingMore') }}</span>
         </div>
 
         <!-- End of Feed -->
@@ -66,12 +66,12 @@
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-zinc-600">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
           </svg>
-          <span>已加载全部免费体验视频</span>
+          <span>{{ t('feed.endOfFeed') }}</span>
           <button 
             @click="$emit('trigger-paywall')" 
             class="mt-1 px-4 py-2 bg-gradient-to-r from-yellow-500 to-amber-600 text-black font-extrabold text-xs rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all"
           >
-            开通 VIP 解锁全部 5000+ 原画库
+            {{ t('feed.unlockAll') }}
           </button>
         </div>
       </div>
@@ -81,8 +81,12 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import VideoCard from './VideoCard.vue'
 import { videoService } from '../services/videoService'
+import { getCurrentLocale, LOCALE_CHANGED_EVENT } from '../i18n'
+
+const { t } = useI18n()
 
 defineEmits(['trigger-paywall'])
 
@@ -114,7 +118,6 @@ const filters = [
   { key: 'vip', label: 'VIP独家' },
   { key: 'free', label: '免费试看' }
 ]
-
 /**
  * 预加载一批视频的封面图片
  * 通过 new Image() 触发浏览器提前下载，确保 VideoCard 挂载时封面已在缓存
@@ -143,8 +146,6 @@ const loadPage = async (page = 1, append = false) => {
   try {
     const filter = activeFilter.value !== 'all' ? activeFilter.value : null
     const result = await videoService.getVideos(filter, null, page, LIMIT)
-
-    // 立即预加载封面图片（在 DOM 渲染前就开始下载）
     preloadPosters(result.items)
 
     if (append) {
@@ -191,6 +192,7 @@ const setupScrollObserver = () => {
 onMounted(async () => {
   await loadPage(1, false)
   setupScrollObserver()
+  window.addEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
 })
 
 onUnmounted(() => {
@@ -198,7 +200,17 @@ onUnmounted(() => {
     scrollObserver.disconnect()
     scrollObserver = null
   }
+  window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
 })
+
+// 语言切换 → 重置到第 1 页并按新语言重拉（动态内容标题/描述随语言变化）
+const onLocaleChanged = () => {
+  if (getCurrentLocale()) {
+    currentPage.value = 1
+    hasMore.value = true
+    loadPage(1, false)
+  }
+}
 
 /**
  * 切换过滤器 → 重置到第 1 页

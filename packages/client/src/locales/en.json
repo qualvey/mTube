@@ -1,0 +1,95 @@
+{
+  "app": {
+    "openVip": "Go VIP",
+    "vipMember": "VIP Member",
+    "wantMoreTitle": "Want more uncensored HD videos?",
+    "wantMoreDesc": "Unlock the full library of 100,000+ exclusive ultra-HD videos. No ads, watch freely.",
+    "unlockNow": "Unlock VIP Privileges Now",
+    "defaultNoticeTitle": "📢 Official Announcement"
+  },
+  "lang": {
+    "buttonLabel": "中",
+    "buttonLabelAlt": "EN"
+  },
+  "ageGate": {
+    "title": "Age Verification",
+    "description": "This website contains adult content.\nIf you are under 18, or if such content is prohibited in your region, please leave immediately.",
+    "enter": "I am 18 or older — Enter",
+    "leave": "I am under 18 — Leave"
+  },
+  "notice": {
+    "defaultTitle": "📢 Official Announcement",
+    "doNotShowToday": "Don't show again today",
+    "acknowledge": "Got it"
+  },
+  "hero": {
+    "swipeUp": "Swipe Up",
+    "defaultTitle": "Irresistible",
+    "defaultSubtitle": "Swipe to explore more exclusive uncensored content"
+  },
+  "scrollTransition": {
+    "title": "Coming Soon...",
+    "desc": "Preparing HD galleries and exclusive videos for you"
+  },
+  "feed": {
+    "title": "Trending",
+    "filterAll": "Recommended",
+    "filterVip": "VIP Exclusive",
+    "filterFree": "Free Preview",
+    "loadingMore": "Loading more...",
+    "endOfFeed": "You've reached the end of free previews",
+    "unlockAll": "Go VIP to unlock the full 5000+ original library"
+  },
+  "card": {
+    "vipPreview": "VIP Preview {minutes}min",
+    "trialEndedTitle": "Preview ended ({minutes}min)",
+    "trialEndedDesc": "Unlock VIP for unlimited full videos and the entire 4K original library",
+    "unlockNow": "Unlock VIP Privileges Now",
+    "vipUnlocked": "VIP Unlocked",
+    "verifiedCreator": "Verified Creator"
+  },
+  "player": {
+    "invalidUrl": "Invalid video URL",
+    "initFailed": "Player initialization failed",
+    "loadFailed": "Video failed to load, please retry",
+    "retry": "Reload"
+  },
+  "paywall": {
+    "swipeDown": "Swipe down to collapse",
+    "title": "Go VIP for the Full Ultra-HD Experience",
+    "subtitle": "Exclusive original streams. Seamless payment via Alipay or USDT crypto.",
+    "tabAlipay": "Alipay",
+    "tabCrypto": "USDT Crypto",
+    "tabRestore": "Restore via Order No.",
+    "orderCreated": "Order ID Created (Payment Reference)",
+    "copyOrderId": "Copy Order ID",
+    "copied": "Copied",
+    "copiedTick": "✓ Copied",
+    "hotDeal": "Limited Offer",
+    "defaultPlanDesc": "Unlock all ultra-HD streaming videos",
+    "cryptoAddressTitle": "TRC-20 (TRON) Receiving Address",
+    "orderNo": "Order No:",
+    "scanWithWallet": "Scan with OKX / Binance / TronLink wallet",
+    "copyAddress": "Copy Address",
+    "amountDue": "Amount Due:",
+    "autoActivateAfterTransfer": "VIP activates automatically after transfer",
+    "paying": "Processing payment...",
+    "payAlipay": "Redirect to Alipay to Complete",
+    "payCrypto": "Generate / Refresh USDT QR Code",
+    "restoreTitle": "🔑 Restore VIP via Your Order Number",
+    "restoreDesc": "Lost VIP after switching devices, clearing cache or using incognito mode? Enter your order number (e.g. ORD-... or Alipay transaction ID) to restore VIP to this device — free once.",
+    "restoreInputLabel": "Enter your order / transaction number:",
+    "restoreInputPlaceholder": "e.g. ORD-1785...",
+    "restoring": "Verifying order number...",
+    "restoreBtn": "Verify & Restore VIP Now",
+    "agreePrefix": "By proceeding you agree to the",
+    "agreementLink": "User Agreement & Privacy Policy",
+    "agreementTitle": "📜 User Agreement & Privacy Policy",
+    "agreementConfirm": "I have read and understood the agreement",
+    "deviceIdLabel": "Device ID:",
+    "errNoOrder": "Please enter your paid order number first",
+    "errRestoreFail": "Order verification failed",
+    "errNetwork": "Network error, please try again later",
+    "errPay": "Failed to initiate payment, please retry"
+  }
+}

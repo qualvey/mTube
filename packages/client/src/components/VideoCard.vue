@@ -27,12 +27,12 @@
             <path fill-rule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clip-rule="evenodd" />
           </svg>
         </div>
-        <p class="text-white text-base font-bold drop-shadow">试看时长已结束 ({{ Math.round((video.previewDuration || 120) / 60) }}分钟)</p>
-        <p class="text-xs text-zinc-400 mt-1 mb-4">解锁 VIP 尊享无限制观看全片与全部 4K 原画库</p>
+        <p class="text-white text-base font-bold drop-shadow">{{ t('card.trialEndedTitle', { minutes: Math.round((video.previewDuration || 120) / 60) }) }}</p>
+        <p class="text-xs text-zinc-400 mt-1 mb-4">{{ t('card.trialEndedDesc') }}</p>
         <button 
           class="px-5 py-2 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black text-xs font-black rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all"
         >
-          立即解锁尊享 VIP 特权
+          {{ t('card.unlockNow') }}
         </button>
       </div>
 
@@ -44,13 +44,13 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3.5 h-3.5">
           <path fill-rule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clip-rule="evenodd" />
         </svg>
-        <span>VIP 试看 {{ Math.round((video.previewDuration || 120) / 60) }}分钟</span>
+        <span>{{ t('card.vipPreview', { minutes: Math.round((video.previewDuration || 120) / 60) }) }}</span>
       </div>
       <div 
         v-else-if="video.isVip && isVipUnlocked" 
         class="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black text-xs font-black shadow-lg flex items-center gap-1 pointer-events-none"
       >
-        <span>👑 VIP 尊享解禁</span>
+        <span>{{ t('card.vipUnlocked') }}</span>
       </div>
 
       <!-- Duration Badge (Top Right Overlay) -->
@@ -84,7 +84,7 @@
           />
           <div class="flex flex-col">
             <span class="text-xs font-bold text-zinc-200">{{ video.author }}</span>
-            <span class="text-[10px] text-zinc-500">官方认证创作者</span>
+            <span class="text-[10px] text-zinc-500">{{ t('card.verifiedCreator') }}</span>
           </div>
         </div>
 
@@ -107,9 +107,12 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import MemoryVideoPlayer from './MemoryVideoPlayer.vue'
 import { trackAnalytics } from '../services/videoService'
+
+const { t } = useI18n()
 
 const props = defineProps({
   video: {

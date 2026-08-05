@@ -10,7 +10,7 @@
           </svg>
         </div>
         <h3 class="text-xl font-black drop-shadow-sm leading-snug">
-          {{ title || '📢 官方重要公告' }}
+          {{ title || t('notice.defaultTitle') }}
         </h3>
       </div>
 
@@ -30,7 +30,7 @@
             v-model="doNotShowToday"
             class="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-zinc-900 cursor-pointer"
           />
-          <span>今日不再提醒</span>
+          <span>{{ t('notice.doNotShowToday') }}</span>
         </label>
 
         <!-- Close Button -->
@@ -38,7 +38,7 @@
           @click="handleClose"
           class="w-full py-3.5 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-extrabold rounded-2xl shadow-lg hover:scale-[1.02] active:scale-95 transition-all text-sm"
         >
-          我知道了
+          {{ t('notice.acknowledge') }}
         </button>
       </div>
     </div>
@@ -47,15 +47,18 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   title: {
     type: String,
-    default: '📢 官方重要公告'
+    default: ''
   },
   content: {
     type: String,
-    default: '欢迎来到 StreamVIP 独家流媒体平台！升级尊享 VIP 会员可无限制观看全站 4K 超清原片库！'
+    default: ''
   }
 })
 

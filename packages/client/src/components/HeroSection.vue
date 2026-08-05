@@ -19,7 +19,7 @@
       
       <!-- Scroll Indicator -->
       <div class="flex flex-col items-center animate-bounce">
-        <span class="text-xs text-white/50 mb-2 uppercase tracking-widest">Swipe Up</span>
+        <span class="text-xs text-white/50 mb-2 uppercase tracking-widest">{{ t('hero.swipeUp') }}</span>
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6 text-white/70">
           <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
         </svg>
@@ -29,7 +29,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { getCurrentLocale, LOCALE_CHANGED_EVENT } from '../i18n'
+
+const { t } = useI18n()
 
 defineProps({
   blur: {
@@ -40,12 +44,13 @@ defineProps({
 
 const DEFAULT_HERO_IMAGE = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop'
 const heroImageUrl = ref(DEFAULT_HERO_IMAGE)
-const heroTitle = ref('极致诱惑')
-const heroSubtitle = ref('滑动探索更多独家无删减内容')
+const heroTitle = ref(t('hero.defaultTitle'))
+const heroSubtitle = ref(t('hero.defaultSubtitle'))
 
-onMounted(async () => {
+const fetchHeroSettings = async () => {
   try {
-    const res = await fetch('/api/v1/settings')
+    const lang = getCurrentLocale()
+    const res = await fetch(`/api/v1/settings?lang=${lang}`)
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
@@ -57,5 +62,14 @@ onMounted(async () => {
   } catch (e) {
     console.warn('Failed to load hero settings:', e)
   }
+}
+
+onMounted(() => {
+  fetchHeroSettings()
+  window.addEventListener(LOCALE_CHANGED_EVENT, fetchHeroSettings)
+})
+
+onUnmounted(() => {
+  window.removeEventListener(LOCALE_CHANGED_EVENT, fetchHeroSettings)
 })
 </script>
