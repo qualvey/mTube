@@ -1,5 +1,9 @@
 FROM node:22-alpine AS base
 
+# Build version metadata (injected by CI): docker build --build-arg GIT_SHA=<sha>
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+RUN echo "$GIT_SHA" > /app/VERSION
 
 # Install build dependencies for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++ sqlite-dev curl
