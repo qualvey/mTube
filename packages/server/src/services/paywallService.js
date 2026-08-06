@@ -50,7 +50,7 @@ export async function createPayment({ planId, deviceId, ip }) {
     price: Math.round(order.amount * 100),        // 元 → 分
     notify: notifyUrl,
     // 注意: 不传 callback —— 平台对 callback 参数验签不匹配（传了必 54），已实测确认
-    clientIP: ip || '127.0.0.1',
+    clientIP: config.ruyizf.clientIp,   // 固定服务器公网 IP（不能用 req.ip，反代/本机场景平台会拒）
     code: config.ruyizf.channel,
   })
   if (resp.code !== 0 || !resp.data || !resp.data.url) {
