@@ -1,4 +1,8 @@
 import crypto from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const execFileP = promisify(execFile)
 
 /**
  * Ruyizf (如意支付) merchant API client.
@@ -8,6 +12,9 @@ import crypto from 'node:crypto'
  *  - POST /query   统一查单
  *  - Sign = MD5( non-empty params sorted by ASCII as k=v&k=v... &secret=*** ) uppercase
  *  - `sign` and `extend` do NOT participate in signing
+ *
+ * 重要: 必须用 curl 发起请求 —— 平台拒绝 node 原生客户端的 TLS 指纹
+ * (实测: node fetch / node http 均返回 54 签名校验失败, curl 正常)
  */
 
 export function ruyizfSign(params, secret) {
@@ -21,12 +28,13 @@ export function ruyizfSign(params, secret) {
 export function createRuyizfClient({ apiUrl, mch, secret }) {
   async function post(path, params) {
     const sign = ruyizfSign(params, secret)
-    const res = await fetch(apiUrl + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...params, sign }),
-    })
-    return res.json()
+    const body = JSON.stringify({ ...params, sign })
+    const { stdout } = await execFileP('curl', [
+      '-s', '-X', 'POST', apiUrl + path,
+      '-H', 'Content-Type: application/json',
+      '-d', body,
+    ], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 })
+    return JSON.parse(stdout)
   }
 
   return {
