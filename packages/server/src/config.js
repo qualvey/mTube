@@ -23,6 +23,8 @@ export const config = {
     notifyUrl: process.env.RUIZIF_NOTIFY_URL || '',   // e.g. https://91sco.com/api/v1/paywall/notify
     notifyIps: (process.env.RUIZIF_NOTIFY_IPS || '95.40.122.66')
       .split(',').map(s => s.trim()).filter(Boolean), // callback source IP allowlist
+    // 下单 clientIP 参数：必须用服务器公网 IP（平台校验，反代的 req.ip 不可靠）
+    clientIp: process.env.RUIZIF_CLIENT_IP || '45.192.206.225',
   },
 
   // Alipay (existing mock/real) settings are read from db settings
