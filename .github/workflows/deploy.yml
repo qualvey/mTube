@@ -282,6 +282,26 @@ jobs:
               echo "ENABLE_DIRECT_UPLOAD=${{ secrets.ENABLE_DIRECT_UPLOAD || 'true' }}" >> .env
             fi
 
+            # Ruyizf 支付配置（幂等追加：.env 已存在时也补齐，不覆盖已有值）
+            env_changed=0
+            ensure_env() {
+              local key="$1" val="$2"
+              if ! grep -q "^${key}=" .env 2>/dev/null; then
+                echo "${key}=${val}" >> .env
+                env_changed=1
+              fi
+            }
+            ensure_env "RUIZIF_SECRET" "${{ secrets.RUIZIF_SECRET }}"
+            ensure_env "RUIZIF_NOTIFY_URL" "${{ secrets.RUIZIF_NOTIFY_URL || 'https://91cso.com/api/v1/paywall/notify' }}"
+            ensure_env "RUIZIF_CHANNEL" "${{ secrets.RUIZIF_CHANNEL || '4444' }}"
+            ensure_env "RUIZIF_NOTIFY_IPS" "${{ secrets.RUIZIF_NOTIFY_IPS || '95.40.122.66' }}"
+
+            # .env 有新增变量时重启 server，让新环境变量生效（compose 检测到 env 变更会 recreate）
+            if [ "$env_changed" = "1" ]; then
+              echo "⚙️ .env updated, reloading server container..."
+              (docker compose up -d server || docker-compose up -d server) || true
+            fi
+
             SERVICES=""
             if [ "${{ needs.detect-changes.outputs.server }}" == "true" ]; then SERVICES="$SERVICES server"; fi
             if [ "${{ needs.detect-changes.outputs.client }}" == "true" ]; then SERVICES="$SERVICES client"; fi
