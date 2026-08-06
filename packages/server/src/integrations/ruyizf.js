@@ -21,7 +21,7 @@ export function ruyizfSign(params, secret) {
   const keys = Object.keys(params)
     .filter(k => params[k] !== null && params[k] !== undefined && params[k] !== '')
     .sort()
-  const str = keys.map(k => `${k}=${params[k]}`).join('&') + `&secret=***`
+  const str = keys.map(k => `${k}=${params[k]}`).join('&') + '&secret=' + secret
   return crypto.createHash('md5').update(str, 'utf8').digest('hex').toUpperCase()
 }
 
