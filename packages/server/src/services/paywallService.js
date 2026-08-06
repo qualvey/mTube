@@ -49,7 +49,7 @@ export async function createPayment({ planId, deviceId, ip }) {
     orderId: order.id,
     price: Math.round(order.amount * 100),        // 元 → 分
     notify: notifyUrl,
-    callback: notifyUrl,
+    // 注意: 不传 callback —— 平台对 callback 参数验签不匹配（传了必 54），已实测确认
     clientIP: ip || '127.0.0.1',
     code: config.ruyizf.channel,
   })
