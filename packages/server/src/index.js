@@ -9,6 +9,9 @@ import multer from 'multer'
 import ytdl from '@distube/ytdl-core'
 import { db } from './db.js'
 import { logger, requestLoggerMiddleware } from './logger.js'
+import { sendResponse } from './utils/response.js'
+import { issueAdminToken, requireAdminAuth, adminAuthMiddleware } from './middleware/adminAuth.js'
+import paywallRouter from './routes/paywall.js'
 
 import path from 'path'
 import fs from 'fs'
@@ -53,48 +56,13 @@ process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled Rejection:', reason)
 })
 
-// Helper for standard API response
-const sendResponse = (res, data, code = 200, message = 'success') => {
-  if (res.headersSent) return
-  res.status(code).json({
-    code,
-    message,
-    data
-  })
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin Session Auth (B端管理接口鉴权)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // In-memory admin session tokens (revoked on server restart → re-login required)
-const adminTokens = new Set()
-
-const issueAdminToken = () => {
-  const token = 'adm_' + crypto.randomBytes(24).toString('hex')
-  adminTokens.add(token)
-  return token
-}
-
-const requireAdminAuth = (req, res, next) => {
-  const auth = req.get('authorization') || ''
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : (req.get('x-admin-token') || '').trim()
-  if (token && adminTokens.has(token)) {
-    return next()
-  }
-  return res.status(401).json({ code: 401, message: '未登录或登录已过期，请重新登录' })
-}
-
-// Lock ALL /api/v1/admin/* endpoints (except login) behind an admin session token
-app.use('/api/v1/admin', (req, res, next) => {
-  const p = req.path
-  if (p === '/login' || p === '/login/' || p === '/auth/login' || p === '/auth/login/') {
-    return next()
-  }
-  return requireAdminAuth(req, res, next)
-})
-
-// /api/v1/upload (admin cover image upload) is admin-only too
+// Admin auth (模块化: middleware/adminAuth.js)
+app.use('/api/v1/admin', adminAuthMiddleware)
 app.use('/api/v1/upload', requireAdminAuth)
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -815,77 +783,8 @@ app.post('/api/v1/upload', (req, res) => {
   }
 })
 
-app.get('/api/v1/paywall/config', (req, res) => {
-  const plans = db.getPlans(req.query.lang)
-  sendResponse(res, { plans })
-})
-
-app.post('/api/v1/paywall/order', (req, res) => {
-  const order = db.createOrder(req.body)
-  sendResponse(res, order)
-})
-
-// Helper function to build Alipay WAP Payment URL using Node's native RSA2 crypto
-function generateAlipayWapUrl({ appId, privateKey, notifyUrl, orderId, amount, subject }) {
-  if (!appId || !privateKey) {
-    return `https://openapi.alipay.com/gateway.do?mock_order_id=${orderId}&amount=${amount}`
-  }
-
-  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19)
-  const bizContent = JSON.stringify({
-    out_trade_no: orderId,
-    total_amount: Number(amount).toFixed(2),
-    subject: subject || 'VIP 订阅服务',
-    product_code: 'QUICK_WAP_WAY'
-  })
-
-  const params = {
-    app_id: appId,
-    method: 'alipay.trade.wap.pay',
-    format: 'JSON',
-    charset: 'utf-8',
-    sign_type: 'RSA2',
-    timestamp,
-    version: '1.0',
-    notify_url: notifyUrl,
-    biz_content: bizContent
-  }
-
-  const sortedKeys = Object.keys(params).sort()
-  const signContent = sortedKeys.map(k => `${k}=${params[k]}`).join('&')
-
-  const signer = crypto.createSign('RSA-SHA256')
-  signer.update(signContent, 'utf8')
-  const formattedKey = privateKey.includes('-----BEGIN')
-    ? privateKey
-    : `-----BEGIN RSA PRIVATE KEY-----\n${privateKey}\n-----END RSA PRIVATE KEY-----`
-
-  const sign = signer.sign(formattedKey, 'base64')
-  const queryStr = sortedKeys.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&')
-
-  return `https://openapi.alipay.com/gateway.do?${queryStr}&sign=${encodeURIComponent(sign)}`
-}
-
-// Verify Alipay Notify Callback RSA2 Signature
-function verifyAlipayNotifySign(params, alipayPublicKey) {
-  if (!alipayPublicKey) return true
-  const { sign, sign_type, ...rest } = params
-  if (!sign) return false
-
-  const sortedKeys = Object.keys(rest).sort()
-  const signContent = sortedKeys.map(k => `${k}=${rest[k]}`).join('&')
-
-  const verifier = crypto.createVerify('RSA-SHA256')
-  verifier.update(signContent, 'utf8')
-
-  const formattedPubKey = alipayPublicKey.includes('-----BEGIN')
-    ? alipayPublicKey
-    : `-----BEGIN PUBLIC KEY-----\n${alipayPublicKey}\n-----END PUBLIC KEY-----`
-
-  return verifier.verify(formattedPubKey, sign, 'base64')
-}
-
-// Public Site Config (Includes siteTitle, hero settings, notice, etc.)
+// ---- Paywall routes (模块化: routes/paywall.js) ----
+app.use('/api/v1/paywall', paywallRouter)// Public Site Config (Includes siteTitle, hero settings, notice, etc.)
 app.get(['/api/v1/site-config', '/api/v1/paywall/config', '/api/v1/settings'], (req, res) => {
 
   const settings = db.getSettings(req.query.lang)
@@ -904,138 +803,6 @@ app.get(['/api/v1/site-config', '/api/v1/paywall/config', '/api/v1/settings'], (
   })
 })
 
-// VIP Device Status Query
-app.get('/api/v1/paywall/vip-status', (req, res) => {
-
-  const { deviceId } = req.query
-  const vipInfo = db.getDeviceVip(deviceId)
-  sendResponse(res, vipInfo)
-})
-
-// Cancel / Revoke Device VIP Status
-app.all(['/api/v1/paywall/vip/cancel', '/api/v1/paywall/vip-cancel'], (req, res) => {
-  const deviceId = req.params.deviceId || req.body?.deviceId || req.query?.deviceId
-  if (!deviceId) {
-    return sendResponse(res, null, 400, '缺失 deviceId 参数')
-  }
-  const cleanId = String(deviceId).trim()
-  db.revokeDeviceVip(cleanId)
-  sendResponse(res, { success: true, deviceId: cleanId }, 200, '设备 VIP 权限已成功取消')
-})
-
-
-// Create Alipay Order & Pay URL
-app.post('/api/v1/paywall/alipay/create', (req, res) => {
-  const { planId, deviceId } = req.body
-  const settings = db.getSettings()
-  const order = db.createOrder({
-    planId,
-    deviceId,
-    payType: 'alipay',
-    status: 'PENDING'
-  })
-
-  const payUrl = generateAlipayWapUrl({
-    appId: settings.alipayAppId,
-    privateKey: settings.alipayPrivateKey,
-    notifyUrl: settings.alipayNotifyUrl || 'http://localhost:3000/api/v1/paywall/alipay/notify',
-    orderId: order.id,
-    amount: order.amount,
-    subject: order.planName
-  })
-
-  sendResponse(res, { orderId: order.id, payUrl, amount: order.amount })
-})
-
-// Alipay Notify Callback Webhook
-app.post('/api/v1/paywall/alipay/notify', (req, res) => {
-  const params = req.body
-  const settings = db.getSettings()
-
-  const isValid = verifyAlipayNotifySign(params, settings.alipayPublicKey)
-  if (!isValid) {
-    logger.warn('Alipay notify signature verification failed')
-    return res.status(400).send('fail')
-  }
-
-  const orderId = params.out_trade_no
-  const tradeNo = params.trade_no
-  const totalAmount = Number(params.total_amount)
-  const tradeStatus = params.trade_status
-
-  if (tradeStatus === 'TRADE_SUCCESS' || tradeStatus === 'TRADE_FINISHED') {
-    const order = db.getOrderById(orderId)
-    if (order && Math.abs(order.amount - totalAmount) < 0.01) {
-      db.completeOrder(orderId, tradeNo)
-      logger.info(`Alipay order completed successfully: ${orderId}, tradeNo: ${tradeNo}`)
-      return res.send('success')
-    }
-  }
-
-  res.send('fail')
-})
-
-// Create Crypto USDT Payment Order with Micro-Decimal Auto-Offset
-app.post('/api/v1/paywall/crypto/create', (req, res) => {
-  const { planId, deviceId } = req.body
-  const settings = db.getSettings()
-  const rate = Number(settings.cryptoExchangeRate) || 7.2
-
-  const plans = db.getPlans()
-  const plan = plans.find(p => p.id === planId || p.key === planId) || plans[0]
-  const cnyAmount = plan ? plan.price : 39
-  const baseCryptoAmount = Number((cnyAmount / rate).toFixed(2))
-
-  // Micro-decimal collision prevention (e.g. User A = 5.4201 USDT, User B = 5.4202 USDT)
-  const existingOrders = db.getOrders().filter(o => o.payType === 'crypto_usdt' && o.status === 'PENDING')
-  const usedAmounts = new Set(existingOrders.map(o => Number(o.cryptoAmount || 0).toFixed(4)))
-
-  let offset = 0
-  let finalCryptoAmount = baseCryptoAmount
-  while (usedAmounts.has(finalCryptoAmount.toFixed(4))) {
-    offset += 0.0001
-    finalCryptoAmount = Number((baseCryptoAmount + offset).toFixed(4))
-  }
-
-  const usdtAddress = settings.cryptoUsdtAddress || 'TY7x9N2m8Qk4Pz1v6W3s5R7u9Y2X4B6C8V'
-
-
-  const order = db.createOrder({
-    planId: plan ? plan.id : planId,
-    deviceId,
-    payType: 'crypto_usdt',
-    status: 'PENDING',
-    cryptoAddress: usdtAddress,
-    cryptoAmount: finalCryptoAmount
-  })
-
-  sendResponse(res, {
-    orderId: order.id,
-    usdtAddress,
-    cryptoAmount: finalCryptoAmount,
-    baseCryptoAmount,
-    cnyAmount,
-    network: 'TRC-20 (TRON)',
-    createdAt: order.createdAt
-  })
-})
-
-// Restore VIP using Order Number
-app.post('/api/v1/paywall/restore', (req, res) => {
-  const { orderId, deviceId } = req.body
-  if (!orderId || !deviceId) {
-    return sendResponse(res, null, 400, '订单号和设备标识不能为空')
-  }
-
-  const result = db.restoreVipByOrder(orderId.trim(), deviceId.trim())
-  if (result.success) {
-    sendResponse(res, result, 200, result.message)
-  } else {
-    sendResponse(res, null, 400, result.message)
-  }
-})
-
-// -------------------------------------------------------------
 // B端 Admin APIs
 // -------------------------------------------------------------
 
