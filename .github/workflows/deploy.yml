@@ -284,6 +284,13 @@ jobs:
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd /root/mobile-paywall
 
+            # ── Fail-closed guard ──
+            # CLUSTER_SECRET 必须由 GitHub Secret 提供，无默认回退（避免弱默认值/带引号坏值）。
+            if [ -z "${{ secrets.CLUSTER_SECRET }}" ]; then
+              echo "❌ ERROR: GitHub Secret 'CLUSTER_SECRET' is not configured. Aborting main-server deployment (fail-closed)."
+              exit 1
+            fi
+
             # 若不存在 .env 文件，由 GitHub Secrets 自动生成
             if [ ! -f .env ]; then
               echo "NODE_ENV=production"                                              > .env
@@ -292,7 +299,7 @@ jobs:
               echo "ADMIN_PORT=5174"                                                >> .env
               echo "ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}"        >> .env
               echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}"     >> .env
-              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}" >> .env
+              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET }}" >> .env
               echo "ENABLE_DIRECT_UPLOAD=${{ secrets.ENABLE_DIRECT_UPLOAD || 'true' }}" >> .env
             fi
 
@@ -378,11 +385,18 @@ jobs:
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd /root/storage-node
 
+            # ── Fail-closed guard ──
+            # CLUSTER_SECRET 必须由 GitHub Secret 提供，无默认回退（避免弱默认值/带引号坏值）。
+            if [ -z "${{ secrets.CLUSTER_SECRET }}" ]; then
+              echo "❌ ERROR: GitHub Secret 'CLUSTER_SECRET' is not configured. Aborting storage-node deployment (fail-closed)."
+              exit 1
+            fi
+
             # 若不存在 .env 文件，由 GitHub Secrets 自动生成
             if [ ! -f .env ]; then
               echo "NODE_ENV=production"                                                        > .env
               echo "STORAGE_PORT=${{ secrets.STORAGE_PORT || 3001 }}"                         >> .env
-              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}" >> .env
+              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET }}" >> .env
               echo "STORAGE_ROOT=${{ secrets.STORAGE_ROOT || '/data/videos' }}"               >> .env
               echo "MAIN_SERVER_URL=${{ secrets.MAIN_SERVER_URL || 'http://localhost:3000' }}" >> .env
             fi
