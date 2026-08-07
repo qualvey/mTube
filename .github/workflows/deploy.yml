@@ -238,17 +238,31 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # 汇总部署任务：在所有并行构建完成后执行增量 VPS 部署
-  deploy-to-vps:
-    needs: [detect-changes, build-server, build-client, build-admin, build-storage-node]
-    if: "always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.ref == 'refs/heads/main' && (needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.client == 'true' || needs.detect-changes.outputs.admin == 'true' || needs.detect-changes.outputs.storage-node == 'true' || needs.detect-changes.outputs.compose == 'true')"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 部署任务 A：主站（server + client + admin）
+  # Secrets: VPS_HOST / VPS_USER / VPS_SSH_KEY / VPS_PORT
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-main:
+    needs: [detect-changes, build-server, build-client, build-admin]
+    if: |
+      always() &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled') &&
+      github.ref == 'refs/heads/main' &&
+      (
+        needs.detect-changes.outputs.server  == 'true' ||
+        needs.detect-changes.outputs.client  == 'true' ||
+        needs.detect-changes.outputs.admin   == 'true' ||
+        needs.detect-changes.outputs.compose == 'true'
+      )
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Copy docker-compose.yml to VPS
+      - name: Copy docker-compose.yml to Main VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -258,7 +272,7 @@ jobs:
           source: "docker-compose.yml,nginx-production-example.conf"
           target: "/root/mobile-paywall"
 
-      - name: SSH Connect and Incremental Deploy on VPS
+      - name: SSH — Incremental Deploy (Main Site)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -269,20 +283,20 @@ jobs:
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd /root/mobile-paywall
-            
+
             # 若不存在 .env 文件，由 GitHub Secrets 自动生成
             if [ ! -f .env ]; then
-              echo "NODE_ENV=production" > .env
-              echo "SERVER_PORT=3000" >> .env
-              echo "CLIENT_PORT=5173" >> .env
-              echo "ADMIN_PORT=5174" >> .env
-              echo "ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}" >> .env
-              echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}" >> .env
+              echo "NODE_ENV=production"                                              > .env
+              echo "SERVER_PORT=3000"                                               >> .env
+              echo "CLIENT_PORT=5173"                                               >> .env
+              echo "ADMIN_PORT=5174"                                                >> .env
+              echo "ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}"        >> .env
+              echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}"     >> .env
               echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}" >> .env
               echo "ENABLE_DIRECT_UPLOAD=${{ secrets.ENABLE_DIRECT_UPLOAD || 'true' }}" >> .env
             fi
 
-            # Ruyizf 支付配置（幂等追加：.env 已存在时也补齐，不覆盖已有值）
+            # 支付配置（幂等追加：.env 已存在时也补齐，不覆盖已有值）
             env_changed=0
             ensure_env() {
               local key="$1" val="$2"
@@ -291,12 +305,12 @@ jobs:
                 env_changed=1
               fi
             }
-            ensure_env "RUIZIF_SECRET" "${{ secrets.RUIZIF_SECRET }}"
+            ensure_env "RUIZIF_SECRET"     "${{ secrets.RUIZIF_SECRET }}"
             ensure_env "RUIZIF_NOTIFY_URL" "${{ secrets.RUIZIF_NOTIFY_URL || 'https://91cso.com/api/v1/paywall/notify' }}"
-            ensure_env "RUIZIF_CHANNEL" "${{ secrets.RUIZIF_CHANNEL || '4444' }}"
+            ensure_env "RUIZIF_CHANNEL"    "${{ secrets.RUIZIF_CHANNEL || '4444' }}"
             ensure_env "RUIZIF_NOTIFY_IPS" "${{ secrets.RUIZIF_NOTIFY_IPS || '***REMOVED***' }}"
 
-            # .env 有新增变量时重启 server，让新环境变量生效（compose 检测到 env 变更会 recreate）
+            # .env 有新增变量时重启 server
             if [ "$env_changed" = "1" ]; then
               echo "⚙️ .env updated, reloading server container..."
               (docker compose up -d server || docker-compose up -d server) || true
@@ -305,21 +319,98 @@ jobs:
             SERVICES=""
             if [ "${{ needs.detect-changes.outputs.server }}" == "true" ]; then SERVICES="$SERVICES server"; fi
             if [ "${{ needs.detect-changes.outputs.client }}" == "true" ]; then SERVICES="$SERVICES client"; fi
-            if [ "${{ needs.detect-changes.outputs.admin }}" == "true" ]; then SERVICES="$SERVICES admin"; fi
-            
+            if [ "${{ needs.detect-changes.outputs.admin }}"  == "true" ]; then SERVICES="$SERVICES admin";  fi
+
             if [ -n "$SERVICES" ]; then
-              echo "🚀 Cleaning old unused image caches on low-disk VPS..."
+              echo "🚀 Cleaning old unused image caches..."
               docker image prune -af || true
-              echo "🚀 Target incremental update services: $SERVICES"
+              echo "🚀 Target incremental update: $SERVICES"
               (docker compose pull $SERVICES || docker-compose pull $SERVICES)
               (docker compose up -d $SERVICES || docker-compose up -d $SERVICES)
               docker image prune -f || true
             elif [ "${{ needs.detect-changes.outputs.compose }}" == "true" ]; then
-              echo "⚙️ Only docker-compose / configuration changed. Reloading containers..."
+              echo "⚙️ Only compose/config changed. Reloading all containers..."
               (docker compose up -d || docker-compose up -d)
             else
-              echo "✨ No service changes detected. Skipping VPS update."
+              echo "✨ No main-site changes detected. Skipping."
             fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 部署任务 B：存储节点（storage-node）
+  # 独立机器，独立 Secrets:
+  #   STORAGE_VPS_HOST / STORAGE_VPS_USER / STORAGE_VPS_SSH_KEY / STORAGE_VPS_PORT
+  # 部署目录: /root/storage-node
+  # 只管理 storage-node 服务，不影响主站
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-storage-node:
+    needs: [detect-changes, build-storage-node]
+    if: |
+      always() &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled') &&
+      github.ref == 'refs/heads/main' &&
+      needs.detect-changes.outputs.storage-node == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to Storage VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+          source: "docker-compose.yml"
+          target: "/root/storage-node"
+
+      - name: SSH — Deploy Storage Node
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+
+          script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
+            cd /root/storage-node
+
+            # 若不存在 .env 文件，由 GitHub Secrets 自动生成
+            if [ ! -f .env ]; then
+              echo "NODE_ENV=production"                                                        > .env
+              echo "STORAGE_PORT=${{ secrets.STORAGE_PORT || 3001 }}"                         >> .env
+              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET || 'streamvip-cluster-secret' }}" >> .env
+              echo "STORAGE_ROOT=${{ secrets.STORAGE_ROOT || '/data/videos' }}"               >> .env
+              echo "MAIN_SERVER_URL=${{ secrets.MAIN_SERVER_URL || 'http://localhost:3000' }}" >> .env
+            fi
+
+            # 存储节点专属配置（幂等追加）
+            env_changed=0
+            ensure_env() {
+              local key="$1" val="$2"
+              if ! grep -q "^${key}=" .env 2>/dev/null; then
+                echo "${key}=${val}" >> .env
+                env_changed=1
+              fi
+            }
+            ensure_env "NODE_ID"       "${{ secrets.STORAGE_NODE_ID || 'node-01' }}"
+            ensure_env "NODE_LABEL"    "${{ secrets.STORAGE_NODE_LABEL || '存储节点 01' }}"
+            ensure_env "MAX_STORAGE_GB" "${{ secrets.MAX_STORAGE_GB || '500' }}"
+
+            if [ "$env_changed" = "1" ]; then
+              echo "⚙️ .env updated, will recreate container..."
+            fi
+
+            echo "🚀 Pulling latest storage-node image..."
+            docker image prune -af || true
+            (docker compose pull storage-node || docker-compose pull storage-node)
+            (docker compose up -d storage-node || docker-compose up -d storage-node)
+            docker image prune -f || true
+            echo "✅ Storage node deployed successfully."
+
 
 
 
