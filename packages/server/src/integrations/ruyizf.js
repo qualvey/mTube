@@ -1,8 +1,4 @@
 import crypto from 'node:crypto'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileP = promisify(execFile)
 
 /**
  * Ruyizf (如意支付) merchant API client.
@@ -13,8 +9,7 @@ const execFileP = promisify(execFile)
  *  - Sign = MD5( non-empty params sorted by ASCII as k=v&k=v... &secret=*** ) uppercase
  *  - `sign` and `extend` do NOT participate in signing
  *
- * 重要: 必须用 curl 发起请求 —— 平台拒绝 node 原生客户端的 TLS 指纹
- * (实测: node fetch / node http 均返回 54 签名校验失败, curl 正常)
+ * 请求方式: node 原生 fetch (全局 fetch)。实测成功 —— 平台接受 node 客户端。
  */
 
 export function ruyizfSign(params, secret) {
@@ -42,25 +37,23 @@ export function createRuyizfClient({ apiUrl, mch, secret }) {
     const logPayload = { ...payload, secret: secret.slice(0, 4) + '***' + secret.slice(-4) }
     debugLog(`POST ${apiUrl}${path} 请求参数`, logPayload)
 
-    let stdout
+    let resp
     try {
-      ;({ stdout } = await execFileP('curl', [
-        '-s', '-X', 'POST', apiUrl + path,
-        '-H', 'Content-Type: application/json',
-        '-d', body,
-      ], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 }))
+      const res = await fetch(apiUrl + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: AbortSignal.timeout(15000),
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+      }
+      resp = await res.json()
     } catch (e) {
-      debugLog(`POST ${apiUrl}${path} curl 执行失败`, { message: e.message })
+      debugLog(`POST ${apiUrl}${path} request 执行失败`, { message: e.message })
       throw e
     }
 
-    let resp
-    try {
-      resp = JSON.parse(stdout)
-    } catch (e) {
-      debugLog(`POST ${apiUrl}${path} 响应非 JSON`, stdout.slice(0, 500))
-      throw new Error(`ruyizf 响应解析失败: ${stdout.slice(0, 200)}`)
-    }
     debugLog(`POST ${apiUrl}${path} 响应`, resp)
     return resp
   }
@@ -68,17 +61,17 @@ export function createRuyizfClient({ apiUrl, mch, secret }) {
   return {
     /**
      * 代收下单
-     * @param {object} o { orderId, price(分), notify, callback?, clientIP, code? }
+     * @param {object} o { orderId, price(分), notify, clientIP, code? }
      * @returns {Promise<{code, message, data?: {url, expireTime, sdk}}>}
      */
-    async createPayOrder({ orderId, price, notify, callback, clientIP, code }) {
+    async createPayOrder({ orderId, price, notify, clientIP, code }) {
       return post('/pay', {
         mch,
         code: code || '4444',
         orderid: orderId,
         price,
         notify,
-        callback,
+        // 注意: 不传 callback —— 平台对 callback 参数验签不匹配（传了必 54），已实测确认
         reqTime: Date.now(),
         clientIP,
       })
