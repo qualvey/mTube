@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-4 sm:gap-6">
     <!-- Stat Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <el-card class="rounded-xl shadow-sm border-slate-200 hover:shadow-md transition-shadow">
@@ -76,14 +76,14 @@
     </div>
 
     <!-- Cluster Nodes Probe Cards -->
-    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
-      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-        <div class="flex items-center gap-2">
+    <div class="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+        <div class="flex flex-wrap items-center gap-2">
           <span class="text-lg">🌐</span>
           <h2 class="text-base font-bold text-slate-800">集群存储节点心跳探针状态</h2>
           <el-tag size="small" type="success" effect="light" class="font-bold">实时探测中</el-tag>
         </div>
-        <el-button size="small" type="primary" plain icon="Refresh" @click="fetchDashboardData">刷新心跳</el-button>
+        <el-button size="small" type="primary" plain icon="Refresh" class="mobile-full-button" @click="fetchDashboardData">刷新心跳</el-button>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -93,8 +93,8 @@
           class="p-4 rounded-xl border flex flex-col justify-between transition-all"
           :class="(node.status === 'HEALTHY' || node.status === 'ONLINE' || node.isOnline) ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/50 border-rose-200'"
         >
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <span class="font-bold text-slate-800 text-sm">{{ node.name }}</span>
               <el-tag v-if="node.isDefault" size="small" type="warning" effect="dark">默认上传</el-tag>
             </div>
@@ -117,13 +117,13 @@
       <!-- Traffic PV/UV Trend Chart -->
       <el-card class="lg:col-span-2 rounded-xl shadow-sm border-slate-200">
         <template #header>
-          <div class="flex items-center justify-between">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span class="font-bold text-slate-800">📊 近 7 日流量与浏览量 (PV / UV) 趋势分析</span>
             <el-tag size="small" type="info">每 10 分钟自动统计</el-tag>
           </div>
         </template>
-        <div class="h-64 flex flex-col justify-end p-2 gap-4">
-          <div class="flex-1 flex items-end justify-between gap-3 px-4 border-b border-slate-200 pb-2">
+        <div class="h-64 flex flex-col justify-end p-0 sm:p-2 gap-4 overflow-x-auto">
+          <div class="min-w-[420px] flex-1 flex items-end justify-between gap-3 px-2 sm:px-4 border-b border-slate-200 pb-2">
             <div v-for="(day, i) in trafficTrend" :key="i" class="flex-1 flex flex-col items-center gap-1 group">
               <div class="w-full flex items-end justify-center gap-1.5 h-44">
                 <div

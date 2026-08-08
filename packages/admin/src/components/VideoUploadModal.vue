@@ -3,6 +3,7 @@
     :model-value="visible"
     :title="isEdit ? '编辑视频资源信息' : '发布全新视频资源'"
     width="640px"
+    class="responsive-dialog"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" label-position="top">
@@ -14,7 +15,7 @@
         <el-input v-model="form.description" type="textarea" :rows="2" placeholder="详细视频简介" />
       </el-form-item>
 
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <el-form-item label="创作者名称">
           <el-input v-model="form.author" placeholder="官方创作者" />
         </el-form-item>
@@ -33,7 +34,7 @@
 
       <el-form-item required>
         <template #label>
-          <div class="flex items-center justify-between w-full">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full">
             <span>视频 MP4 / M3U8 播放地址</span>
             <el-tag v-if="enableDirectUpload" type="success" size="small" effect="light" class="font-bold">
               ⚡ 浏览器直传模式 (零主控带宽开销)
@@ -43,7 +44,7 @@
             </el-tag>
           </div>
         </template>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
           <el-input v-model="form.videoUrl" placeholder="https://.../video.mp4 或 /uploads/... 或 YouTube 链接" />
           <input
             type="file"
@@ -57,6 +58,7 @@
             plain
             icon="Upload"
             :loading="uploadLoading"
+            class="mobile-full-button"
             @click="$refs.videoFileInput.click()"
           >
             上传本地视频
@@ -65,7 +67,7 @@
 
         <!-- Real-time Video Upload Progress & Transfer Speed Indicator -->
         <div v-if="uploadLoading || uploadProgress > 0" class="mt-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2 shadow-inner w-full">
-          <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs font-bold text-slate-700">
             <span class="flex items-center gap-1.5">
               <span class="text-amber-500 animate-pulse">🚀</span>
               <span>{{ uploadStatusLabel || '视频传输处理中...' }}</span>
@@ -115,7 +117,7 @@
       </div>
 
       <el-form-item label="封面图片地址">
-        <div class="flex items-center gap-2">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
           <el-input v-model="form.poster" placeholder="https://.../poster.jpg 或 /uploads/..." />
           <input
             type="file"
@@ -129,6 +131,7 @@
             plain
             icon="Upload"
             :loading="uploadLoading"
+            class="mobile-full-button"
             @click="$refs.posterFileInput.click()"
           >
             上传本地封面
@@ -136,7 +139,7 @@
         </div>
       </el-form-item>
 
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <el-form-item label="视频分类标签 (Tags)">
           <el-select
             v-model="form.tags"
@@ -162,24 +165,28 @@
       </div>
 
       <el-form-item v-if="form.isVip" label="VIP 试看时长限制 (秒)">
-        <el-input-number v-model="form.previewDuration" :min="10" :max="3600" :step="10" />
-        <span class="text-xs text-slate-500 ml-2">
-          (默认 120 秒 / 2 分钟，试看超时后自动暂停并弹窗锁屏)
-        </span>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+          <el-input-number v-model="form.previewDuration" :min="10" :max="3600" :step="10" />
+          <span class="text-xs text-slate-500">
+            (默认 120 秒 / 2 分钟，试看超时后自动暂停并弹窗锁屏)
+          </span>
+        </div>
       </el-form-item>
     </el-form>
 
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
-      <el-button
-        type="warning"
-        class="font-bold"
-        :loading="uploadLoading || submitLoading"
-        :disabled="uploadLoading || submitLoading"
-        @click="handleSubmit"
-      >
-        {{ uploadLoading ? '视频传输中...' : isEdit ? '保存更新' : '立即提交发布' }}
-      </el-button>
+      <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+        <el-button class="mobile-full-button" @click="$emit('update:visible', false)">取消</el-button>
+        <el-button
+          type="warning"
+          class="font-bold mobile-full-button"
+          :loading="uploadLoading || submitLoading"
+          :disabled="uploadLoading || submitLoading"
+          @click="handleSubmit"
+        >
+          {{ uploadLoading ? '视频传输中...' : isEdit ? '保存更新' : '立即提交发布' }}
+        </el-button>
+      </div>
     </template>
   </el-dialog>
 </template>

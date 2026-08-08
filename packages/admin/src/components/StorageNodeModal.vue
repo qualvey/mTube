@@ -3,6 +3,7 @@
     :model-value="visible"
     title="注册新增存储节点"
     width="500px"
+    class="responsive-dialog responsive-dialog--small"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form :model="form" label-position="top">
@@ -24,8 +25,10 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
-      <el-button type="primary" class="font-bold" @click="handleSubmit">确认注册节点</el-button>
+      <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+        <el-button class="mobile-full-button" @click="$emit('update:visible', false)">取消</el-button>
+        <el-button type="primary" class="font-bold mobile-full-button" @click="handleSubmit">确认注册节点</el-button>
+      </div>
     </template>
   </el-dialog>
 </template>

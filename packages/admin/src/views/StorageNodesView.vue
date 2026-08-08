@@ -1,18 +1,18 @@
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-4 sm:gap-6">
     <!-- Action Header Bar -->
-    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-      <div>
-        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+    <div class="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="min-w-0">
+        <h2 class="text-base font-bold text-slate-800 flex flex-col sm:flex-row sm:items-center gap-2">
           <span>📦 存储节点集群管理</span>
           <el-tag size="small" type="success" effect="light" class="font-bold">已挂载 {{ storageNodes.length }} 节点</el-tag>
         </h2>
         <p class="text-xs text-slate-400 mt-1">支持多节点自动心跳鉴权注册，分布式下发直传凭证与智能打卡</p>
       </div>
 
-      <div class="flex items-center gap-3">
-        <el-button size="large" icon="Refresh" @click="fetchStorageNodes">刷新节点探针</el-button>
-        <el-button type="warning" size="large" icon="Plus" class="font-bold" @click="openAddNodeModal">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+        <el-button size="large" icon="Refresh" class="mobile-full-button" @click="fetchStorageNodes">刷新节点探针</el-button>
+        <el-button type="warning" size="large" icon="Plus" class="font-bold mobile-full-button" @click="openAddNodeModal">
           注册新存储节点
         </el-button>
       </div>
@@ -23,12 +23,12 @@
       <div
         v-for="node in storageNodes"
         :key="node.id"
-        class="bg-white rounded-2xl border p-5 shadow-sm flex flex-col justify-between transition-all hover:shadow-md"
+        class="bg-white rounded-xl sm:rounded-2xl border p-4 sm:p-5 shadow-sm flex flex-col justify-between transition-all hover:shadow-md"
         :class="node.isDefault ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200'"
       >
         <div>
-          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div class="flex items-center gap-2">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div class="flex flex-wrap items-center gap-2">
               <span class="font-bold text-slate-800 text-base">{{ node.name }}</span>
               <el-tag v-if="node.isDefault" size="small" type="warning" effect="dark" class="font-bold">⭐ 默认节点</el-tag>
             </div>
@@ -43,9 +43,9 @@
               <span class="font-bold text-slate-800">{{ node.id }}</span>
             </div>
 
-            <div class="flex justify-between py-1 border-b border-slate-50">
-              <span class="text-slate-400 font-sans">Base URL:</span>
-              <span class="text-amber-800 truncate max-w-[200px]" :title="node.baseUrl">{{ node.baseUrl }}</span>
+            <div class="flex flex-col sm:flex-row sm:justify-between gap-1 py-1 border-b border-slate-50">
+              <span class="text-slate-400 font-sans shrink-0">Base URL:</span>
+              <span class="text-amber-800 break-all sm:truncate sm:max-w-[200px]" :title="node.baseUrl">{{ node.baseUrl }}</span>
             </div>
 
             <div class="flex justify-between py-1 border-b border-slate-50">
@@ -60,7 +60,7 @@
           </div>
         </div>
 
-        <div class="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+        <div class="mt-5 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <el-button
             v-if="!node.isDefault"
             size="small"

@@ -1,8 +1,8 @@
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-4 sm:gap-6">
     <!-- Top Action Bar & Filters -->
-    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div class="flex items-center gap-3 flex-1 max-w-xl">
+    <div class="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 w-full md:max-w-xl">
         <el-input
           v-model="searchKeyword"
           placeholder="搜索视频标题、创作者或 ID..."
@@ -10,7 +10,7 @@
           prefix-icon="Search"
           class="w-full"
         />
-        <el-select v-model="selectedNodeFilter" placeholder="全部存储节点" clearable style="width: 180px">
+        <el-select v-model="selectedNodeFilter" placeholder="全部存储节点" clearable class="w-full sm:w-48 shrink-0">
           <el-option label="全部存储节点" value="" />
           <el-option
             v-for="node in storageNodes"
@@ -21,15 +21,15 @@
         </el-select>
       </div>
 
-      <div class="flex items-center gap-3">
-        <el-tag v-if="enableDirectUpload" type="success" size="large" effect="light" class="font-bold">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+        <el-tag v-if="enableDirectUpload" type="success" size="large" effect="light" class="font-bold justify-center">
           ⚡ 4通道直传模式 (已激活)
         </el-tag>
-        <el-tag v-else type="info" size="large" effect="light">
+        <el-tag v-else type="info" size="large" effect="light" class="justify-center">
           📦 主控中转模式
         </el-tag>
 
-        <el-button type="warning" size="large" icon="Plus" class="font-bold" @click="openAddModal">
+        <el-button type="warning" size="large" icon="Plus" class="font-bold mobile-full-button" @click="openAddModal">
           发布新视频
         </el-button>
       </div>
@@ -38,13 +38,14 @@
     <!-- Video List Table Card -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span class="font-bold text-slate-800">📹 全库视频流管理 (共 {{ filteredVideos.length }} 部)</span>
-          <el-button size="small" icon="Refresh" @click="fetchVideos">刷新数据</el-button>
+          <el-button size="small" icon="Refresh" class="mobile-full-button" @click="fetchVideos">刷新数据</el-button>
         </div>
       </template>
 
-      <el-table :data="filteredVideos" style="width: 100%" stripe>
+      <div class="admin-table-scroll">
+        <el-table :data="filteredVideos" style="width: 100%" stripe>
         <el-table-column label="封面" width="90">
           <template #default="{ row }">
             <img :src="row.poster || 'https://via.placeholder.com/150'" class="w-16 h-11 rounded-lg object-cover border shadow-sm" />
@@ -109,7 +110,8 @@
             </div>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </div>
 
       <div v-if="!filteredVideos.length" class="text-center py-12 text-slate-400 text-sm">
         暂无匹配的视频记录

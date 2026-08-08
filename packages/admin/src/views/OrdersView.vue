@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-4 sm:gap-6">
     <!-- Stat Summary Header Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <el-card class="rounded-xl shadow-sm border-slate-200">
@@ -47,8 +47,8 @@
     </div>
 
     <!-- Orders Filter & Search Bar -->
-    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div class="flex items-center gap-3 flex-1 max-w-lg">
+    <div class="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex items-center gap-3 flex-1 w-full md:max-w-lg">
         <el-input
           v-model="searchOrderKeyword"
           placeholder="搜索订单号、指纹 ID 或关联设备号..."
@@ -57,24 +57,25 @@
         />
       </div>
 
-      <div class="flex items-center gap-3">
-        <el-tag type="success" size="large" effect="dark" class="font-bold">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+        <el-tag type="success" size="large" effect="dark" class="font-bold justify-center whitespace-normal h-auto py-2 text-center">
           严格模式: 仅统计已完成支付 (PAID) 订单
         </el-tag>
-        <el-button size="large" icon="Refresh" @click="fetchOrders">刷新订单表</el-button>
+        <el-button size="large" icon="Refresh" class="mobile-full-button" @click="fetchOrders">刷新订单表</el-button>
       </div>
     </div>
 
     <!-- Orders Table Card -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
           <span class="font-bold text-slate-800">📋 已支付订单明细表 (共 {{ filteredOrders.length }} 笔)</span>
           <span class="text-xs text-slate-400">已排查过滤未支付水单</span>
         </div>
       </template>
 
-      <el-table :data="filteredOrders" style="width: 100%" stripe>
+      <div class="admin-table-scroll">
+        <el-table :data="filteredOrders" style="width: 100%" stripe>
         <el-table-column label="订单号 / 时间" min-width="200">
           <template #default="{ row }">
             <div class="font-mono font-bold text-slate-800 text-xs">{{ row.orderNo || row.id }}</div>
@@ -128,7 +129,8 @@
             </div>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </div>
 
       <div v-if="!filteredOrders.length" class="text-center py-12 text-slate-400 text-sm">
         暂无已完成支付的订单记录
