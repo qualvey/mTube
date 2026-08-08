@@ -28,4 +28,15 @@ export const config = {
   },
 
   // Alipay (existing mock/real) settings are read from db settings
+
+  // Analytics (统计/地域分析) — all overridable via env
+  analytics: {
+    // 分析采集总开关。false = 拒绝所有 events/batch 上报（默认开）
+    enabled: process.env.ANALYTICS_ENABLED !== 'false',
+    // 原始 IP 落库开关。true = analytics_events 表额外存原始 clientIp（默认关，隐私优先）
+    // 注意：即使关闭，ipHash（加盐哈希）与 GeoIP 国家码仍正常采集
+    storeRawIp: process.env.ANALYTICS_STORE_RAW_IP === 'true',
+    // GeoIP 国家码解析开关。false = 不调用外部 GeoIP 服务，countryCode 恒为空（默认开）
+    geoipEnabled: process.env.ANALYTICS_GEOIP_ENABLED !== 'false',
+  },
 }

@@ -128,6 +128,7 @@ database.exec(`
     userAgent TEXT DEFAULT '',
     referer TEXT DEFAULT '',
     ipHash TEXT DEFAULT '',
+    clientIp TEXT DEFAULT '',
     properties TEXT DEFAULT '{}',
     isValid INTEGER DEFAULT 1,
     invalidReason TEXT DEFAULT NULL
@@ -268,6 +269,7 @@ try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAddress TEXT DEFAULT NU
 try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAmount REAL DEFAULT 0;"); } catch (e) { }
 try { database.exec("ALTER TABLE videos ADD COLUMN views INTEGER DEFAULT 0;"); } catch (e) { }
 try { database.exec("ALTER TABLE analytics_events ADD COLUMN countryCode TEXT DEFAULT '';"); } catch (e) { }
+try { database.exec("ALTER TABLE analytics_events ADD COLUMN clientIp TEXT DEFAULT '';"); } catch (e) { }
 try { database.exec("ALTER TABLE videos ADD COLUMN storageNodeId TEXT DEFAULT 'node-01';"); } catch (e) { }
 try { database.exec("ALTER TABLE storage_nodes ADD COLUMN lastHeartbeat TEXT DEFAULT NULL;"); } catch (e) { }
 try { database.exec("ALTER TABLE storage_nodes ADD COLUMN clusterSecret TEXT DEFAULT NULL;"); } catch (e) { }
@@ -1313,8 +1315,8 @@ export const db = {
       INSERT OR IGNORE INTO analytics_events (
         eventId, eventName, occurredAt, receivedAt, visitorId, sessionId, pageViewId,
         playbackId, videoId, path, watchSeconds, positionSeconds, durationSeconds,
-        userAgent, referer, ipHash, countryCode, properties, isValid, invalidReason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        userAgent, referer, ipHash, clientIp, countryCode, properties, isValid, invalidReason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     let accepted = 0
@@ -1340,6 +1342,7 @@ export const db = {
           event.userAgent || '',
           event.referer || '',
           event.ipHash || '',
+          event.clientIp || '',
           event.countryCode || '',
           JSON.stringify(event.properties || {}),
           event.isValid === false ? 0 : 1,

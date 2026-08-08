@@ -930,6 +930,7 @@ const normalizeAnalyticsEvent = (event, requestContext) => {
     userAgent: requestContext.userAgent,
     referer: requestContext.referer,
     ipHash: requestContext.ipHash,
+    clientIp: requestContext.clientIp || '',
     countryCode: requestContext.countryCode,
     properties,
     isValid: true,
@@ -938,6 +939,11 @@ const normalizeAnalyticsEvent = (event, requestContext) => {
 }
 
 app.post('/api/v1/events/batch', async (req, res) => {
+  // 总开关：ANALYTICS_ENABLED=false 时直接拒绝上报（默认开）
+  if (!config.analytics.enabled) {
+    return sendResponse(res, null, 403, 'analytics disabled')
+  }
+
   const events = Array.isArray(req.body?.events) ? req.body.events : null
   if (!events || events.length === 0 || events.length > 50) {
     return sendResponse(res, null, 400, 'events must contain between 1 and 50 items')
@@ -962,10 +968,14 @@ app.post('/api/v1/events/batch', async (req, res) => {
   const receivedAt = new Date().toISOString()
   const ipSalt = process.env.ANALYTICS_IP_SALT || process.env.CLUSTER_SECRET || 'local-analytics-salt'
   // GeoIP 解析：只取 ISO 国家码（地理画像），原始 IP 不落库；失败返回 '' 不阻塞入库
-  const countryCode = await getCountryCode(clientIp)
+  // 开关：ANALYTICS_GEOIP_ENABLED=false 时跳过外部解析；ANALYTICS_STORE_RAW_IP=true 时额外存原始 IP
+  const countryCode = config.analytics.geoipEnabled
+    ? await getCountryCode(clientIp)
+    : ''
   const requestContext = {
     receivedAt,
     ipHash: crypto.createHash('sha256').update(`${ipSalt}:${clientIp}`).digest('hex'),
+    clientIp: config.analytics.storeRawIp ? clientIp : '',
     userAgent: cleanAnalyticsText(req.headers['user-agent'], 500),
     referer: cleanAnalyticsText(req.headers.referer, 1000),
     countryCode
