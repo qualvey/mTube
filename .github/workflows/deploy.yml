@@ -283,6 +283,7 @@ jobs:
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd /root/mobile-paywall
+            set -euo pipefail
 
             # ── Fail-closed guard ──
             # CLUSTER_SECRET 必须由 GitHub Secret 提供，无默认回退（避免弱默认值/带引号坏值）。
@@ -332,8 +333,9 @@ jobs:
               echo "🚀 Cleaning old unused image caches..."
               docker image prune -af || true
               echo "🚀 Target incremental update: $SERVICES"
-              (docker compose pull $SERVICES || docker-compose pull $SERVICES)
-              (docker compose up -d $SERVICES || docker-compose up -d $SERVICES)
+              # 严格模式：pull 失败必须中止（不再吞错误导致假绿）
+              docker compose pull $SERVICES
+              docker compose up -d $SERVICES
               docker image prune -f || true
             elif [ "${{ needs.detect-changes.outputs.compose }}" == "true" ]; then
               echo "⚙️ Only compose/config changed. Reloading all containers..."
@@ -386,6 +388,7 @@ jobs:
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd "$TARGET_DIR"
+            set -euo pipefail
 
             # ── Fail-closed guard ──
             # CLUSTER_SECRET 必须由 GitHub Secret 提供，无默认回退（避免弱默认值/带引号坏值）。
@@ -422,8 +425,8 @@ jobs:
 
             echo "🚀 Pulling latest storage-node image..."
             docker image prune -af || true
-            (docker compose pull storage-node || docker-compose pull storage-node)
-            (docker compose up -d storage-node || docker-compose up -d storage-node)
+            docker compose pull storage-node
+            docker compose up -d storage-node
             docker image prune -f || true
             echo "✅ Storage node deployed successfully."
 
