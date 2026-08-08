@@ -69,6 +69,9 @@
         <el-tag type="success" size="large" effect="dark" class="font-bold justify-center whitespace-normal h-auto py-2 text-center">
           严格模式: 仅统计已完成支付 (PAID) 订单
         </el-tag>
+        <el-button size="large" type="primary" icon="Plus" class="mobile-full-button" @click="openGrantDialog('device')">
+          手动开通 VIP
+        </el-button>
         <el-button size="large" icon="Refresh" class="mobile-full-button" @click="fetchOrders">刷新订单表</el-button>
       </div>
     </div>
@@ -146,20 +149,32 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button
-              v-if="row.deviceId"
-              type="danger"
-              size="small"
-              plain
-              :disabled="!row.isVip"
-              :loading="revokingDeviceId === row.deviceId"
-              @click="handleRevokeVip(row)"
-            >
-              撤销 VIP
-            </el-button>
-            <span v-else class="text-xs text-slate-400">—</span>
+            <div class="flex items-center gap-2">
+              <el-button
+                v-if="row.status === 'PAID' || row.status === 'SUCCESS' || row.paid === true"
+                type="primary"
+                size="small"
+                plain
+                :loading="grantingOrderId === row.id"
+                @click="openGrantDialog('order', row)"
+              >
+                补发 VIP
+              </el-button>
+              <el-button
+                v-if="row.deviceId"
+                type="danger"
+                size="small"
+                plain
+                :disabled="!row.isVip"
+                :loading="revokingDeviceId === row.deviceId"
+                @click="handleRevokeVip(row)"
+              >
+                撤销 VIP
+              </el-button>
+              <span v-if="!row.deviceId && !(row.status === 'PAID' || row.status === 'SUCCESS' || row.paid === true)" class="text-xs text-slate-400">—</span>
+            </div>
           </template>
         </el-table-column>
         </el-table>
@@ -169,6 +184,51 @@
         暂无符合条件的订单记录
       </div>
     </el-card>
+
+    <!-- Grant / Reissue VIP Dialog -->
+    <el-dialog
+      :title="grantMode === 'order' ? '补发 VIP（按订单）' : '手动开通 VIP（按设备）'"
+      v-model="grantDialogVisible"
+      width="460px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="110px">
+        <template v-if="grantMode === 'order'">
+          <el-form-item label="订单号">
+            <el-input :model-value="grantOrder?.orderNo || grantOrder?.id || ''" disabled />
+          </el-form-item>
+          <el-form-item label="订单设备">
+            <el-input v-model="grantDeviceId" placeholder="留空则用订单绑定的设备 ID" />
+            <div v-if="!grantOrder?.deviceId" class="text-xs text-amber-500 mt-1">
+              该订单未绑定设备，请填写目标设备 ID
+            </div>
+            <div v-else class="text-xs text-slate-400 mt-1">
+              当前绑定: {{ grantOrder.deviceId }}（套餐时长取自订单 planId）
+            </div>
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="设备 ID" required>
+            <el-input v-model="grantDeviceId" placeholder="输入设备指纹 ID" />
+          </el-form-item>
+          <el-form-item label="VIP 套餐" required>
+            <el-select v-model="grantPlanId" style="width: 100%">
+              <el-option label="月卡 (30 天)" value="month" />
+              <el-option label="季卡 (90 天)" value="season" />
+              <el-option label="年卡 (365 天)" value="year" />
+              <el-option label="永久 (36500 天)" value="lifetime" />
+            </el-select>
+          </el-form-item>
+        </template>
+        <div class="text-xs text-slate-400">
+          已有未过期 VIP 时，时长将在原到期时间上顺延叠加。
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="grantDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="grantSubmitting" @click="handleGrantVip">确认开通</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -196,6 +256,74 @@ const fetchOrders = async () => {
 }
 
 const revokingDeviceId = ref('')
+const grantingOrderId = ref('')
+
+const grantDialogVisible = ref(false)
+const grantMode = ref('device') // 'device' | 'order'
+const grantOrder = ref(null)
+const grantDeviceId = ref('')
+const grantPlanId = ref('month')
+const grantSubmitting = ref(false)
+
+const openGrantDialog = (mode, row = null) => {
+  grantMode.value = mode
+  grantOrder.value = row
+  grantDeviceId.value = row?.deviceId || ''
+  grantPlanId.value = 'month'
+  grantDialogVisible.value = true
+}
+
+const handleGrantVip = async () => {
+  const deviceId = (grantDeviceId.value || '').trim()
+  if (grantMode.value === 'order') {
+    const order = grantOrder.value
+    if (!order) return
+    // 订单无绑定设备时必须显式填写目标设备
+    if (!order.deviceId && !deviceId) {
+      ElMessage.warning('该订单未绑定设备，请填写目标设备 ID')
+      return
+    }
+    grantingOrderId.value = order.id
+  } else {
+    if (!deviceId) {
+      ElMessage.warning('请输入设备 ID')
+      return
+    }
+  }
+
+  grantSubmitting.value = true
+  try {
+    let res
+    if (grantMode.value === 'order') {
+      res = await apiFetch(`/api/v1/admin/orders/${encodeURIComponent(grantOrder.value.id)}/grant-vip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: deviceId || undefined })
+      })
+    } else {
+      res = await apiFetch(`/api/v1/admin/devices/${encodeURIComponent(deviceId)}/grant-vip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: grantPlanId.value })
+      })
+    }
+    const json = await res.json()
+    if (res.ok && json.code === 200) {
+      ElMessage.success(
+        grantMode.value === 'order' ? '订单 VIP 补发成功' : '设备 VIP 开通成功'
+      )
+      grantDialogVisible.value = false
+      await fetchOrders()
+    } else {
+      ElMessage.error(json.message || '操作失败')
+    }
+  } catch (e) {
+    ElMessage.error(grantMode.value === 'order' ? '补发失败，请重试' : '开通失败，请重试')
+  } finally {
+    grantSubmitting.value = false
+    grantingOrderId.value = ''
+  }
+}
 
 const handleRevokeVip = async (row) => {
   if (!row.deviceId) return
