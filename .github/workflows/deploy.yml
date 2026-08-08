@@ -371,10 +371,12 @@ jobs:
           key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
           port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
           source: "docker-compose.yml"
-          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
 
       - name: SSH — Deploy Storage Node
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          TARGET_DIR: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
         with:
           host: ${{ secrets.STORAGE_VPS_HOST }}
           username: ${{ secrets.STORAGE_VPS_USER }}
@@ -383,7 +385,7 @@ jobs:
 
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
-            cd /root/storage-node
+            cd "$TARGET_DIR"
 
             # ── Fail-closed guard ──
             # CLUSTER_SECRET 必须由 GitHub Secret 提供，无默认回退（避免弱默认值/带引号坏值）。
