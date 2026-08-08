@@ -35,8 +35,9 @@ GET /api/v1/admin/orders
 | `planName` | string | 套餐显示名（如「月度 VIP」） |
 | `amount` | number | 支付金额（元） |
 | `cryptoAmount` | string \| null | USDT 支付数量（TRC20 渠道） |
-| `paymentMethod` | string | 支付渠道：`ALIPAY` / `USDT` |
-| `status` | string | 订单状态：`PAID`（已支付）等 |
+| `payType` | string | 支付渠道（后端真实字段）：`alipay` / `ruyizf`（如意支付，实为支付宝扫码）/ `crypto_usdt` |
+| `cryptoAmount` | string \| null | USDT 支付数量（TRC20 渠道），支付宝订单为 null/0 |
+| `status` | string | 订单状态：`PENDING`（待支付）/ `PAID`（已支付） |
 | `isVip` | boolean | **该设备当前是否处于 VIP 有效期内** |
 | `vipExpireAt` | string \| null | 该设备当前 VIP 到期时间（ISO 8601），无 VIP 时为 null |
 
@@ -228,9 +229,9 @@ POST /api/v1/vip/cancel        （或 /api/v1/vip-cancel）
 
 ## 常见错误码
 
-| HTTP code | 场景 |
-| --- | --- |
-| `400` | 缺少必填参数（如 deviceId） |
-| `401` | 未登录 / Token 缺失或无效 |
-| `404` | 资源不存在（如订单不存在） |
-| `500` | 服务器内部错误 |
+| HTTP code | 场景　　　　　　　　　　　　|
+| -----------| -----------------------------|
+| `400`     | 缺少必填参数（如 deviceId） |
+| `401`     | 未登录 / Token 缺失或无效　 |
+| `404`     | 资源不存在（如订单不存在）　|
+| `500`     | 服务器内部错误　　　　　　　|

@@ -113,11 +113,11 @@
         <el-table-column label="支付渠道" width="120">
           <template #default="{ row }">
             <el-tag
-              :type="row.paymentMethod === 'ALIPAY' ? 'primary' : 'success'"
+              :type="payChannel(row) === 'ALIPAY' ? 'primary' : 'success'"
               size="small"
               class="font-bold"
             >
-              {{ row.paymentMethod === 'ALIPAY' ? '🔵 支付宝' : '🟢 USDT (TRC20)' }}
+              {{ payChannel(row) === 'ALIPAY' ? '🔵 支付宝' : '🟢 USDT (TRC20)' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -257,11 +257,19 @@ const totalPaidAmount = computed(() => {
   return paidOrders.value.reduce((sum, o) => sum + (Number(o.amount) || 0), 0)
 })
 
+const payChannel = (o) => {
+  // 后端字段为 payType: 'alipay' | 'ruyizf' | 'crypto_usdt'（小写）
+  // 兼容历史数据：有 cryptoAmount 视为 USDT；其余（含空值/ruyizf/旧 alipay）归为支付宝
+  if (o.payType === 'crypto_usdt') return 'USDT'
+  if (o.cryptoAmount && Number(o.cryptoAmount) > 0) return 'USDT'
+  return 'ALIPAY'
+}
+
 const alipayPaidCount = computed(() => {
-  return paidOrders.value.filter(o => o.paymentMethod === 'ALIPAY' || !o.paymentMethod).length
+  return paidOrders.value.filter(o => payChannel(o) === 'ALIPAY').length
 })
 
 const usdtPaidCount = computed(() => {
-  return paidOrders.value.filter(o => o.paymentMethod === 'USDT' || o.cryptoAmount).length
+  return paidOrders.value.filter(o => payChannel(o) === 'USDT').length
 })
 </script>
