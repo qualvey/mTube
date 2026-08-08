@@ -456,3 +456,82 @@
   }
 }
 ```
+
+### 5.7 撤销设备 VIP（移除指定设备的 VIP 权限）
+
+管理员手动移除某个设备的 VIP 权限，立即生效（删除 `vip_devices` 记录），该设备随即无法播放 VIP 内容。
+
+#### 形式 A：路径参数
+- **请求方式**：`POST /api/v1/admin/devices/:deviceId/revoke-vip`
+- **路径参数**：`deviceId` (string, 必填) — 设备指纹 ID
+
+#### 形式 B：query / body 传参
+- **请求方式**：`POST /api/v1/admin/devices/revoke-vip`
+- **请求参数**：`deviceId` (string, 必填) — 可放 query 或 JSON body
+```json
+{ "deviceId": "abc123device" }
+```
+
+> 参数优先级：路径参数 > body > query；`deviceId` 自动 trim。
+> 幂等：设备无 VIP 时调用同样返回 200，可安全重试。
+
+- **成功响应**：
+```json
+{
+  "code": 200,
+  "message": "手动取消设备 VIP 成功",
+  "data": { "success": true, "deviceId": "abc123device" }
+}
+```
+
+- **失败响应（缺参）**：`400` `{ "code": 400, "message": "缺失 deviceId 参数", "data": null }`
+
+### 5.8 手动授予 / 恢复设备 VIP
+
+#### 按订单授予（恢复订单设备的 VIP）
+- **请求方式**：`POST /api/v1/admin/orders/:id/grant-vip`
+- **请求 Body**（`deviceId` 可选，缺省用订单自身绑定设备）：
+```json
+{ "deviceId": "abc123device" }
+```
+- **成功响应**：
+```json
+{
+  "code": 200,
+  "message": "手动充值/恢复 VIP 权限成功",
+  "data": { "deviceId": "abc123device", "vipExpireAt": "2026-09-08T00:00:00.000Z", "isVip": true }
+}
+```
+
+#### 按设备 ID 直接授予（赠送 / 手动开通）
+- **请求方式**：`POST /api/v1/admin/devices/:deviceId/grant-vip`
+- **请求 Body**（`planId` 可选，缺省 `month`）：
+```json
+{ "planId": "season" }
+```
+- **planId 时长映射**：`day`→1天、`month`/`plan-1`→30天、`season`/`plan-2`→90天、`year`/`plan-3`→365天、`lifetime`/`plan-4`→36500天；已有未过期 VIP 时顺延叠加。
+- **成功响应**：结构同「按订单授予」。
+
+### 5.9 查询设备 VIP 状态（C 端公开）
+- **请求方式**：`GET /api/v1/vip-status?deviceId=abc123device`
+- **响应示例**：
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": { "isVip": true, "vipExpireAt": "2026-09-08T00:00:00.000Z" }
+}
+```
+无 VIP / 已过期时：`{ "isVip": false, "vipExpireAt": null }`
+
+### 5.10 设备自助取消 VIP（C 端公开）
+- **请求方式**：`POST /api/v1/vip/cancel`（或 `/api/v1/vip-cancel`）
+- **请求 Body / query**：`deviceId` (string, 必填)
+- **成功响应**：
+```json
+{
+  "code": 200,
+  "message": "设备 VIP 权限已成功取消",
+  "data": { "success": true, "deviceId": "abc123device" }
+}
+```

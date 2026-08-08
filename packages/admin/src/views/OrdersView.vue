@@ -122,11 +122,30 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="设备指纹 (DeviceId)" min-width="180">
+        <el-table-column label="设备指纹 (DeviceId)" min-width="200">
           <template #default="{ row }">
             <div class="font-mono text-xs text-slate-600 truncate max-w-xs" :title="row.deviceId">
               {{ row.deviceId || '匿名设备' }}
             </div>
+            <el-tag v-if="row.deviceId && row.isVip" type="success" size="small" class="mt-1">👑 VIP 生效中</el-tag>
+            <el-tag v-else-if="row.deviceId" type="info" size="small" class="mt-1">无 VIP</el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="140" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.deviceId"
+              type="danger"
+              size="small"
+              plain
+              :disabled="!row.isVip"
+              :loading="revokingDeviceId === row.deviceId"
+              @click="handleRevokeVip(row)"
+            >
+              撤销 VIP
+            </el-button>
+            <span v-else class="text-xs text-slate-400">—</span>
           </template>
         </el-table-column>
         </el-table>
@@ -141,7 +160,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiFetch } from '../utils/api.js'
 
 const allOrders = ref([])
@@ -158,6 +177,40 @@ const fetchOrders = async () => {
     }
   } catch (e) {
     ElMessage.error('获取订单列表失败')
+  }
+}
+
+const revokingDeviceId = ref('')
+
+const handleRevokeVip = async (row) => {
+  if (!row.deviceId) return
+  try {
+    await ElMessageBox.confirm(
+      `确定撤销设备「${row.deviceId}」的 VIP 权限吗？\n撤销后该设备立即失去 VIP 访问能力，不可自动恢复。`,
+      '撤销 VIP 确认',
+      { type: 'warning', confirmButtonText: '确认撤销', cancelButtonText: '取消' }
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  revokingDeviceId.value = row.deviceId
+  try {
+    const res = await apiFetch(
+      `/api/v1/admin/devices/${encodeURIComponent(row.deviceId)}/revoke-vip`,
+      { method: 'POST' }
+    )
+    const json = await res.json()
+    if (res.ok && json.code === 200) {
+      ElMessage.success('已撤销该设备 VIP')
+      await fetchOrders()
+    } else {
+      ElMessage.error(json.message || '撤销失败')
+    }
+  } catch (e) {
+    ElMessage.error('撤销失败，请重试')
+  } finally {
+    revokingDeviceId.value = ''
   }
 }
 
