@@ -207,6 +207,7 @@ let analyticsLastTickAt = 0
 let analyticsLastPosition = 0
 let analyticsTimer: number | null = null
 let analyticsMilestones = new Set<number>()
+let analyticsSkipped = false
 
 const getPlaybackPosition = () => Number(videoRef.value?.currentTime || 0)
 const getPlaybackDuration = () => Number(videoRef.value?.duration || 0)
@@ -277,7 +278,13 @@ const trackPlaybackProgress = () => {
   const position = getPlaybackPosition()
   const positionDelta = position - analyticsLastPosition
   analyticsLastPosition = position
-  if (!Number.isFinite(duration) || duration <= 0 || positionDelta < 0 || positionDelta > 2.5) return
+  if (!Number.isFinite(duration) || duration <= 0) return
+  // 倒退或大幅前进（seek）：本次播放会话禁止补发进度节点与完播，防拖拽刷量
+  if (positionDelta < 0 || positionDelta > 2.5) {
+    analyticsSkipped = true
+    return
+  }
+  if (analyticsSkipped) return
 
   const ratio = position / duration
   for (const milestone of [25, 50, 75]) {
@@ -300,11 +307,12 @@ const resetPlaybackAnalytics = () => {
   analyticsLastTickAt = 0
   analyticsLastPosition = 0
   analyticsMilestones = new Set<number>()
+  analyticsSkipped = false
 }
 
 const stopPlaybackAnalytics = (completed = false) => {
   tickWatchTime()
-  if (completed && analyticsValidView && analyticsMilestones.has(75) && !analyticsComplete) {
+  if (completed && analyticsValidView && !analyticsSkipped && analyticsMilestones.has(75) && !analyticsComplete) {
     analyticsComplete = true
     trackPlaybackEvent('VIDEO_COMPLETE')
   }
