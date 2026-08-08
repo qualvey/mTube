@@ -98,6 +98,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Plyr from 'plyr'
 import Hls from 'hls.js'
+import { createPlaybackId, trackEvent } from '../services/analyticsService'
 import 'plyr/dist/plyr.css'
 
 export interface CustomHeaders {
@@ -195,6 +196,123 @@ const globalSeekPreviewEnabled = ref<boolean>(true)
 let plyrInstance: Plyr | null = null
 let hlsInstance: Hls | null = null
 let currentAbortController: AbortController | null = null
+
+let analyticsPlaybackId: string | null = null
+let analyticsStarted = false
+let analyticsValidView = false
+let analyticsComplete = false
+let analyticsWatchSeconds = 0
+let analyticsTotalWatchSeconds = 0
+let analyticsLastTickAt = 0
+let analyticsLastPosition = 0
+let analyticsTimer: number | null = null
+let analyticsMilestones = new Set<number>()
+
+const getPlaybackPosition = () => Number(videoRef.value?.currentTime || 0)
+const getPlaybackDuration = () => Number(videoRef.value?.duration || 0)
+
+const trackPlaybackEvent = (eventName: string, extra: Record<string, any> = {}) => {
+  if (!analyticsPlaybackId || !props.video?.id) return
+  trackEvent(eventName, {
+    videoId: props.video.id,
+    playbackId: analyticsPlaybackId,
+    positionSeconds: getPlaybackPosition(),
+    durationSeconds: getPlaybackDuration(),
+    ...extra
+  })
+}
+
+const flushWatchTime = () => {
+  if (!analyticsValidView || analyticsWatchSeconds < 0.5) {
+    if (!analyticsValidView) analyticsWatchSeconds = 0
+    return
+  }
+  const watchSeconds = Number(analyticsWatchSeconds.toFixed(3))
+  analyticsWatchSeconds = 0
+  trackPlaybackEvent('WATCH_TIME', { watchSeconds })
+}
+
+const tickWatchTime = () => {
+  const now = performance.now()
+  const elapsedSeconds = analyticsLastTickAt
+    ? Math.min((now - analyticsLastTickAt) / 1000, 1.5)
+    : 0
+  analyticsLastTickAt = now
+
+  const element = videoRef.value
+  const canCount = Boolean(
+    analyticsStarted &&
+    props.active &&
+    document.visibilityState === 'visible' &&
+    element &&
+    !element.paused &&
+    !element.ended
+  )
+  if (!canCount || elapsedSeconds <= 0) return
+
+  analyticsWatchSeconds += elapsedSeconds
+  analyticsTotalWatchSeconds += elapsedSeconds
+  if (!analyticsValidView && analyticsTotalWatchSeconds >= 2) {
+    analyticsValidView = true
+    trackPlaybackEvent('VIDEO_2S')
+  }
+  if (analyticsValidView && analyticsWatchSeconds >= 10) flushWatchTime()
+}
+
+const startPlaybackAnalytics = () => {
+  if (!analyticsPlaybackId) analyticsPlaybackId = createPlaybackId()
+  if (!analyticsStarted) {
+    analyticsStarted = true
+    trackPlaybackEvent('VIDEO_START')
+  }
+  analyticsLastTickAt = performance.now()
+  if (!analyticsTimer) {
+    analyticsTimer = window.setInterval(tickWatchTime, 1000)
+  }
+}
+
+const trackPlaybackProgress = () => {
+  if (!analyticsValidView || !videoRef.value) return
+  const duration = getPlaybackDuration()
+  const position = getPlaybackPosition()
+  const positionDelta = position - analyticsLastPosition
+  analyticsLastPosition = position
+  if (!Number.isFinite(duration) || duration <= 0 || positionDelta < 0 || positionDelta > 2.5) return
+
+  const ratio = position / duration
+  for (const milestone of [25, 50, 75]) {
+    if (ratio >= milestone / 100 && !analyticsMilestones.has(milestone)) {
+      analyticsMilestones.add(milestone)
+      trackPlaybackEvent(`VIDEO_${milestone}`)
+    }
+  }
+}
+
+const resetPlaybackAnalytics = () => {
+  if (analyticsTimer) window.clearInterval(analyticsTimer)
+  analyticsTimer = null
+  analyticsPlaybackId = null
+  analyticsStarted = false
+  analyticsValidView = false
+  analyticsComplete = false
+  analyticsWatchSeconds = 0
+  analyticsTotalWatchSeconds = 0
+  analyticsLastTickAt = 0
+  analyticsLastPosition = 0
+  analyticsMilestones = new Set<number>()
+}
+
+const stopPlaybackAnalytics = (completed = false) => {
+  tickWatchTime()
+  if (completed && analyticsValidView && analyticsMilestones.has(75) && !analyticsComplete) {
+    analyticsComplete = true
+    trackPlaybackEvent('VIDEO_COMPLETE')
+  }
+  flushWatchTime()
+  if (analyticsTimer) window.clearInterval(analyticsTimer)
+  analyticsTimer = null
+  analyticsLastTickAt = 0
+}
 
 const parseHeaders = (rawHeaders?: CustomHeaders | string | null): Record<string, string> => {
   if (!rawHeaders) return {}
@@ -297,6 +415,9 @@ const handleContainerMouseMove = (e: MouseEvent) => {
  * Destroys Plyr player and HLS instance
  */
 const cleanupPlayerInstances = () => {
+  stopPlaybackAnalytics(false)
+  resetPlaybackAnalytics()
+
   if (currentAbortController) {
     currentAbortController.abort()
     currentAbortController = null
@@ -484,13 +605,23 @@ const initializePlyr = () => {
   })
 
   plyrInstance.on('play', () => {
+    startPlaybackAnalytics()
     emit('request-activate')
     emit('play')
   })
-  plyrInstance.on('pause', () => emit('pause'))
+  plyrInstance.on('pause', () => {
+    tickWatchTime()
+    flushWatchTime()
+    emit('pause')
+  })
+  plyrInstance.on('ended', () => {
+    stopPlaybackAnalytics(true)
+    resetPlaybackAnalytics()
+  })
 
   let trialTriggered = false
   plyrInstance.on('timeupdate', () => {
+    trackPlaybackProgress()
     if (props.video && props.video.isVip && !props.isVipUnlocked) {
       const limit = props.previewDuration || props.video.previewDuration || 120
       if (plyrInstance && plyrInstance.currentTime >= limit) {

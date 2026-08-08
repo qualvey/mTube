@@ -111,6 +111,43 @@ database.exec(`
     createdAt TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS analytics_events (
+    eventId TEXT PRIMARY KEY,
+    eventName TEXT NOT NULL,
+    occurredAt TEXT NOT NULL,
+    receivedAt TEXT NOT NULL,
+    visitorId TEXT NOT NULL,
+    sessionId TEXT NOT NULL,
+    pageViewId TEXT NOT NULL,
+    playbackId TEXT DEFAULT NULL,
+    videoId TEXT DEFAULT NULL,
+    path TEXT DEFAULT '/',
+    watchSeconds REAL DEFAULT 0,
+    positionSeconds REAL DEFAULT 0,
+    durationSeconds REAL DEFAULT 0,
+    userAgent TEXT DEFAULT '',
+    referer TEXT DEFAULT '',
+    ipHash TEXT DEFAULT '',
+    properties TEXT DEFAULT '{}',
+    isValid INTEGER DEFAULT 1,
+    invalidReason TEXT DEFAULT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS video_stats (
+    videoId TEXT PRIMARY KEY,
+    validViews INTEGER DEFAULT 0,
+    watchSeconds REAL DEFAULT 0,
+    completes INTEGER DEFAULT 0,
+    updatedAt TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_name_received
+    ON analytics_events (eventName, receivedAt);
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_visitor_received
+    ON analytics_events (visitorId, receivedAt);
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_video_received
+    ON analytics_events (videoId, receivedAt);
+
   CREATE TABLE IF NOT EXISTS storage_nodes (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -335,6 +372,9 @@ const formatVideoRow = (row) => {
     storageNodeId: row.storageNodeId || 'node-01',
     isVip: Boolean(row.isVip),
     views: Number(row.views || 0),
+    validViews: Number(row.validViews || 0),
+    watchSeconds: Number(row.watchSeconds || 0),
+    completes: Number(row.completes || 0),
     previewDuration: row.previewDuration !== undefined && row.previewDuration !== null ? Number(row.previewDuration) : 120,
     tags: parseTags(row.tags)
   }
@@ -454,10 +494,19 @@ export const db = {
     const limitParam = options.limit !== undefined ? parseInt(options.limit) : null
 
     let where = ''
-    if (filter === 'vip') where = 'WHERE isVip = 1'
-    else if (filter === 'free') where = 'WHERE isVip = 0'
+    if (filter === 'vip') where = 'WHERE videos.isVip = 1'
+    else if (filter === 'free') where = 'WHERE videos.isVip = 0'
 
-    const allRows = database.prepare(`SELECT * FROM videos ${where} ORDER BY createdAt DESC`).all()
+    const allRows = database.prepare(`
+      SELECT videos.*,
+        COALESCE(video_stats.validViews, 0) AS validViews,
+        COALESCE(video_stats.watchSeconds, 0) AS watchSeconds,
+        COALESCE(video_stats.completes, 0) AS completes
+      FROM videos
+      LEFT JOIN video_stats ON video_stats.videoId = videos.id
+      ${where}
+      ORDER BY videos.createdAt DESC
+    `).all()
     let results = allRows.map(formatVideoRow)
 
     if (tag && tag.trim()) {
@@ -482,7 +531,15 @@ export const db = {
   },
 
   getVideoById(id, lang) {
-    const row = database.prepare('SELECT * FROM videos WHERE id = ?').get(id)
+    const row = database.prepare(`
+      SELECT videos.*,
+        COALESCE(video_stats.validViews, 0) AS validViews,
+        COALESCE(video_stats.watchSeconds, 0) AS watchSeconds,
+        COALESCE(video_stats.completes, 0) AS completes
+      FROM videos
+      LEFT JOIN video_stats ON video_stats.videoId = videos.id
+      WHERE videos.id = ?
+    `).get(id)
     const video = formatVideoRow(row)
     return video ? this.applyLangToEntity('video', video, lang) : null
   },
@@ -990,6 +1047,249 @@ export const db = {
     }
 
     return this.getSettings()
+  },
+
+  recordAnalyticsEvents(events = []) {
+    const insertEvent = database.prepare(`
+      INSERT OR IGNORE INTO analytics_events (
+        eventId, eventName, occurredAt, receivedAt, visitorId, sessionId, pageViewId,
+        playbackId, videoId, path, watchSeconds, positionSeconds, durationSeconds,
+        userAgent, referer, ipHash, properties, isValid, invalidReason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const upsertView = database.prepare(`
+      INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
+      VALUES (?, 1, 0, 0, ?)
+      ON CONFLICT(videoId) DO UPDATE SET
+        validViews = validViews + 1,
+        updatedAt = excluded.updatedAt
+    `)
+    const upsertWatchTime = database.prepare(`
+      INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
+      VALUES (?, 0, ?, 0, ?)
+      ON CONFLICT(videoId) DO UPDATE SET
+        watchSeconds = watchSeconds + excluded.watchSeconds,
+        updatedAt = excluded.updatedAt
+    `)
+    const upsertComplete = database.prepare(`
+      INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
+      VALUES (?, 0, 0, 1, ?)
+      ON CONFLICT(videoId) DO UPDATE SET
+        completes = completes + 1,
+        updatedAt = excluded.updatedAt
+    `)
+    const videoExists = database.prepare('SELECT 1 FROM videos WHERE id = ?')
+
+    let accepted = 0
+    let duplicates = 0
+
+    database.exec('BEGIN')
+    try {
+      for (const event of events) {
+        const result = insertEvent.run(
+          event.eventId,
+          event.eventName,
+          event.occurredAt,
+          event.receivedAt,
+          event.visitorId,
+          event.sessionId,
+          event.pageViewId,
+          event.playbackId || null,
+          event.videoId || null,
+          event.path || '/',
+          event.watchSeconds || 0,
+          event.positionSeconds || 0,
+          event.durationSeconds || 0,
+          event.userAgent || '',
+          event.referer || '',
+          event.ipHash || '',
+          JSON.stringify(event.properties || {}),
+          event.isValid === false ? 0 : 1,
+          event.invalidReason || null
+        )
+
+        if (!result.changes) {
+          duplicates += 1
+          continue
+        }
+
+        accepted += 1
+        if (!event.videoId || event.isValid === false || !videoExists.get(event.videoId)) continue
+        if (event.eventName === 'VIDEO_2S') {
+          upsertView.run(event.videoId, event.receivedAt)
+        } else if (event.eventName === 'WATCH_TIME' && event.watchSeconds > 0) {
+          upsertWatchTime.run(event.videoId, event.watchSeconds, event.receivedAt)
+        } else if (event.eventName === 'VIDEO_COMPLETE') {
+          upsertComplete.run(event.videoId, event.receivedAt)
+        }
+      }
+      database.exec('COMMIT')
+    } catch (error) {
+      database.exec('ROLLBACK')
+      throw error
+    }
+
+    return { accepted, duplicates }
+  },
+
+  getAnalyticsV1Overview() {
+    const totalPV = database.prepare("SELECT COUNT(*) AS c FROM analytics_events WHERE eventName = 'PAGE_VIEW' AND isValid = 1").get().c
+    const totalUV = database.prepare("SELECT COUNT(DISTINCT visitorId) AS c FROM analytics_events WHERE eventName = 'PAGE_VIEW' AND isValid = 1").get().c
+    const validViews = database.prepare('SELECT COALESCE(SUM(validViews), 0) AS c FROM video_stats').get().c
+    const watchSeconds = database.prepare('SELECT COALESCE(SUM(watchSeconds), 0) AS c FROM video_stats').get().c
+    const completes = database.prepare('SELECT COALESCE(SUM(completes), 0) AS c FROM video_stats').get().c
+    return { totalPV, totalUV, validViews, watchSeconds, completes }
+  },
+
+  getAnalyticsV1Report(days = 7) {
+    const requestedDays = Number(days)
+    const rangeDays = [7, 30, 90].includes(requestedDays) ? requestedDays : 7
+    const dayMs = 24 * 60 * 60 * 1000
+    const endDate = new Date()
+    endDate.setUTCHours(24, 0, 0, 0)
+    const startDate = new Date(endDate.getTime() - rangeDays * dayMs)
+    const previousStartDate = new Date(startDate.getTime() - rangeDays * dayMs)
+    const startAt = startDate.toISOString()
+    const endAt = endDate.toISOString()
+    const previousStartAt = previousStartDate.toISOString()
+
+    const summaryStatement = database.prepare(`
+      SELECT
+        SUM(CASE WHEN eventName = 'PAGE_VIEW' AND isValid = 1 THEN 1 ELSE 0 END) AS pv,
+        COUNT(DISTINCT CASE WHEN eventName = 'PAGE_VIEW' AND isValid = 1 THEN visitorId END) AS uv,
+        SUM(CASE WHEN eventName = 'VIDEO_START' AND isValid = 1 THEN 1 ELSE 0 END) AS starts,
+        SUM(CASE WHEN eventName = 'VIDEO_2S' AND isValid = 1 THEN 1 ELSE 0 END) AS validViews,
+        SUM(CASE WHEN eventName = 'VIDEO_PROGRESS_25' AND isValid = 1 THEN 1 ELSE 0 END) AS progress25,
+        SUM(CASE WHEN eventName = 'VIDEO_PROGRESS_50' AND isValid = 1 THEN 1 ELSE 0 END) AS progress50,
+        SUM(CASE WHEN eventName = 'VIDEO_PROGRESS_75' AND isValid = 1 THEN 1 ELSE 0 END) AS progress75,
+        SUM(CASE WHEN eventName = 'VIDEO_COMPLETE' AND isValid = 1 THEN 1 ELSE 0 END) AS completes,
+        SUM(CASE WHEN eventName = 'WATCH_TIME' AND isValid = 1 THEN watchSeconds ELSE 0 END) AS watchSeconds,
+        COUNT(*) AS totalEvents,
+        SUM(CASE WHEN isValid = 1 THEN 1 ELSE 0 END) AS validEvents
+      FROM analytics_events
+      WHERE receivedAt >= ? AND receivedAt < ?
+    `)
+
+    const normalizeSummary = (row = {}) => {
+      const summary = Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value || 0)]))
+      summary.pagesPerVisitor = summary.uv ? summary.pv / summary.uv : 0
+      summary.viewRate = summary.starts ? summary.validViews / summary.starts : 0
+      summary.completionRate = summary.validViews ? summary.completes / summary.validViews : 0
+      summary.averageWatchSeconds = summary.validViews ? summary.watchSeconds / summary.validViews : 0
+      summary.eventValidityRate = summary.totalEvents ? summary.validEvents / summary.totalEvents : 1
+      return summary
+    }
+
+    const summary = normalizeSummary(summaryStatement.get(startAt, endAt))
+    const previous = normalizeSummary(summaryStatement.get(previousStartAt, startAt))
+    const trendRows = database.prepare(`
+      SELECT
+        substr(receivedAt, 1, 10) AS date,
+        SUM(CASE WHEN eventName = 'PAGE_VIEW' THEN 1 ELSE 0 END) AS pv,
+        COUNT(DISTINCT CASE WHEN eventName = 'PAGE_VIEW' THEN visitorId END) AS uv,
+        SUM(CASE WHEN eventName = 'VIDEO_START' THEN 1 ELSE 0 END) AS starts,
+        SUM(CASE WHEN eventName = 'VIDEO_2S' THEN 1 ELSE 0 END) AS validViews,
+        SUM(CASE WHEN eventName = 'VIDEO_COMPLETE' THEN 1 ELSE 0 END) AS completes,
+        SUM(CASE WHEN eventName = 'WATCH_TIME' THEN watchSeconds ELSE 0 END) AS watchSeconds
+      FROM analytics_events
+      WHERE receivedAt >= ? AND receivedAt < ? AND isValid = 1
+      GROUP BY substr(receivedAt, 1, 10)
+      ORDER BY date ASC
+    `).all(startAt, endAt)
+    const trendByDate = new Map(trendRows.map(row => [row.date, row]))
+    const trend = Array.from({ length: rangeDays }, (_, index) => {
+      const date = new Date(startDate.getTime() + index * dayMs).toISOString().slice(0, 10)
+      const row = trendByDate.get(date) || {}
+      return {
+        date,
+        pv: Number(row.pv || 0),
+        uv: Number(row.uv || 0),
+        starts: Number(row.starts || 0),
+        validViews: Number(row.validViews || 0),
+        completes: Number(row.completes || 0),
+        watchSeconds: Number(row.watchSeconds || 0)
+      }
+    })
+
+    const topVideos = database.prepare(`
+      SELECT
+        events.videoId,
+        COALESCE(videos.title, events.videoId) AS title,
+        COALESCE(videos.author, '') AS author,
+        COALESCE(videos.poster, '') AS poster,
+        COALESCE(videos.isVip, 0) AS isVip,
+        SUM(CASE WHEN events.eventName = 'VIDEO_START' THEN 1 ELSE 0 END) AS starts,
+        SUM(CASE WHEN events.eventName = 'VIDEO_2S' THEN 1 ELSE 0 END) AS validViews,
+        SUM(CASE WHEN events.eventName = 'VIDEO_COMPLETE' THEN 1 ELSE 0 END) AS completes,
+        SUM(CASE WHEN events.eventName = 'WATCH_TIME' THEN events.watchSeconds ELSE 0 END) AS watchSeconds
+      FROM analytics_events AS events
+      LEFT JOIN videos ON videos.id = events.videoId
+      WHERE events.receivedAt >= ? AND events.receivedAt < ?
+        AND events.isValid = 1 AND events.videoId IS NOT NULL
+      GROUP BY events.videoId
+      ORDER BY validViews DESC, watchSeconds DESC
+      LIMIT 10
+    `).all(startAt, endAt).map(row => ({
+      ...row,
+      isVip: Boolean(row.isVip),
+      starts: Number(row.starts || 0),
+      validViews: Number(row.validViews || 0),
+      completes: Number(row.completes || 0),
+      watchSeconds: Number(row.watchSeconds || 0)
+    }))
+
+    const topPaths = database.prepare(`
+      SELECT path, COUNT(*) AS pv, COUNT(DISTINCT visitorId) AS uv
+      FROM analytics_events
+      WHERE receivedAt >= ? AND receivedAt < ?
+        AND eventName = 'PAGE_VIEW' AND isValid = 1
+      GROUP BY path
+      ORDER BY pv DESC
+      LIMIT 10
+    `).all(startAt, endAt).map(row => ({
+      path: row.path || '/',
+      pv: Number(row.pv || 0),
+      uv: Number(row.uv || 0)
+    }))
+
+    const devices = database.prepare(`
+      SELECT
+        CASE
+          WHEN lower(userAgent) LIKE '%ipad%' OR lower(userAgent) LIKE '%tablet%' THEN 'tablet'
+          WHEN lower(userAgent) LIKE '%mobile%' OR lower(userAgent) LIKE '%android%' OR lower(userAgent) LIKE '%iphone%' THEN 'mobile'
+          WHEN userAgent = '' THEN 'unknown'
+          ELSE 'desktop'
+        END AS device,
+        COUNT(*) AS pv,
+        COUNT(DISTINCT visitorId) AS uv
+      FROM analytics_events
+      WHERE receivedAt >= ? AND receivedAt < ?
+        AND eventName = 'PAGE_VIEW' AND isValid = 1
+      GROUP BY device
+      ORDER BY pv DESC
+    `).all(startAt, endAt).map(row => ({
+      device: row.device,
+      pv: Number(row.pv || 0),
+      uv: Number(row.uv || 0)
+    }))
+
+    return {
+      range: { days: rangeDays, startAt, endAt, timezone: 'UTC' },
+      summary,
+      previous,
+      trend,
+      funnel: {
+        starts: summary.starts,
+        validViews: summary.validViews,
+        progress25: summary.progress25,
+        progress50: summary.progress50,
+        progress75: summary.progress75,
+        completes: summary.completes
+      },
+      topVideos,
+      topPaths,
+      devices
+    }
   },
 
   recordAccess(data = {}) {

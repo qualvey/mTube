@@ -845,6 +845,149 @@ app.get('/api/v1/admin/dashboard/stats', (req, res) => {
 // -------------------------------------------------------------
 
 // C端访问与点击数据上报
+// -------------------------------------------------------------
+// Analytics V1 APIs
+// -------------------------------------------------------------
+
+const ANALYTICS_EVENT_NAMES = new Set([
+  'PAGE_VIEW',
+  'VIDEO_START',
+  'VIDEO_2S',
+  'VIDEO_25',
+  'VIDEO_50',
+  'VIDEO_75',
+  'VIDEO_COMPLETE',
+  'WATCH_TIME',
+  'PAYWALL_OPEN',
+  'AD_REQUEST',
+  'AD_FILLED',
+  'AD_RENDERED',
+  'AD_VIEWABLE',
+  'AD_CLICK',
+  'AD_COMPLETE'
+])
+
+const analyticsRateLimits = new Map()
+const ANALYTICS_RATE_WINDOW_MS = 60_000
+const ANALYTICS_RATE_LIMIT = 600
+
+const readClientIp = (req) => String(
+  req.headers['cf-connecting-ip'] ||
+  req.headers['x-forwarded-for'] ||
+  req.headers['x-real-ip'] ||
+  req.socket?.remoteAddress ||
+  req.ip ||
+  '127.0.0.1'
+).split(',')[0].replace(/^::ffff:/, '').trim()
+
+const clampAnalyticsNumber = (value, max) => {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) return 0
+  return Math.min(number, max)
+}
+
+const cleanAnalyticsText = (value, maxLength) => {
+  if (value === undefined || value === null) return ''
+  return String(value).slice(0, maxLength)
+}
+
+const normalizeAnalyticsEvent = (event, requestContext) => {
+  if (!event || typeof event !== 'object') return null
+
+  const eventId = cleanAnalyticsText(event.eventId, 100)
+  const eventName = cleanAnalyticsText(event.eventName, 40)
+  const visitorId = cleanAnalyticsText(event.visitorId, 100)
+  const sessionId = cleanAnalyticsText(event.sessionId, 100)
+  const pageViewId = cleanAnalyticsText(event.pageViewId, 100)
+  if (!eventId || !ANALYTICS_EVENT_NAMES.has(eventName) || !visitorId || !sessionId || !pageViewId) {
+    return null
+  }
+
+  const occurredDate = new Date(event.occurredAt)
+  const occurredAt = Number.isNaN(occurredDate.getTime())
+    ? requestContext.receivedAt
+    : occurredDate.toISOString()
+  const properties = event.properties && typeof event.properties === 'object' && !Array.isArray(event.properties)
+    ? event.properties
+    : {}
+  if (JSON.stringify(properties).length > 2048) return null
+
+  return {
+    eventId,
+    eventName,
+    occurredAt,
+    receivedAt: requestContext.receivedAt,
+    visitorId,
+    sessionId,
+    pageViewId,
+    playbackId: cleanAnalyticsText(event.playbackId, 100) || null,
+    videoId: cleanAnalyticsText(event.videoId, 100) || null,
+    path: cleanAnalyticsText(event.path, 500) || '/',
+    watchSeconds: clampAnalyticsNumber(event.watchSeconds, 60),
+    positionSeconds: clampAnalyticsNumber(event.positionSeconds, 86_400),
+    durationSeconds: clampAnalyticsNumber(event.durationSeconds, 86_400),
+    userAgent: requestContext.userAgent,
+    referer: requestContext.referer,
+    ipHash: requestContext.ipHash,
+    properties,
+    isValid: true,
+    invalidReason: null
+  }
+}
+
+app.post('/api/v1/events/batch', (req, res) => {
+  const events = Array.isArray(req.body?.events) ? req.body.events : null
+  if (!events || events.length === 0 || events.length > 50) {
+    return sendResponse(res, null, 400, 'events must contain between 1 and 50 items')
+  }
+
+  const clientIp = readClientIp(req)
+  const now = Date.now()
+  const currentLimit = analyticsRateLimits.get(clientIp)
+  const rateLimit = !currentLimit || now - currentLimit.startedAt >= ANALYTICS_RATE_WINDOW_MS
+    ? { startedAt: now, count: events.length }
+    : { ...currentLimit, count: currentLimit.count + events.length }
+  analyticsRateLimits.set(clientIp, rateLimit)
+  if (analyticsRateLimits.size > 10_000) {
+    for (const [ip, value] of analyticsRateLimits) {
+      if (now - value.startedAt >= ANALYTICS_RATE_WINDOW_MS) analyticsRateLimits.delete(ip)
+    }
+  }
+  if (rateLimit.count > ANALYTICS_RATE_LIMIT) {
+    return sendResponse(res, null, 429, 'analytics rate limit exceeded')
+  }
+
+  const receivedAt = new Date().toISOString()
+  const ipSalt = process.env.ANALYTICS_IP_SALT || process.env.CLUSTER_SECRET || 'local-analytics-salt'
+  const requestContext = {
+    receivedAt,
+    ipHash: crypto.createHash('sha256').update(`${ipSalt}:${clientIp}`).digest('hex'),
+    userAgent: cleanAnalyticsText(req.headers['user-agent'], 500),
+    referer: cleanAnalyticsText(req.headers.referer, 1000)
+  }
+  const normalized = events
+    .map(event => normalizeAnalyticsEvent(event, requestContext))
+    .filter(Boolean)
+  const rejected = events.length - normalized.length
+
+  try {
+    const result = db.recordAnalyticsEvents(normalized)
+    return sendResponse(res, { ...result, rejected })
+  } catch (error) {
+    logger.error('Analytics batch insert failed:', error.message)
+    return sendResponse(res, null, 500, 'analytics batch insert failed')
+  }
+})
+
+app.get('/api/v1/admin/analytics/v1/overview', (req, res) => {
+  sendResponse(res, db.getAnalyticsV1Overview())
+})
+
+app.get('/api/v1/admin/analytics/v1/report', (req, res) => {
+  sendResponse(res, db.getAnalyticsV1Report(req.query.days))
+})
+
+// Legacy C-side analytics endpoint. Retained for compatibility.
 app.post('/api/v1/analytics/track', (req, res) => {
   const clientIp = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || req.ip || '127.0.0.1').split(',')[0].trim()
 

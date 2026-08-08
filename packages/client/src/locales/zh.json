@@ -46,7 +46,8 @@
     "trialEndedDesc": "解锁 VIP 尊享无限制观看全片与全部 4K 原画库",
     "unlockNow": "立即解锁尊享 VIP 特权",
     "vipUnlocked": "VIP 尊享解禁",
-    "verifiedCreator": "官方认证创作者"
+    "verifiedCreator": "官方认证创作者",
+    "validViews": "2 秒有效播放量"
   },
   "player": {
     "invalidUrl": "视频 URL 无效",

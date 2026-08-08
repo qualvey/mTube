@@ -1,5 +1,6 @@
 // Video API & Service layer for Client (Connects to /api/v1/videos with mock fallback)
 import { getCurrentLocale } from '../i18n'
+import { trackEvent } from './analyticsService'
 
 const mockFallbackVideos = [
   {
@@ -68,29 +69,14 @@ const mockFallbackVideos = [
   }
 ]
 
-// Global Analytics Tracking Helper (PV, Video Clicks)
-export const trackAnalytics = async (action = 'PV', videoId = null) => {
-  try {
-    let deviceId = localStorage.getItem('mp_device_id')
-    if (!deviceId) {
-      deviceId = 'dev-' + Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36)
-      localStorage.setItem('mp_device_id', deviceId)
-    }
-    await fetch('/api/v1/analytics/track', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action,
-        videoId,
-        path: window.location.pathname || '/',
-        deviceId,
-        userAgent: navigator.userAgent,
-        referer: document.referrer
-      })
-    })
-  } catch (e) {
-    // Silent catch
-  }
+// Compatibility wrapper for legacy callers. New code should use trackEvent directly.
+export const trackAnalytics = (action = 'PV', videoId = null) => {
+  const eventName = action === 'PV'
+    ? 'PAGE_VIEW'
+    : action === 'VIDEO_CLICK'
+      ? 'PAYWALL_OPEN'
+      : action
+  trackEvent(eventName, { videoId })
 }
 
 export const videoService = {
