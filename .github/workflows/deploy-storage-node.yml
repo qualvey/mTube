@@ -68,19 +68,19 @@ jobs:
           key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
           port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
           source: "docker-compose.yml"
-          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
 
       - name: SSH — Deploy Storage Node
         uses: appleboy/ssh-action@v1.0.3
         env: 
-          TARGET_DIR: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
+          TARGET_DIR: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
 
         with:
           host: ${{ secrets.STORAGE_VPS_HOST }}
           username: ${{ secrets.STORAGE_VPS_USER }}
           key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
           port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
-          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
             cd "$TARGET_DIR"
