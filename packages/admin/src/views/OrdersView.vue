@@ -48,6 +48,14 @@
 
     <!-- Orders Filter & Search Bar -->
     <div class="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+        <el-radio-group v-model="orderStatusFilter" size="large">
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="paid">已支付</el-radio-button>
+          <el-radio-button value="pending">待支付</el-radio-button>
+        </el-radio-group>
+      </div>
+
       <div class="flex items-center gap-3 flex-1 w-full md:max-w-lg">
         <el-input
           v-model="searchOrderKeyword"
@@ -69,8 +77,8 @@
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
-          <span class="font-bold text-slate-800">📋 已支付订单明细表 (共 {{ filteredOrders.length }} 笔)</span>
-          <span class="text-xs text-slate-400">已排查过滤未支付水单</span>
+          <span class="font-bold text-slate-800">📋 订单明细表 (共 {{ filteredOrders.length }} 笔)</span>
+          <span class="text-xs text-slate-400">顶部统计卡始终按已支付 (PAID) 口径计算</span>
         </div>
       </template>
 
@@ -115,9 +123,15 @@
         </el-table-column>
 
         <el-table-column label="支付状态" width="120">
-          <template #default>
-            <el-tag type="success" size="small" effect="dark" class="font-bold">
-              ✓ 已完成支付
+          <template #default="{ row }">
+            <el-tag v-if="row.status === 'PAID'" type="success" size="small" effect="dark" class="font-bold">
+              ✓ 已支付
+            </el-tag>
+            <el-tag v-else-if="row.status === 'PENDING'" type="warning" size="small" effect="light" class="font-bold">
+              ⏳ 待支付
+            </el-tag>
+            <el-tag v-else type="info" size="small" effect="plain" class="font-bold">
+              {{ row.status || '未知' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -152,7 +166,7 @@
       </div>
 
       <div v-if="!filteredOrders.length" class="text-center py-12 text-slate-400 text-sm">
-        暂无已完成支付的订单记录
+        暂无符合条件的订单记录
       </div>
     </el-card>
   </div>
@@ -165,6 +179,7 @@ import { apiFetch } from '../utils/api.js'
 
 const allOrders = ref([])
 const searchOrderKeyword = ref('')
+const orderStatusFilter = ref('all')
 
 const fetchOrders = async () => {
   try {
@@ -223,9 +238,15 @@ const paidOrders = computed(() => {
 })
 
 const filteredOrders = computed(() => {
-  return paidOrders.value.filter(o => {
-    if (!searchOrderKeyword.value) return true
-    const kw = searchOrderKeyword.value.toLowerCase()
+  let rows = allOrders.value
+  if (orderStatusFilter.value === 'paid') {
+    rows = rows.filter(o => o.status === 'PAID' || o.status === 'SUCCESS' || o.paid === true)
+  } else if (orderStatusFilter.value === 'pending') {
+    rows = rows.filter(o => o.status === 'PENDING')
+  }
+  if (!searchOrderKeyword.value) return rows
+  const kw = searchOrderKeyword.value.toLowerCase()
+  return rows.filter(o => {
     return (o.orderNo && o.orderNo.toLowerCase().includes(kw)) ||
       (o.id && String(o.id).includes(kw)) ||
       (o.deviceId && o.deviceId.toLowerCase().includes(kw))
