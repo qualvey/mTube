@@ -371,7 +371,7 @@ jobs:
           key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
           port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
           source: "docker-compose.yml"
-          target: "/root/storage-node"
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
 
       - name: SSH — Deploy Storage Node
         uses: appleboy/ssh-action@v1.0.3

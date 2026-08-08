@@ -1,12 +1,12 @@
 <template>
-  <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-    <el-card class="w-full max-w-md shadow-2xl border-slate-800 rounded-2xl p-6 bg-slate-800/90 text-white">
+  <div class="min-h-screen bg-slate-900 flex items-center justify-center p-3 sm:p-4">
+    <el-card class="w-full max-w-md shadow-2xl border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-6 bg-slate-800/90 text-white">
       <template #header>
         <div class="text-center py-2">
           <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-yellow-500 to-amber-600 text-black font-black text-xl flex items-center justify-center mx-auto mb-3 shadow-lg">
             ▶
           </div>
-          <h2 class="text-2xl font-bold text-white">StreamVIP 管理控制台</h2>
+          <h2 class="text-xl sm:text-2xl font-bold text-white">StreamVIP 管理控制台</h2>
           <p class="text-xs text-slate-400 mt-1">请输入管理员账号登录系统</p>
         </div>
       </template>

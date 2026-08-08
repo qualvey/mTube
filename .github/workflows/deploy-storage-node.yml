@@ -60,57 +60,67 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Copy Storage Node Compose & Config to Remote VPS
+      - name: Copy docker-compose.yml to Storage VPS
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.STORAGE_NODE_HOST || secrets.VPS_HOST }}
-          username: ${{ secrets.STORAGE_NODE_USER || secrets.VPS_USER }}
-          key: ${{ secrets.STORAGE_NODE_SSH_KEY || secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.STORAGE_NODE_PORT || secrets.VPS_PORT || 22 }}
-          source: "packages/storage-node/docker-compose.yml,packages/storage-node/.env.example"
-          target: "${{ secrets.STORAGE_NODE_DEPLOY_PATH || '/root/storage-node' }}"
-          strip_components: 2
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
 
-      - name: SSH Connect and Deploy Storage Node Service
+      - name: SSH — Deploy Storage Node
         uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.STORAGE_NODE_HOST || secrets.VPS_HOST }}
-          username: ${{ secrets.STORAGE_NODE_USER || secrets.VPS_USER }}
-          key: ${{ secrets.STORAGE_NODE_SSH_KEY || secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.STORAGE_NODE_PORT || secrets.VPS_PORT || 22 }}
+        env: 
+          TARGET_DIR: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
 
+        with:
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage-node' }}
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
-            TARGET_DIR="${{ secrets.STORAGE_NODE_DEPLOY_PATH || '/root/storage-node' }}"
-            mkdir -p $TARGET_DIR
-            cd $TARGET_DIR
-
+            cd "$TARGET_DIR"
+ 
             # ── Fail-closed guard ──
-            # CLUSTER_SECRET 是唯一保护所有存储接口的密钥。未配置时拒绝部署，
-            # 避免使用弱默认值（storage-node 容器会拒绝启动）或写入含单引号的坏值。
+            # CLUSTER_SECRET 必须由 GitHub Secret 提供，无默认回退（避免弱默认值/带引号坏值）。
             if [ -z "${{ secrets.CLUSTER_SECRET }}" ]; then
               echo "❌ ERROR: GitHub Secret 'CLUSTER_SECRET' is not configured. Aborting storage-node deployment (fail-closed)."
               exit 1
             fi
-            
-            # 由 GitHub Secrets 自动生成/更新远端 .env 配置文件 (彻底无需手动登陆服务器修改)
-            echo "NODE_ENV=production" > .env
-            echo "STORAGE_BIND_IP=${{ secrets.STORAGE_BIND_IP || '0.0.0.0' }}" >> .env
-            echo "STORAGE_PORT=3001" >> .env
-            echo "NODE_ID=${{ secrets.STORAGE_NODE_ID || 'node-02' }}" >> .env
-            echo "NODE_NAME=\"${{ secrets.STORAGE_NODE_NAME || '香港存储节点 02' }}\"" >> .env
-            echo "PUBLIC_URL=${{ secrets.STORAGE_PUBLIC_URL || 'http://localhost:3001' }}" >> .env
-            echo "MAIN_SERVER_URL=${{ secrets.MAIN_SERVER_URL || 'http://localhost:3000' }}" >> .env
-            # CLUSTER_SECRET 无默认回退：必须由 GitHub Secret 显式提供（fail-closed）
-            # 若未配置，下方 guard 会中止部署，避免用弱默认值裸奔或写入带引号的坏值。
-            echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET }}" >> .env
-            echo "ENABLE_DIRECT_UPLOAD=${{ secrets.ENABLE_DIRECT_UPLOAD || 'true' }}" >> .env
-            echo "STORAGE_DATA_PATH=${{ secrets.STORAGE_DATA_PATH || '/var/storage/uploads' }}" >> .env
-            echo "STORAGE_NODE_IMAGE=ghcr.io/qualvey/mtube/storage-node:latest" >> .env
 
-            echo "🚀 Deploying and reloading Storage Node container..."
+            # 若不存在 .env 文件，由 GitHub Secrets 自动生成
+            if [ ! -f .env ]; then
+              echo "NODE_ENV=production"                                                        > .env
+              echo "STORAGE_PORT=${{ secrets.STORAGE_PORT || 3001 }}"                         >> .env
+              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET }}" >> .env
+              echo "STORAGE_ROOT=${{ secrets.STORAGE_ROOT || '/data/videos' }}"               >> .env
+              echo "MAIN_SERVER_URL=${{ secrets.MAIN_SERVER_URL || 'http://localhost:3000' }}" >> .env
+            fi
+
+            # 存储节点专属配置（幂等追加）
+            env_changed=0
+            ensure_env() {
+              local key="$1" val="$2"
+              if ! grep -q "^${key}=" .env 2>/dev/null; then
+                echo "${key}=${val}" >> .env
+                env_changed=1
+              fi
+            }
+            ensure_env "NODE_ID"       "${{ secrets.STORAGE_NODE_ID || 'node-01' }}"
+            ensure_env "NODE_LABEL"    "${{ secrets.STORAGE_NODE_LABEL || '存储节点 01' }}"
+            ensure_env "MAX_STORAGE_GB" "${{ secrets.MAX_STORAGE_GB || '500' }}"
+
+            if [ "$env_changed" = "1" ]; then
+              echo "⚙️ .env updated, will recreate container..."
+            fi
+
+            echo "🚀 Pulling latest storage-node image..."
             docker image prune -af || true
-            (docker compose pull || docker-compose pull)
-            (docker compose up -d || docker-compose up -d)
+            (docker compose pull storage-node || docker-compose pull storage-node)
+            (docker compose up -d storage-node || docker-compose up -d storage-node)
             docker image prune -f || true
-            echo "✅ Storage Node container deployment complete!"
+            echo "✅ Storage node deployed successfully."

@@ -1,10 +1,10 @@
 <template>
-  <div class="flex flex-col gap-6 max-w-4xl">
+  <div class="flex flex-col gap-4 sm:gap-6 max-w-4xl">
     <!-- Payment & Currency Configuration Card -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2 font-bold text-slate-800">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2 font-bold text-slate-800">
             <span>💳 支付接口与汇率换算配置 (Alipay & USDT)</span>
           </div>
           <el-tag type="warning" size="small">实时生效</el-tag>
@@ -97,20 +97,22 @@
         </el-form-item>
 
         <el-form-item label="直传切片 TCP 并发连接数 (Concurrency Limit)">
-          <el-input-number v-model="settings.uploadChunkConcurrency" :min="2" :max="8" :step="1" />
-          <span class="text-xs text-slate-500 ml-2">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+            <el-input-number v-model="settings.uploadChunkConcurrency" :min="2" :max="8" :step="1" />
+            <span class="text-xs text-slate-500">
             (默认 4 通道并行，在劣质跨国网络下推荐开至 4-6 通道突破单 TCP 拥塞瓶颈)
-          </span>
+            </span>
+          </div>
         </el-form-item>
       </el-form>
     </el-card>
 
     <!-- Submit Save Button -->
-    <div class="flex justify-end">
+    <div class="flex justify-stretch sm:justify-end">
       <el-button
         type="warning"
         size="large"
-        class="font-bold px-8 py-3 rounded-xl shadow-md"
+        class="font-bold px-8 py-3 rounded-xl shadow-md mobile-full-button"
         :loading="saveLoading"
         @click="saveSettings"
       >

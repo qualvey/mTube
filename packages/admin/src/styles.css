@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+html,
+body,
+#app {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.admin-mobile-drawer .el-drawer__body {
+  padding: 0;
+}
+
+.admin-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-table-scroll > .el-table {
+  min-width: 900px;
+}
+
+.responsive-dialog {
+  width: min(640px, calc(100vw - 24px)) !important;
+  max-height: 92vh;
+  margin-top: 4vh !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.responsive-dialog--small {
+  width: min(500px, calc(100vw - 24px)) !important;
+}
+
+.responsive-dialog .el-dialog__body {
+  overflow-y: auto;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+@media (max-width: 639px) {
+  .el-card__body {
+    padding: 14px;
+  }
+
+  .el-card__header {
+    padding: 14px;
+  }
+
+  .responsive-dialog .el-dialog__header {
+    padding: 16px 16px 10px;
+  }
+
+  .responsive-dialog .el-dialog__body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .responsive-dialog .el-dialog__footer {
+    padding: 10px 16px 16px;
+  }
+
+  .mobile-full-button {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+}

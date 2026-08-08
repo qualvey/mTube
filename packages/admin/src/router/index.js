@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
 import LoginView from '../views/LoginView.vue'
 import DashboardView from '../views/DashboardView.vue'
+import AnalyticsView from '../views/AnalyticsView.vue'
 import VideosView from '../views/VideosView.vue'
 import StorageNodesView from '../views/StorageNodesView.vue'
 import OrdersView from '../views/OrdersView.vue'
@@ -25,6 +26,12 @@ const routes = [
         name: 'Dashboard',
         component: DashboardView,
         meta: { title: '控制台概览', icon: 'DataAnalysis' }
+      },
+      {
+        path: 'analytics',
+        name: 'Analytics',
+        component: AnalyticsView,
+        meta: { title: '数据分析', icon: 'TrendCharts' }
       },
       {
         path: 'videos',
