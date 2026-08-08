@@ -126,6 +126,32 @@
       <section class="analytics-panel">
         <div class="panel-heading">
           <div>
+            <h3>地区构成</h3>
+            <p>访客国家/地区分布（仅国家码，不存 IP）</p>
+          </div>
+          <el-tag size="small" type="info" effect="plain">Top 20</el-tag>
+        </div>
+        <div v-if="countries.length" class="device-list">
+          <div v-for="country in countries" :key="country.countryCode" class="device-row">
+            <div class="device-row__meta">
+              <span>{{ countryLabel(country.countryCode) }}</span>
+              <strong>{{ formatNumber(country.pv) }} <small>PV</small></strong>
+            </div>
+            <div class="device-track device-track--country">
+              <span :style="{ width: `${country.share * 100}%` }"></span>
+            </div>
+            <div class="device-row__footer">
+              <span>{{ formatNumber(country.uv) }} UV</span>
+              <span>{{ formatPercent(country.share) }}</span>
+            </div>
+          </div>
+        </div>
+        <el-empty v-else description="暂无地区数据（待真实流量）" :image-size="72" />
+      </section>
+
+      <section class="analytics-panel">
+        <div class="panel-heading">
+          <div>
             <h3>页面排行</h3>
             <p>访问量最高的页面路径</p>
           </div>
@@ -205,7 +231,8 @@ const report = ref({
   funnel: {},
   topVideos: [],
   topPaths: [],
-  devices: []
+  devices: [],
+  countries: []
 })
 
 const formatNumber = value => new Intl.NumberFormat('zh-CN').format(Number(value || 0))
@@ -243,10 +270,12 @@ const metrics = computed(() => {
   return [
     { key: 'pv', label: '页面浏览量', value: formatNumber(current.pv), icon: 'View', tone: 'blue', change: changeFor(current.pv, previous.pv) },
     { key: 'uv', label: '独立访客', value: formatNumber(current.uv), icon: 'User', tone: 'green', change: changeFor(current.uv, previous.uv) },
+    { key: 'sessions', label: '会话数', value: formatNumber(current.sessions), icon: 'UserFilled', tone: 'indigo', change: changeFor(current.sessions, previous.sessions) },
     { key: 'validViews', label: '2 秒有效播放', value: formatNumber(current.validViews), icon: 'VideoPlay', tone: 'amber', change: changeFor(current.validViews, previous.validViews) },
     { key: 'watchSeconds', label: '有效观看时长', value: formatDuration(current.watchSeconds), icon: 'Clock', tone: 'cyan', change: changeFor(current.watchSeconds, previous.watchSeconds) },
     { key: 'completionRate', label: '完播率', value: formatPercent(current.completionRate), icon: 'PieChart', tone: 'rose', change: changeFor(current.completionRate, previous.completionRate) },
-    { key: 'averageWatchSeconds', label: '次均观看时长', value: formatAverage(current.averageWatchSeconds), icon: 'Timer', tone: 'slate', change: changeFor(current.averageWatchSeconds, previous.averageWatchSeconds) }
+    { key: 'bounceRate', label: '跳出率', value: formatPercent(current.bounceRate), icon: 'Odometer', tone: 'purple', change: changeFor(current.bounceRate, previous.bounceRate) },
+    { key: 'averageSessionSeconds', label: '平均会话时长', value: formatAverage(current.averageSessionSeconds), icon: 'Timer', tone: 'slate', change: changeFor(current.averageSessionSeconds, previous.averageSessionSeconds) }
   ]
 })
 
@@ -282,9 +311,27 @@ const devices = computed(() => {
   const total = rows.reduce((sum, item) => sum + Number(item.pv || 0), 0)
   return rows.map(item => ({ ...item, share: total ? Number(item.pv || 0) / total : 0 }))
 })
+const countries = computed(() => {
+  const rows = report.value.countries || []
+  const total = rows.reduce((sum, item) => sum + Number(item.pv || 0), 0)
+  return rows.map(item => ({ ...item, share: total ? Number(item.pv || 0) / total : 0 }))
+})
 const topVideos = computed(() => report.value.topVideos || [])
 const topPaths = computed(() => report.value.topPaths || [])
 const deviceLabel = device => ({ desktop: '桌面端', mobile: '移动端', tablet: '平板', unknown: '未知设备' }[device] || device)
+
+const COUNTRY_NAMES = {
+  US: '美国', CN: '中国', HK: '中国香港', TW: '中国台湾', MO: '中国澳门', JP: '日本', KR: '韩国',
+  TH: '泰国', VN: '越南', MY: '马来西亚', SG: '新加坡', ID: '印度尼西亚', PH: '菲律宾', IN: '印度',
+  GB: '英国', DE: '德国', FR: '法国', IT: '意大利', ES: '西班牙', NL: '荷兰', RU: '俄罗斯',
+  CA: '加拿大', AU: '澳大利亚', BR: '巴西', MX: '墨西哥', AE: '阿联酋', SA: '沙特阿拉伯',
+  TR: '土耳其', UA: '乌克兰', PL: '波兰', SE: '瑞典', CH: '瑞士', AT: '奥地利', BE: '比利时',
+  PT: '葡萄牙', GR: '希腊', IE: '爱尔兰', NO: '挪威', DK: '丹麦', FI: '芬兰', CZ: '捷克',
+  AR: '阿根廷', CL: '智利', CO: '哥伦比亚', PE: '秘鲁', NZ: '新西兰', ZA: '南非', EG: '埃及',
+  IL: '以色列', PK: '巴基斯坦', BD: '孟加拉国', LK: '斯里兰卡', NP: '尼泊尔', MM: '缅甸',
+  KH: '柬埔寨', LA: '老挝', KZ: '哈萨克斯坦', UZ: '乌兹别克斯坦'
+}
+const countryLabel = code => COUNTRY_NAMES[code] || code || '未知'
 
 const periodLabel = computed(() => {
   const range = report.value.range
@@ -316,7 +363,7 @@ onMounted(fetchReport)
 .analytics-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .analytics-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .analytics-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.metric-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .metric-card, .analytics-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 2px rgb(15 23 42 / 0.04); }
 .metric-card { padding: 16px; min-width: 0; }
 .metric-card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -327,6 +374,8 @@ onMounted(fetchReport)
 .metric-card__icon--amber { color: #d97706; background: #fef3c7; }
 .metric-card__icon--cyan { color: #0891b2; background: #cffafe; }
 .metric-card__icon--rose { color: #e11d48; background: #ffe4e6; }
+.metric-card__icon--indigo { color: #4f46e5; background: #e0e7ff; }
+.metric-card__icon--purple { color: #9333ea; background: #f3e8ff; }
 .metric-card__icon--slate { color: #475569; background: #e2e8f0; }
 .metric-card__value { color: #0f172a; font-size: 24px; line-height: 1.15; font-weight: 800; margin-top: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .metric-card__compare { display: flex; align-items: center; gap: 3px; margin-top: 10px; font-size: 11px; font-weight: 700; }
@@ -334,7 +383,7 @@ onMounted(fetchReport)
 .metric-card__compare.is-down { color: #e11d48; }
 .metric-card__compare.is-flat { color: #64748b; }
 .analytics-main-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 16px; }
-.analytics-secondary-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 16px; }
+.analytics-secondary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .analytics-panel { padding: 18px; min-width: 0; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid #f1f5f9; }
 .panel-heading h3 { color: #1e293b; font-size: 14px; line-height: 1.3; font-weight: 800; }
@@ -359,6 +408,7 @@ onMounted(fetchReport)
 .funnel-track span { display: block; height: 100%; background: #f59e0b; border-radius: 3px; }
 .device-row__meta { color: #475569; font-size: 12px; }
 .device-track span { display: block; height: 100%; background: #0891b2; border-radius: 3px; }
+.device-track--country span { background: #8b5cf6; }
 .device-row__footer { color: #94a3b8; font-size: 10px; margin-top: 5px; }
 .path-list { display: flex; flex-direction: column; padding-top: 8px; }
 .path-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 72px 72px; align-items: center; gap: 8px; min-height: 40px; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
@@ -377,10 +427,13 @@ onMounted(fetchReport)
 .video-cell__meta { display: flex; align-items: center; gap: 6px; color: #94a3b8; font-size: 10px; margin-top: 3px; }
 
 @media (max-width: 1279px) {
-  .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 899px) {
   .analytics-main-grid, .analytics-secondary-grid { grid-template-columns: 1fr; }
+}
+@media (min-width: 900px) and (max-width: 1279px) {
+  .analytics-secondary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 639px) {
   .analytics-page { gap: 12px; }

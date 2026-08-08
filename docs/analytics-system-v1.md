@@ -40,7 +40,8 @@ Vue Client
   -> POST /api/v1/events/batch
   -> Node.js 参数校验、事件白名单、IP 哈希
   -> SQLite analytics_events（追加写、eventId 唯一去重）
-  -> video_stats（视频聚合数据）
+  -> 同一事务内累加 daily_* 日聚合表 + sessions 会话表
+  -> 报表/导出只读聚合表，原始表仅用于审计与重建
 ```
 
 V1 沿用 SQLite 以降低当前项目的部署成本。进入正式广告结算或事件量持续超过约 1000 条/秒后，将原始事件迁移到 ClickHouse，广告合同和活动配置迁移到 PostgreSQL；客户端事件协议保持不变。
@@ -54,12 +55,47 @@ V1 沿用 SQLite 以降低当前项目的部署成本。进入正式广告结算
 - 环境：`userAgent`、`referer`、`ipHash`。
 - 审计：`occurredAt`、`receivedAt`、`isValid`、`invalidReason`、`properties`。
 
-`video_stats` 保存可快速查询的聚合值：
+`video_stats` 保存可快速查询的累计值（供视频列表/详情 API 读取）：
 
 - `validViews`：`VIDEO_2S` 事件数。
 - `watchSeconds`：有效 `WATCH_TIME` 秒数总和。
 - `completes`：`VIDEO_COMPLETE` 事件数。
 - `updatedAt`：最后更新时间。
+
+### 聚合层（报表唯一数据源）
+
+事件入库的同一事务内按日累加，报表永不扫描原始事件表：
+
+| 表 | 粒度 | 用途 |
+| --- | --- | --- |
+| `daily_overview` | 日期 | 全站 PV/UV/开始/2秒/进度/完播/时长/事件有效数 |
+| `daily_video` | 日期+视频 | 视频消费排行与导出 |
+| `daily_path` | 日期+路径 | 页面访问排行 |
+| `daily_device` | 日期+设备 | 设备构成（desktop/mobile/tablet/unknown） |
+| `daily_country` | 日期+国家码 | 地理画像（国家/地区构成） |
+| `daily_visitor` / `daily_path_visitor` / `daily_device_visitor` / `daily_country_visitor` | 去重集合 | UV 精确计数 |
+| `sessions` | 会话 | 会话数、跳出率、人均页数、平均会话时长 |
+
+聚合规则：
+
+- 日期按 `receivedAt`（UTC）自然日归属；当日行持续更新，T+1 后不再变动（冻结）。
+- 无效事件（`isValid=0`）只计入 `totalEvents`，不进入任何业务指标。
+- `AD_*` / `PAYWALL_OPEN` 当前仅入原始事件表；广告漏斗聚合表在广告系统接入时按同一模式扩展。
+- 累计表 `video_stats` 与日聚合同事务维护，重建时一并重建。
+
+### 地理画像（国家/地区）
+
+- 事件入库时通过 GeoIP 解析请求 IP 得到 ISO 国家码（`countryCode`，如 US/CN/HK），只存码、不存原始 IP。
+- 解析器见 `packages/server/src/geoip.js`：ip-api.com 在线查询 + 24h 内存缓存 + 并发去重；私有/本机 IP 直接返回空。解析失败不影响事件入库（国家码为空，不计入地区维度）。
+- 生产建议切换 MaxMind GeoLite2 本地 mmdb（离线、无限量），接口不变，仅替换 geoip.js 内部实现。
+- 对外仅提供国家/地区级聚合（PV/UV/占比），不提供任何可定位到个人的地理明细。
+
+### 报表接口
+
+- `GET /api/v1/admin/analytics/v1/report?days=7|30|90`：汇总（当前/上期）、会话指标、每日趋势、播放漏斗、设备构成、Top 视频、Top 页面。
+- `GET /api/v1/admin/analytics/v1/export.csv?type=daily|videos|paths&days=7|30|90`：CSV 导出（UTF-8 BOM，Excel 直接打开）。
+- `POST /api/v1/admin/analytics/v1/rebuild`：清空聚合表并按原始事件回放重建（初始化或口径修复后使用）。
+- 全部接口受管理员鉴权保护。
 
 ## 5. 数据质量和隐私
 
@@ -83,8 +119,11 @@ V1 沿用 SQLite 以降低当前项目的部署成本。进入正式广告结算
 
 ### V1.1：管理后台报表
 
-- 统计总览：PV、UV、有效播放、观看时长和完成率。
-- 按日趋势、热门视频和 CSV 导出。
+- [x] 统计总览：PV、UV、有效播放、观看时长和完成率。
+- [x] 独立数据分析页：指标卡（含会话/跳出率）、趋势、漏斗、设备、排行。
+- [x] 日聚合层：报表只读聚合表，不扫原始事件。
+- [x] CSV 导出与聚合重建接口。
+- [x] 地理画像：国家/地区构成（GeoIP 只存国家码，不存 IP）。
 - 报表中明确区分“旧口径”和“V1 新口径”。
 
 ### V2：广告投放与招商报表

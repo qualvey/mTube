@@ -11,6 +11,7 @@ import { db } from './db.js'
 import { logger, requestLoggerMiddleware } from './logger.js'
 import { sendResponse } from './utils/response.js'
 import { issueAdminToken, requireAdminAuth, adminAuthMiddleware } from './middleware/adminAuth.js'
+import { getCountryCode } from './geoip.js'
 import paywallRouter from './routes/paywall.js'
 
 import path from 'path'
@@ -929,13 +930,14 @@ const normalizeAnalyticsEvent = (event, requestContext) => {
     userAgent: requestContext.userAgent,
     referer: requestContext.referer,
     ipHash: requestContext.ipHash,
+    countryCode: requestContext.countryCode,
     properties,
     isValid: true,
     invalidReason: null
   }
 }
 
-app.post('/api/v1/events/batch', (req, res) => {
+app.post('/api/v1/events/batch', async (req, res) => {
   const events = Array.isArray(req.body?.events) ? req.body.events : null
   if (!events || events.length === 0 || events.length > 50) {
     return sendResponse(res, null, 400, 'events must contain between 1 and 50 items')
@@ -959,11 +961,14 @@ app.post('/api/v1/events/batch', (req, res) => {
 
   const receivedAt = new Date().toISOString()
   const ipSalt = process.env.ANALYTICS_IP_SALT || process.env.CLUSTER_SECRET || 'local-analytics-salt'
+  // GeoIP 解析：只取 ISO 国家码（地理画像），原始 IP 不落库；失败返回 '' 不阻塞入库
+  const countryCode = await getCountryCode(clientIp)
   const requestContext = {
     receivedAt,
     ipHash: crypto.createHash('sha256').update(`${ipSalt}:${clientIp}`).digest('hex'),
     userAgent: cleanAnalyticsText(req.headers['user-agent'], 500),
-    referer: cleanAnalyticsText(req.headers.referer, 1000)
+    referer: cleanAnalyticsText(req.headers.referer, 1000),
+    countryCode
   }
   const normalized = events
     .map(event => normalizeAnalyticsEvent(event, requestContext))
@@ -985,6 +990,39 @@ app.get('/api/v1/admin/analytics/v1/overview', (req, res) => {
 
 app.get('/api/v1/admin/analytics/v1/report', (req, res) => {
   sendResponse(res, db.getAnalyticsV1Report(req.query.days))
+})
+
+// 数据分析报表 CSV 导出（鉴权保护，用于对账/审计/投放分析）
+app.get('/api/v1/admin/analytics/v1/export.csv', (req, res) => {
+  const type = ['daily', 'videos', 'paths', 'countries'].includes(req.query.type) ? req.query.type : 'daily'
+  const days = req.query.days
+  const rows = db.getAnalyticsV1ExportData(type, days)
+  const headers = type === 'videos'
+    ? ['date', 'videoId', 'title', 'starts', 'validViews', 'completes', 'watchSeconds']
+    : type === 'paths'
+      ? ['date', 'path', 'pv', 'uv']
+      : type === 'countries'
+        ? ['date', 'countryCode', 'pv', 'uv']
+        : ['date', 'pv', 'uv', 'starts', 'validViews', 'progress25', 'progress50', 'progress75', 'completes', 'watchSeconds', 'validEvents', 'totalEvents']
+  const escapeCell = value => {
+    const text = String(value ?? '')
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+  }
+  const csv = [headers.join(','), ...rows.map(row => headers.map(key => escapeCell(row[key])).join(','))].join('\r\n')
+  const dateStamp = new Date().toISOString().slice(0, 10)
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="analytics-${type}-${dateStamp}.csv"`)
+  res.send(`\uFEFF${csv}`)
+})
+
+// 重建日聚合（清空聚合表并按原始事件回放；用于初始化或口径修复后的全量重算）
+app.post('/api/v1/admin/analytics/v1/rebuild', (req, res) => {
+  try {
+    sendResponse(res, db.rebuildDailyAggregates())
+  } catch (error) {
+    logger.error('Analytics rebuild failed:', error.message)
+    sendResponse(res, null, 500, 'analytics rebuild failed')
+  }
 })
 
 // Legacy C-side analytics endpoint. Retained for compatibility.

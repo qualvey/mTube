@@ -147,6 +147,109 @@ database.exec(`
     ON analytics_events (visitorId, receivedAt);
   CREATE INDEX IF NOT EXISTS idx_analytics_events_video_received
     ON analytics_events (videoId, receivedAt);
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_session
+    ON analytics_events (sessionId, receivedAt);
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_path_received
+    ON analytics_events (path, receivedAt);
+
+  -- ============================================================
+  -- 数据分析聚合层（写路径：事件入库同一事务内累加，报表永不扫原始表）
+  -- ============================================================
+  -- 全站日汇总（T+1 后冻结，仅当日行持续更新）
+  CREATE TABLE IF NOT EXISTS daily_overview (
+    date TEXT PRIMARY KEY,
+    pv INTEGER DEFAULT 0,
+    uv INTEGER DEFAULT 0,
+    starts INTEGER DEFAULT 0,
+    validViews INTEGER DEFAULT 0,
+    progress25 INTEGER DEFAULT 0,
+    progress50 INTEGER DEFAULT 0,
+    progress75 INTEGER DEFAULT 0,
+    completes INTEGER DEFAULT 0,
+    watchSeconds REAL DEFAULT 0,
+    validEvents INTEGER DEFAULT 0,
+    totalEvents INTEGER DEFAULT 0,
+    updatedAt TEXT NOT NULL
+  );
+
+  -- 视频日维度
+  CREATE TABLE IF NOT EXISTS daily_video (
+    date TEXT NOT NULL,
+    videoId TEXT NOT NULL,
+    starts INTEGER DEFAULT 0,
+    validViews INTEGER DEFAULT 0,
+    progress25 INTEGER DEFAULT 0,
+    progress50 INTEGER DEFAULT 0,
+    progress75 INTEGER DEFAULT 0,
+    completes INTEGER DEFAULT 0,
+    watchSeconds REAL DEFAULT 0,
+    PRIMARY KEY (date, videoId)
+  );
+
+  -- 页面日维度
+  CREATE TABLE IF NOT EXISTS daily_path (
+    date TEXT NOT NULL,
+    path TEXT NOT NULL,
+    pv INTEGER DEFAULT 0,
+    uv INTEGER DEFAULT 0,
+    PRIMARY KEY (date, path)
+  );
+
+  -- 设备日维度
+  CREATE TABLE IF NOT EXISTS daily_device (
+    date TEXT NOT NULL,
+    device TEXT NOT NULL,
+    pv INTEGER DEFAULT 0,
+    uv INTEGER DEFAULT 0,
+    PRIMARY KEY (date, device)
+  );
+
+  -- 国家/地区日维度（地理画像，仅存 ISO 国家码，不存 IP）
+  CREATE TABLE IF NOT EXISTS daily_country (
+    date TEXT NOT NULL,
+    countryCode TEXT NOT NULL,
+    pv INTEGER DEFAULT 0,
+    uv INTEGER DEFAULT 0,
+    PRIMARY KEY (date, countryCode)
+  );
+
+  -- 去重集合表（UV 精确计数，按日 × 维度）
+  CREATE TABLE IF NOT EXISTS daily_visitor (
+    date TEXT NOT NULL,
+    visitorId TEXT NOT NULL,
+    PRIMARY KEY (date, visitorId)
+  );
+  CREATE TABLE IF NOT EXISTS daily_path_visitor (
+    date TEXT NOT NULL,
+    path TEXT NOT NULL,
+    visitorId TEXT NOT NULL,
+    PRIMARY KEY (date, path, visitorId)
+  );
+  CREATE TABLE IF NOT EXISTS daily_device_visitor (
+    date TEXT NOT NULL,
+    device TEXT NOT NULL,
+    visitorId TEXT NOT NULL,
+    PRIMARY KEY (date, device, visitorId)
+  );
+  CREATE TABLE IF NOT EXISTS daily_country_visitor (
+    date TEXT NOT NULL,
+    countryCode TEXT NOT NULL,
+    visitorId TEXT NOT NULL,
+    PRIMARY KEY (date, countryCode, visitorId)
+  );
+
+  -- 会话表（会话数 / 跳出率 / 人均页数 / 平均会话时长）
+  CREATE TABLE IF NOT EXISTS sessions (
+    sessionId TEXT PRIMARY KEY,
+    visitorId TEXT NOT NULL,
+    firstAt TEXT NOT NULL,
+    lastAt TEXT NOT NULL,
+    pageViews INTEGER DEFAULT 0,
+    ipHash TEXT DEFAULT '',
+    userAgent TEXT DEFAULT ''
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_first ON sessions (firstAt);
+  CREATE INDEX IF NOT EXISTS idx_sessions_visitor ON sessions (visitorId);
 
   CREATE TABLE IF NOT EXISTS storage_nodes (
     id TEXT PRIMARY KEY,
@@ -164,6 +267,7 @@ try { database.exec("ALTER TABLE orders ADD COLUMN tradeNo TEXT DEFAULT NULL;");
 try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAddress TEXT DEFAULT NULL;"); } catch (e) { }
 try { database.exec("ALTER TABLE orders ADD COLUMN cryptoAmount REAL DEFAULT 0;"); } catch (e) { }
 try { database.exec("ALTER TABLE videos ADD COLUMN views INTEGER DEFAULT 0;"); } catch (e) { }
+try { database.exec("ALTER TABLE analytics_events ADD COLUMN countryCode TEXT DEFAULT '';"); } catch (e) { }
 try { database.exec("ALTER TABLE videos ADD COLUMN storageNodeId TEXT DEFAULT 'node-01';"); } catch (e) { }
 try { database.exec("ALTER TABLE storage_nodes ADD COLUMN lastHeartbeat TEXT DEFAULT NULL;"); } catch (e) { }
 try { database.exec("ALTER TABLE storage_nodes ADD COLUMN clusterSecret TEXT DEFAULT NULL;"); } catch (e) { }
@@ -197,7 +301,6 @@ if (!checkNodes || checkNodes.count === 0) {
     ('node-02', '存储节点 02 (备用节点)', 'http://localhost:3002', 'ACTIVE', 0, '${new Date().toISOString()}')
   `).run()
 }
-
 
 
 // Seed or Migrate Data if Videos table is empty
@@ -377,6 +480,162 @@ const formatVideoRow = (row) => {
     completes: Number(row.completes || 0),
     previewDuration: row.previewDuration !== undefined && row.previewDuration !== null ? Number(row.previewDuration) : 120,
     tags: parseTags(row.tags)
+  }
+}
+
+// ============================================================================
+// 数据分析聚合层：事件入库同一事务内累加，报表只读 daily_* / sessions 聚合表
+// 原始事件表仅用于审计与重建。广告事件（AD_*）暂只入原始表，
+// 广告漏斗聚合表在广告系统接入时按同一模式扩展。
+// ============================================================================
+
+const classifyDevice = (userAgent = '') => {
+  const ua = String(userAgent || '').toLowerCase()
+  if (ua.includes('ipad') || ua.includes('tablet')) return 'tablet'
+  if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) return 'mobile'
+  if (!ua) return 'unknown'
+  return 'desktop'
+}
+
+const upsertDailyOverview = database.prepare(`
+  INSERT INTO daily_overview (date, pv, uv, starts, validViews, progress25, progress50, progress75, completes, watchSeconds, validEvents, totalEvents, updatedAt)
+  VALUES (@date, @pv, @uv, @starts, @validViews, @p25, @p50, @p75, @completes, @watchSeconds, @validEvents, @totalEvents, @updatedAt)
+  ON CONFLICT(date) DO UPDATE SET
+    pv = pv + @pv, uv = uv + @uv, starts = starts + @starts, validViews = validViews + @validViews,
+    progress25 = progress25 + @p25, progress50 = progress50 + @p50, progress75 = progress75 + @p75,
+    completes = completes + @completes, watchSeconds = watchSeconds + @watchSeconds,
+    validEvents = validEvents + @validEvents, totalEvents = totalEvents + @totalEvents,
+    updatedAt = @updatedAt
+`)
+
+const upsertDailyVideo = database.prepare(`
+  INSERT INTO daily_video (date, videoId, starts, validViews, progress25, progress50, progress75, completes, watchSeconds)
+  VALUES (@date, @videoId, @starts, @validViews, @p25, @p50, @p75, @completes, @watchSeconds)
+  ON CONFLICT(date, videoId) DO UPDATE SET
+    starts = starts + @starts, validViews = validViews + @validViews,
+    progress25 = progress25 + @p25, progress50 = progress50 + @p50, progress75 = progress75 + @p75,
+    completes = completes + @completes, watchSeconds = watchSeconds + @watchSeconds
+`)
+
+const upsertDailyPath = database.prepare(`
+  INSERT INTO daily_path (date, path, pv, uv) VALUES (@date, @path, @pv, @uv)
+  ON CONFLICT(date, path) DO UPDATE SET pv = pv + @pv, uv = uv + @uv
+`)
+
+const upsertDailyDevice = database.prepare(`
+  INSERT INTO daily_device (date, device, pv, uv) VALUES (@date, @device, @pv, @uv)
+  ON CONFLICT(date, device) DO UPDATE SET pv = pv + @pv, uv = uv + @uv
+`)
+
+const upsertDailyCountry = database.prepare(`
+  INSERT INTO daily_country (date, countryCode, pv, uv) VALUES (@date, @countryCode, @pv, @uv)
+  ON CONFLICT(date, countryCode) DO UPDATE SET pv = pv + @pv, uv = uv + @uv
+`)
+
+const insertDailyVisitor = database.prepare('INSERT OR IGNORE INTO daily_visitor (date, visitorId) VALUES (?, ?)')
+const insertDailyPathVisitor = database.prepare('INSERT OR IGNORE INTO daily_path_visitor (date, path, visitorId) VALUES (?, ?, ?)')
+const insertDailyDeviceVisitor = database.prepare('INSERT OR IGNORE INTO daily_device_visitor (date, device, visitorId) VALUES (?, ?, ?)')
+const insertDailyCountryVisitor = database.prepare('INSERT OR IGNORE INTO daily_country_visitor (date, countryCode, visitorId) VALUES (?, ?, ?)')
+
+const insertSession = database.prepare(`
+  INSERT OR IGNORE INTO sessions (sessionId, visitorId, firstAt, lastAt, pageViews, ipHash, userAgent)
+  VALUES (?, ?, ?, ?, 1, ?, ?)
+`)
+const updateSession = database.prepare('UPDATE sessions SET lastAt = ?, pageViews = pageViews + 1 WHERE sessionId = ?')
+
+// 累计表（供视频列表/详情 API 快速读取，与日聚合同事务维护）
+const upsertView = database.prepare(`
+  INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
+  VALUES (?, 1, 0, 0, ?)
+  ON CONFLICT(videoId) DO UPDATE SET
+    validViews = validViews + 1,
+    updatedAt = excluded.updatedAt
+`)
+const upsertWatchTime = database.prepare(`
+  INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
+  VALUES (?, 0, ?, 0, ?)
+  ON CONFLICT(videoId) DO UPDATE SET
+    watchSeconds = watchSeconds + excluded.watchSeconds,
+    updatedAt = excluded.updatedAt
+`)
+const upsertComplete = database.prepare(`
+  INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
+  VALUES (?, 0, 0, 1, ?)
+  ON CONFLICT(videoId) DO UPDATE SET
+    completes = completes + 1,
+    updatedAt = excluded.updatedAt
+`)
+const videoExists = database.prepare('SELECT 1 FROM videos WHERE id = ?')
+
+const applyEventToAggregates = (event) => {
+  const eventName = event.eventName
+  const isValid = event.isValid !== false && event.isValid !== 0
+  const date = String(event.receivedAt || '').slice(0, 10)
+  if (!date) return
+
+  const delta = {
+    date,
+    pv: 0, uv: 0, starts: 0, validViews: 0, p25: 0, p50: 0, p75: 0, completes: 0,
+    watchSeconds: 0, validEvents: isValid ? 1 : 0, totalEvents: 1,
+    updatedAt: event.receivedAt
+  }
+  const videoDelta = {
+    date, videoId: event.videoId,
+    starts: 0, validViews: 0, p25: 0, p50: 0, p75: 0, completes: 0, watchSeconds: 0
+  }
+
+  if (isValid) {
+    const visitorId = event.visitorId
+    switch (eventName) {
+      case 'PAGE_VIEW': {
+        delta.pv = 1
+        if (insertDailyVisitor.run(date, visitorId).changes === 1) delta.uv = 1
+        const path = event.path || '/'
+        const pathUv = insertDailyPathVisitor.run(date, path, visitorId).changes === 1 ? 1 : 0
+        upsertDailyPath.run({ date, path, pv: 1, uv: pathUv })
+        const device = classifyDevice(event.userAgent)
+        const deviceUv = insertDailyDeviceVisitor.run(date, device, visitorId).changes === 1 ? 1 : 0
+        upsertDailyDevice.run({ date, device, pv: 1, uv: deviceUv })
+        const countryCode = String(event.countryCode || '').toUpperCase().slice(0, 2)
+        if (countryCode) {
+          const countryUv = insertDailyCountryVisitor.run(date, countryCode, visitorId).changes === 1 ? 1 : 0
+          upsertDailyCountry.run({ date, countryCode, pv: 1, uv: countryUv })
+        }
+        if (insertSession.run(event.sessionId, visitorId, event.receivedAt, event.receivedAt, event.ipHash || '', event.userAgent || '').changes !== 1) {
+          updateSession.run(event.receivedAt, event.sessionId)
+        }
+        break
+      }
+      case 'VIDEO_START': delta.starts = 1; videoDelta.starts = 1; break
+      case 'VIDEO_2S': delta.validViews = 1; videoDelta.validViews = 1; break
+      case 'VIDEO_25': delta.p25 = 1; videoDelta.p25 = 1; break
+      case 'VIDEO_50': delta.p50 = 1; videoDelta.p50 = 1; break
+      case 'VIDEO_75': delta.p75 = 1; videoDelta.p75 = 1; break
+      case 'VIDEO_COMPLETE': delta.completes = 1; videoDelta.completes = 1; break
+      case 'WATCH_TIME': {
+        const seconds = Number(event.watchSeconds || 0)
+        if (seconds > 0) {
+          delta.watchSeconds = seconds
+          videoDelta.watchSeconds = seconds
+        }
+        break
+      }
+      default:
+        // AD_* / PAYWALL_OPEN 等仅入原始事件表，后续按需扩展聚合
+        break
+    }
+  }
+
+  upsertDailyOverview.run(delta)
+
+  if (isValid && event.videoId && videoExists.get(event.videoId)) {
+    if (videoDelta.starts || videoDelta.validViews || videoDelta.p25 || videoDelta.p50 || videoDelta.p75 || videoDelta.completes || videoDelta.watchSeconds > 0) {
+      upsertDailyVideo.run(videoDelta)
+    }
+    // 累计表：视频列表/详情 API 直接读取
+    if (eventName === 'VIDEO_2S') upsertView.run(event.videoId, event.receivedAt)
+    else if (eventName === 'WATCH_TIME' && Number(event.watchSeconds || 0) > 0) upsertWatchTime.run(event.videoId, Number(event.watchSeconds || 0), event.receivedAt)
+    else if (eventName === 'VIDEO_COMPLETE') upsertComplete.run(event.videoId, event.receivedAt)
   }
 }
 
@@ -1054,31 +1313,9 @@ export const db = {
       INSERT OR IGNORE INTO analytics_events (
         eventId, eventName, occurredAt, receivedAt, visitorId, sessionId, pageViewId,
         playbackId, videoId, path, watchSeconds, positionSeconds, durationSeconds,
-        userAgent, referer, ipHash, properties, isValid, invalidReason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        userAgent, referer, ipHash, countryCode, properties, isValid, invalidReason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
-    const upsertView = database.prepare(`
-      INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
-      VALUES (?, 1, 0, 0, ?)
-      ON CONFLICT(videoId) DO UPDATE SET
-        validViews = validViews + 1,
-        updatedAt = excluded.updatedAt
-    `)
-    const upsertWatchTime = database.prepare(`
-      INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
-      VALUES (?, 0, ?, 0, ?)
-      ON CONFLICT(videoId) DO UPDATE SET
-        watchSeconds = watchSeconds + excluded.watchSeconds,
-        updatedAt = excluded.updatedAt
-    `)
-    const upsertComplete = database.prepare(`
-      INSERT INTO video_stats (videoId, validViews, watchSeconds, completes, updatedAt)
-      VALUES (?, 0, 0, 1, ?)
-      ON CONFLICT(videoId) DO UPDATE SET
-        completes = completes + 1,
-        updatedAt = excluded.updatedAt
-    `)
-    const videoExists = database.prepare('SELECT 1 FROM videos WHERE id = ?')
 
     let accepted = 0
     let duplicates = 0
@@ -1103,6 +1340,7 @@ export const db = {
           event.userAgent || '',
           event.referer || '',
           event.ipHash || '',
+          event.countryCode || '',
           JSON.stringify(event.properties || {}),
           event.isValid === false ? 0 : 1,
           event.invalidReason || null
@@ -1114,14 +1352,7 @@ export const db = {
         }
 
         accepted += 1
-        if (!event.videoId || event.isValid === false || !videoExists.get(event.videoId)) continue
-        if (event.eventName === 'VIDEO_2S') {
-          upsertView.run(event.videoId, event.receivedAt)
-        } else if (event.eventName === 'WATCH_TIME' && event.watchSeconds > 0) {
-          upsertWatchTime.run(event.videoId, event.watchSeconds, event.receivedAt)
-        } else if (event.eventName === 'VIDEO_COMPLETE') {
-          upsertComplete.run(event.videoId, event.receivedAt)
-        }
+        applyEventToAggregates(event)
       }
       database.exec('COMMIT')
     } catch (error) {
@@ -1130,6 +1361,36 @@ export const db = {
     }
 
     return { accepted, duplicates }
+  },
+
+  rebuildDailyAggregates() {
+    database.exec('BEGIN')
+    let rebuiltEvents = 0
+    try {
+      database.exec(`
+        DELETE FROM daily_overview;
+        DELETE FROM daily_video;
+        DELETE FROM daily_path;
+        DELETE FROM daily_device;
+        DELETE FROM daily_country;
+        DELETE FROM daily_visitor;
+        DELETE FROM daily_path_visitor;
+        DELETE FROM daily_device_visitor;
+        DELETE FROM daily_country_visitor;
+        DELETE FROM sessions;
+        DELETE FROM video_stats;
+      `)
+      const rows = database.prepare('SELECT * FROM analytics_events ORDER BY rowid ASC').all()
+      for (const row of rows) {
+        applyEventToAggregates(row)
+        rebuiltEvents += 1
+      }
+      database.exec('COMMIT')
+    } catch (error) {
+      database.exec('ROLLBACK')
+      throw error
+    }
+    return { rebuiltEvents }
   },
 
   getAnalyticsV1Overview() {
@@ -1146,28 +1407,30 @@ export const db = {
     const rangeDays = [7, 30, 90].includes(requestedDays) ? requestedDays : 7
     const dayMs = 24 * 60 * 60 * 1000
     const endDate = new Date()
-    endDate.setUTCHours(24, 0, 0, 0)
+    endDate.setUTCHours(0, 0, 0, 0)
+    endDate.setUTCDate(endDate.getUTCDate() + 1)
     const startDate = new Date(endDate.getTime() - rangeDays * dayMs)
     const previousStartDate = new Date(startDate.getTime() - rangeDays * dayMs)
-    const startAt = startDate.toISOString()
-    const endAt = endDate.toISOString()
-    const previousStartAt = previousStartDate.toISOString()
+    const start = startDate.toISOString().slice(0, 10)
+    const end = endDate.toISOString().slice(0, 10)
+    const previousStart = previousStartDate.toISOString().slice(0, 10)
 
+    // 全站汇总（读日聚合表，T+1 后冻结）
     const summaryStatement = database.prepare(`
       SELECT
-        SUM(CASE WHEN eventName = 'PAGE_VIEW' AND isValid = 1 THEN 1 ELSE 0 END) AS pv,
-        COUNT(DISTINCT CASE WHEN eventName = 'PAGE_VIEW' AND isValid = 1 THEN visitorId END) AS uv,
-        SUM(CASE WHEN eventName = 'VIDEO_START' AND isValid = 1 THEN 1 ELSE 0 END) AS starts,
-        SUM(CASE WHEN eventName = 'VIDEO_2S' AND isValid = 1 THEN 1 ELSE 0 END) AS validViews,
-        SUM(CASE WHEN eventName = 'VIDEO_PROGRESS_25' AND isValid = 1 THEN 1 ELSE 0 END) AS progress25,
-        SUM(CASE WHEN eventName = 'VIDEO_PROGRESS_50' AND isValid = 1 THEN 1 ELSE 0 END) AS progress50,
-        SUM(CASE WHEN eventName = 'VIDEO_PROGRESS_75' AND isValid = 1 THEN 1 ELSE 0 END) AS progress75,
-        SUM(CASE WHEN eventName = 'VIDEO_COMPLETE' AND isValid = 1 THEN 1 ELSE 0 END) AS completes,
-        SUM(CASE WHEN eventName = 'WATCH_TIME' AND isValid = 1 THEN watchSeconds ELSE 0 END) AS watchSeconds,
-        COUNT(*) AS totalEvents,
-        SUM(CASE WHEN isValid = 1 THEN 1 ELSE 0 END) AS validEvents
-      FROM analytics_events
-      WHERE receivedAt >= ? AND receivedAt < ?
+        COALESCE(SUM(pv), 0) AS pv,
+        COALESCE(SUM(uv), 0) AS uv,
+        COALESCE(SUM(starts), 0) AS starts,
+        COALESCE(SUM(validViews), 0) AS validViews,
+        COALESCE(SUM(progress25), 0) AS progress25,
+        COALESCE(SUM(progress50), 0) AS progress50,
+        COALESCE(SUM(progress75), 0) AS progress75,
+        COALESCE(SUM(completes), 0) AS completes,
+        COALESCE(SUM(watchSeconds), 0) AS watchSeconds,
+        COALESCE(SUM(validEvents), 0) AS validEvents,
+        COALESCE(SUM(totalEvents), 0) AS totalEvents
+      FROM daily_overview
+      WHERE date >= ? AND date < ?
     `)
 
     const normalizeSummary = (row = {}) => {
@@ -1180,22 +1443,38 @@ export const db = {
       return summary
     }
 
-    const summary = normalizeSummary(summaryStatement.get(startAt, endAt))
-    const previous = normalizeSummary(summaryStatement.get(previousStartAt, startAt))
-    const trendRows = database.prepare(`
+    const summary = normalizeSummary(summaryStatement.get(start, end))
+    const previous = normalizeSummary(summaryStatement.get(previousStart, start))
+
+    // 会话指标：按 firstAt 归属日期（30 分钟会话窗口，跨日误差可忽略）
+    const sessionStatement = database.prepare(`
       SELECT
-        substr(receivedAt, 1, 10) AS date,
-        SUM(CASE WHEN eventName = 'PAGE_VIEW' THEN 1 ELSE 0 END) AS pv,
-        COUNT(DISTINCT CASE WHEN eventName = 'PAGE_VIEW' THEN visitorId END) AS uv,
-        SUM(CASE WHEN eventName = 'VIDEO_START' THEN 1 ELSE 0 END) AS starts,
-        SUM(CASE WHEN eventName = 'VIDEO_2S' THEN 1 ELSE 0 END) AS validViews,
-        SUM(CASE WHEN eventName = 'VIDEO_COMPLETE' THEN 1 ELSE 0 END) AS completes,
-        SUM(CASE WHEN eventName = 'WATCH_TIME' THEN watchSeconds ELSE 0 END) AS watchSeconds
-      FROM analytics_events
-      WHERE receivedAt >= ? AND receivedAt < ? AND isValid = 1
-      GROUP BY substr(receivedAt, 1, 10)
+        COUNT(*) AS sessions,
+        SUM(CASE WHEN pageViews = 1 THEN 1 ELSE 0 END) AS bounceSessions,
+        COALESCE(AVG((julianday(lastAt) - julianday(firstAt)) * 86400), 0) AS averageSessionSeconds
+      FROM sessions
+      WHERE firstAt >= ? AND firstAt < ?
+    `)
+    const sessionStats = sessionStatement.get(`${start}T00:00:00.000Z`, `${end}T00:00:00.000Z`) || {}
+    const previousSessionStats = sessionStatement.get(`${previousStart}T00:00:00.000Z`, `${start}T00:00:00.000Z`) || {}
+    summary.sessions = Number(sessionStats.sessions || 0)
+    summary.bounceSessions = Number(sessionStats.bounceSessions || 0)
+    summary.bounceRate = summary.sessions ? summary.bounceSessions / summary.sessions : 0
+    summary.averageSessionSeconds = Number(sessionStats.averageSessionSeconds || 0)
+    summary.pagesPerSession = summary.sessions ? summary.pv / summary.sessions : 0
+    previous.sessions = Number(previousSessionStats.sessions || 0)
+    previous.bounceSessions = Number(previousSessionStats.bounceSessions || 0)
+    previous.bounceRate = previous.sessions ? previous.bounceSessions / previous.sessions : 0
+    previous.averageSessionSeconds = Number(previousSessionStats.averageSessionSeconds || 0)
+    previous.pagesPerSession = previous.sessions ? previous.pv / previous.sessions : 0
+
+    // 每日趋势（聚合表按日一行，前端展示补零到完整范围）
+    const trendRows = database.prepare(`
+      SELECT date, pv, uv, starts, validViews, completes, watchSeconds
+      FROM daily_overview
+      WHERE date >= ? AND date < ?
       ORDER BY date ASC
-    `).all(startAt, endAt)
+    `).all(start, end)
     const trendByDate = new Map(trendRows.map(row => [row.date, row]))
     const trend = Array.from({ length: rangeDays }, (_, index) => {
       const date = new Date(startDate.getTime() + index * dayMs).toISOString().slice(0, 10)
@@ -1211,25 +1490,25 @@ export const db = {
       }
     })
 
+    // 视频排行（读 daily_video 聚合，不扫原始事件表）
     const topVideos = database.prepare(`
       SELECT
-        events.videoId,
-        COALESCE(videos.title, events.videoId) AS title,
+        v.videoId,
+        COALESCE(videos.title, v.videoId) AS title,
         COALESCE(videos.author, '') AS author,
         COALESCE(videos.poster, '') AS poster,
         COALESCE(videos.isVip, 0) AS isVip,
-        SUM(CASE WHEN events.eventName = 'VIDEO_START' THEN 1 ELSE 0 END) AS starts,
-        SUM(CASE WHEN events.eventName = 'VIDEO_2S' THEN 1 ELSE 0 END) AS validViews,
-        SUM(CASE WHEN events.eventName = 'VIDEO_COMPLETE' THEN 1 ELSE 0 END) AS completes,
-        SUM(CASE WHEN events.eventName = 'WATCH_TIME' THEN events.watchSeconds ELSE 0 END) AS watchSeconds
-      FROM analytics_events AS events
-      LEFT JOIN videos ON videos.id = events.videoId
-      WHERE events.receivedAt >= ? AND events.receivedAt < ?
-        AND events.isValid = 1 AND events.videoId IS NOT NULL
-      GROUP BY events.videoId
+        SUM(v.starts) AS starts,
+        SUM(v.validViews) AS validViews,
+        SUM(v.completes) AS completes,
+        SUM(v.watchSeconds) AS watchSeconds
+      FROM daily_video AS v
+      LEFT JOIN videos ON videos.id = v.videoId
+      WHERE v.date >= ? AND v.date < ?
+      GROUP BY v.videoId
       ORDER BY validViews DESC, watchSeconds DESC
       LIMIT 10
-    `).all(startAt, endAt).map(row => ({
+    `).all(start, end).map(row => ({
       ...row,
       isVip: Boolean(row.isVip),
       starts: Number(row.starts || 0),
@@ -1239,42 +1518,46 @@ export const db = {
     }))
 
     const topPaths = database.prepare(`
-      SELECT path, COUNT(*) AS pv, COUNT(DISTINCT visitorId) AS uv
-      FROM analytics_events
-      WHERE receivedAt >= ? AND receivedAt < ?
-        AND eventName = 'PAGE_VIEW' AND isValid = 1
+      SELECT path, SUM(pv) AS pv, SUM(uv) AS uv
+      FROM daily_path
+      WHERE date >= ? AND date < ?
       GROUP BY path
       ORDER BY pv DESC
       LIMIT 10
-    `).all(startAt, endAt).map(row => ({
+    `).all(start, end).map(row => ({
       path: row.path || '/',
       pv: Number(row.pv || 0),
       uv: Number(row.uv || 0)
     }))
 
     const devices = database.prepare(`
-      SELECT
-        CASE
-          WHEN lower(userAgent) LIKE '%ipad%' OR lower(userAgent) LIKE '%tablet%' THEN 'tablet'
-          WHEN lower(userAgent) LIKE '%mobile%' OR lower(userAgent) LIKE '%android%' OR lower(userAgent) LIKE '%iphone%' THEN 'mobile'
-          WHEN userAgent = '' THEN 'unknown'
-          ELSE 'desktop'
-        END AS device,
-        COUNT(*) AS pv,
-        COUNT(DISTINCT visitorId) AS uv
-      FROM analytics_events
-      WHERE receivedAt >= ? AND receivedAt < ?
-        AND eventName = 'PAGE_VIEW' AND isValid = 1
+      SELECT device, SUM(pv) AS pv, SUM(uv) AS uv
+      FROM daily_device
+      WHERE date >= ? AND date < ?
       GROUP BY device
       ORDER BY pv DESC
-    `).all(startAt, endAt).map(row => ({
+    `).all(start, end).map(row => ({
       device: row.device,
       pv: Number(row.pv || 0),
       uv: Number(row.uv || 0)
     }))
 
+    // 地理画像：国家/地区构成（仅 ISO 国家码，不含 IP）
+    const countries = database.prepare(`
+      SELECT countryCode, SUM(pv) AS pv, SUM(uv) AS uv
+      FROM daily_country
+      WHERE date >= ? AND date < ?
+      GROUP BY countryCode
+      ORDER BY pv DESC
+      LIMIT 20
+    `).all(start, end).map(row => ({
+      countryCode: row.countryCode,
+      pv: Number(row.pv || 0),
+      uv: Number(row.uv || 0)
+    }))
+
     return {
-      range: { days: rangeDays, startAt, endAt, timezone: 'UTC' },
+      range: { days: rangeDays, startAt: `${start}T00:00:00.000Z`, endAt: `${end}T00:00:00.000Z`, timezone: 'UTC' },
       summary,
       previous,
       trend,
@@ -1288,8 +1571,54 @@ export const db = {
       },
       topVideos,
       topPaths,
-      devices
+      devices,
+      countries
     }
+  },
+
+  getAnalyticsV1ExportData(type = 'daily', days = 7) {
+    const requestedDays = Number(days)
+    const rangeDays = [7, 30, 90].includes(requestedDays) ? requestedDays : 7
+    const dayMs = 24 * 60 * 60 * 1000
+    const endDate = new Date()
+    endDate.setUTCHours(0, 0, 0, 0)
+    endDate.setUTCDate(endDate.getUTCDate() + 1)
+    const startDate = new Date(endDate.getTime() - rangeDays * dayMs)
+    const start = startDate.toISOString().slice(0, 10)
+    const end = endDate.toISOString().slice(0, 10)
+
+    if (type === 'videos') {
+      return database.prepare(`
+        SELECT v.date, v.videoId, COALESCE(videos.title, v.videoId) AS title,
+          v.starts, v.validViews, v.completes, v.watchSeconds
+        FROM daily_video v
+        LEFT JOIN videos ON videos.id = v.videoId
+        WHERE v.date >= ? AND v.date < ?
+        ORDER BY v.date ASC, v.validViews DESC
+      `).all(start, end)
+    }
+    if (type === 'paths') {
+      return database.prepare(`
+        SELECT date, path, pv, uv
+        FROM daily_path
+        WHERE date >= ? AND date < ?
+        ORDER BY date ASC, pv DESC
+      `).all(start, end)
+    }
+    if (type === 'countries') {
+      return database.prepare(`
+        SELECT date, countryCode, pv, uv
+        FROM daily_country
+        WHERE date >= ? AND date < ?
+        ORDER BY date ASC, pv DESC
+      `).all(start, end)
+    }
+    return database.prepare(`
+      SELECT date, pv, uv, starts, validViews, progress25, progress50, progress75, completes, watchSeconds, validEvents, totalEvents
+      FROM daily_overview
+      WHERE date >= ? AND date < ?
+      ORDER BY date ASC
+    `).all(start, end)
   },
 
   recordAccess(data = {}) {
