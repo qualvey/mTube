@@ -93,6 +93,7 @@ import VideoFeed from './components/VideoFeed.vue'
 import ScrollTransition from './components/ScrollTransition.vue'
 import PaywallModal from './components/PaywallModal.vue'
 import { trackAnalytics } from './services/videoService'
+import { initAnalytics, shutdownAnalytics } from './services/analyticsService'
 import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT } from './i18n'
 
 const { t } = useI18n()
@@ -206,6 +207,8 @@ const fetchNotice = async () => {
 }
 
 onMounted(async () => {
+  initAnalytics()
+
   // Dynamically set HTML Document Title from backend B-side configuration
   fetchSiteConfig()
 
@@ -230,6 +233,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
+  shutdownAnalytics()
 })
 
 const onAgeVerified = () => {
