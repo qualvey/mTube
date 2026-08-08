@@ -107,57 +107,102 @@
 }
 ```
 
-### 2.4 增加播放播放量
-- **请求方式**：`POST /api/v1/videos/:id/view`
-- **响应示例**：
-```json
-{
-  "code": 200,
-  "message": "播放量+1",
-  "data": { "views": 3521 }
-}
-```
-
-### 2.5 后端流式防盗链代理播放 (Ranged Video Proxy Stream)
-- **请求方式**：`GET /api/v1/proxy/stream`
+### 2.4 后端流式防盗链代理播放 (Ranged Video Proxy Stream)
+- **请求方式**：`GET /api/v1/proxy/video`
 - **请求参数**：
   - `url` (string, 必填): 目标视频公网 URL
-  - `referer` (string, 可选): 自定义 Referer 请求头
-  - `ua` (string, 可选): 自定义 User-Agent 签名
+  - `id` (string, 可选): 视频 ID（用于 VIP 校验与单设备流控）
+  - `deviceId` (string, 可选): 设备指纹 ID，可通过 query 或 `X-Device-Id` 头传入；VIP 视频要求携带且设备处于 VIP 有效期内
+  - `headers` (string, 可选): JSON 序列化的自定义请求头（如 `{"Referer":"...","User-Agent":"..."}`）
 - **支持标头**：`Range: bytes=0-` (支持 HTTP Range 断点续传拖拽)
+- **VIP 安全**：`video.isVip && !isVipUnlocked && previewLimit <= 0` 时返回 `403` 拒绝流（后端核心 VIP 安全校验）；非 VIP 设备播放 VIP 视频仅允许 previewDuration 试看
+- **单设备单流**：同一 deviceId 同时拉流时，新请求会终止旧流（Single-Stream-Per-Device Guard）
 - **响应**：二进制视频数据流 (`Content-Type: video/mp4`)
 
-### 2.6 动态第 50 帧封面截取生成代理
+### 2.5 动态第 50 帧封面截取生成代理
 - **请求方式**：`GET /api/v1/proxy/poster`
 - **请求参数**：
   - `id` (string, 必填): 视频 ID
 - **响应**：JPEG 封面图片二进制流 (`Content-Type: image/jpeg`)
 
----
+### 2.6 获取分类标签列表
+- **请求方式**：`GET /api/v1/tags`
+- **响应示例**：
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": ["新增", "VIP独家", "4K画质"]
+}
+```
 
-## 三、 付费墙、VIP 与支付引擎接口
+### 2.7 按标签获取视频列表
+- **请求方式**：`GET /api/v1/videos/tag/:tag`
+- **路径参数**：`tag` (string, 必填) — 分类标签
+- **响应**：视频数组，结构同 2.1
 
-### 3.1 获取付费墙系统全局设置与公告
-- **请求方式**：`GET /api/v1/paywall/settings`
+### 2.8 站点配置（公告/活动/Hero 等）
+- **请求方式**：`GET /api/v1/settings`（兼容别名 `/api/v1/site-config`、`/api/v1/paywall/config`）
+- **请求参数**：`lang` (string, 可选)
 - **响应示例**：
 ```json
 {
   "code": 200,
   "message": "success",
   "data": {
+    "siteTitle": "StreamVIP - 独家超清视频流与VIP特权",
+    "heroImageUrl": "...",
     "enableNotice": true,
-    "siteTitle": "StreamVIP - 独家超清视频流",
     "noticeTitle": "📢 官方重要公告",
-    "noticeContent": "欢迎来到 StreamVIP 独家流媒体平台...",
-    "heroTitle": "极致诱惑",
-    "heroSubtitle": "滑动探索更多内容",
-    "cryptoUsdtAddress": "TY7x9N2m8Qk4Pz1v6W3s5R7u9Y2X4B6C8V",
-    "cryptoExchangeRate": 7.2
+    "noticeContent": "...",
+    "enableSeekPreview": true,
+    "paywallNotice": "...",
+    "userAgreement": "...",
+    "customerServiceText": "..."
   }
 }
 ```
 
-### 3.2 创建支付宝 RSA2 WAP 支付订单
+### 2.9 获取公告
+- **请求方式**：`GET /api/v1/notice?lang=zh`
+- **响应示例**：
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "noticeHash": "nh_ab12cd",
+    "title": "📢 官方重要公告",
+    "content": "..."
+  }
+}
+```
+
+### 2.10 直接上传视频（主站入口）
+- **请求方式**：`POST /api/v1/upload`
+- **说明**：需管理员鉴权（同 `/api/v1/admin/*` 的 Bearer Token 体系）。用于浏览器直传场景的入口，内部会代理到存储节点或生成直传凭证。
+
+### 2.11 埋点上报（Legacy C 端统计）
+- **请求方式**：`POST /api/v1/analytics/track`
+- **请求 Body**：
+```json
+{
+  "path": "/videos/vid_xxx",
+  "videoId": "vid_xxx",
+  "action": "PV",
+  "deviceId": "dev_xxx",
+  "userAgent": "...",
+  "referer": "..."
+}
+```
+- **说明**：`action` 缺省为 `PV`；`videoId` 可选。兼容旧版采集，新采集统一走 `POST /api/v1/events/batch`。
+- **响应**：`200`，`data` 为采集结果
+
+---
+
+## 三、 付费墙、VIP 与支付引擎接口
+
+### 3.1 创建支付宝 RSA2 WAP 支付订单
 - **请求方式**：`POST /api/v1/paywall/alipay/create`
 - **请求 Body**：
 ```json
@@ -179,7 +224,7 @@
 }
 ```
 
-### 3.3 创建 USDT 链上支付订单（微毫小数防碰撞）
+### 3.2 创建 USDT 链上支付订单（微毫小数防碰撞）
 - **请求方式**：`POST /api/v1/paywall/crypto/create`
 - **请求 Body**：
 ```json
@@ -203,31 +248,40 @@
 }
 ```
 
-### 3.4 校验设备 VIP 状态与试看时长
-- **请求方式**：`POST /api/v1/paywall/device/check`
-- **请求 Body**：
-```json
-{ "deviceId": "dev_mac_c81f66" }
-```
+### 3.3 查询设备 VIP 状态
+- **请求方式**：`GET /api/v1/paywall/vip-status?deviceId=xxx`
+- **请求参数**：`deviceId` (string, 必填)
 - **响应示例**：
 ```json
 {
   "code": 200,
-  "message": "设备状态正常",
+  "message": "success",
   "data": {
     "isVip": true,
-    "expireDate": "2026-09-01T00:00:00.000Z",
-    "deviceId": "dev_mac_c81f66"
+    "vipExpireAt": "2026-09-08T00:00:00.000Z"
   }
+}
+```
+无 VIP / 已过期 / deviceId 为空时：`{ "isVip": false, "vipExpireAt": null }`
+
+### 3.4 设备自助取消 VIP
+- **请求方式**：`POST /api/v1/paywall/vip/cancel`（兼容别名 `/api/v1/paywall/vip-cancel`）
+- **请求参数**：`deviceId` (body / query, 必填)
+- **响应示例**：
+```json
+{
+  "code": 200,
+  "message": "设备 VIP 权限已成功取消",
+  "data": { "success": true, "deviceId": "abc123device" }
 }
 ```
 
 ### 3.5 凭订单号恢复设备 VIP 特权
-- **请求方式**：`POST /api/v1/paywall/device/restore`
+- **请求方式**：`POST /api/v1/paywall/restore`
 - **请求 Body**：
 ```json
 {
-  "tradeNo": "VIP_1722589200_8f2a",
+  "orderId": "ORD-1722589200000",
   "deviceId": "dev_mac_new_99"
 }
 ```
@@ -235,9 +289,60 @@
 ```json
 {
   "code": 200,
-  "message": "VIP 权益成功迁移恢复至当前新设备！"
+  "message": "VIP 权限已成功恢复并绑定至当前设备！",
+  "data": {
+    "success": true,
+    "message": "VIP 权限已成功恢复并绑定至当前设备！",
+    "vipExpireAt": "2026-09-08T00:00:00.000Z"
+  }
 }
 ```
+> 限制：订单必须已支付（PAID）；每个订单仅可恢复 1 次（restoredCount 上限）。
+
+### 3.6 获取套餐配置
+- **请求方式**：`GET /api/v1/paywall/config`（兼容别名 `/api/v1/site-config`、`/api/v1/settings`）
+- **响应示例**：
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": { "plans": [{ "id": "plan-1", "key": "monthly", "name": "月度 VIP", "price": 39 }] }
+}
+```
+
+### 3.7 创建本地订单（兼容旧接口）
+- **请求方式**：`POST /api/v1/paywall/order`
+- **请求 Body**：`{ "planId": "plan-1", "deviceId": "dev_xxx", "payType": "alipay", "status": "PENDING" }`
+- **响应**：新建订单对象
+
+### 3.8 订单状态查询（前端支付完成后轮询）
+- **请求方式**：`GET /api/v1/paywall/order/:id`
+- **路径参数**：`id` (string, 必填) — 订单 ID
+- **响应示例**：
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": "ORD-1722589200000",
+    "status": "PAID",
+    "payStatus": "PAID"
+  }
+}
+```
+
+### 3.9 ruyizf 订单状态主动查询
+- **请求方式**：`GET /api/v1/paywall/ruyizf/query/:id`
+- **路径参数**：`id` (string, 必填) — 订单 ID
+- **响应**：ruyizf 平台查询结果
+
+### 3.10 ruyizf 支付回调（异步通知）
+- **请求方式**：`POST /api/v1/paywall/notify`
+- **说明**：ruyizf 平台异步通知，验签后激活 VIP。响应体：`SUCCESS` / `FAIL`（非 JSON）
+
+### 3.11 支付宝回调（异步通知）
+- **请求方式**：`POST /api/v1/paywall/alipay/notify`
+- **说明**：支付宝 RSA2 异步通知，验签 + 金额校验后完成订单。响应体：`success` / `fail`（非 JSON）
 
 ---
 
@@ -512,26 +617,14 @@
 - **planId 时长映射**：`day`→1天、`month`/`plan-1`→30天、`season`/`plan-2`→90天、`year`/`plan-3`→365天、`lifetime`/`plan-4`→36500天；已有未过期 VIP 时顺延叠加。
 - **成功响应**：结构同「按订单授予」。
 
-### 5.9 查询设备 VIP 状态（C 端公开）
-- **请求方式**：`GET /api/v1/vip-status?deviceId=abc123device`
-- **响应示例**：
-```json
-{
-  "code": 200,
-  "message": "success",
-  "data": { "isVip": true, "vipExpireAt": "2026-09-08T00:00:00.000Z" }
-}
-```
-无 VIP / 已过期时：`{ "isVip": false, "vipExpireAt": null }`
+### 5.9 系统设置与统计（详见 doc/api/admin.md）
+- **请求方式**：`GET /api/v1/admin/settings` / `PUT /api/v1/admin/settings` / `POST /api/v1/admin/settings`
+- **请求方式**：`GET /api/v1/admin/stats`（严格 PAID 口径营收统计）
+- **请求方式**：`GET /api/v1/admin/dashboard/stats`
 
-### 5.10 设备自助取消 VIP（C 端公开）
-- **请求方式**：`POST /api/v1/vip/cancel`（或 `/api/v1/vip-cancel`）
-- **请求 Body / query**：`deviceId` (string, 必填)
-- **成功响应**：
-```json
-{
-  "code": 200,
-  "message": "设备 VIP 权限已成功取消",
-  "data": { "success": true, "deviceId": "abc123device" }
-}
-```
+### 5.10 运维与调试（详见 doc/api/admin.md）
+- **请求方式**：`GET /api/v1/admin/upload-config` / `GET /api/v1/admin/debug` / `GET|POST /api/v1/admin/loglevel`
+- **请求方式**：`POST /api/v1/admin/videos/upload-ticket`
+
+### 5.11 翻译管理（详见 doc/api/admin.md）
+- **请求方式**：`GET /api/v1/admin/translations` / `PUT /api/v1/admin/translations` / `GET /api/v1/admin/translations/overview`
