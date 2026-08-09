@@ -1367,6 +1367,18 @@ export const db = {
   },
 
   rebuildDailyAggregates() {
+    // ⚠️ 数据保护（硬性要求）：rebuild 会清空聚合表并重放，执行前必须备份原始事件与统计表，
+    // 保证管理端数据一条不丢。备份写入同目录 db.analytics-backup-<timestamp>.sqlite
+    let backupPath = null
+    try {
+      backupPath = path.join(dataDir, `db.analytics-backup-${Date.now()}.sqlite`)
+      fs.copyFileSync(DB_SQLITE_PATH, backupPath)
+      console.log(`💾 [Analytics] 数据备份完成: ${backupPath}`)
+    } catch (err) {
+      console.error('❌ [Analytics] 备份失败，拒绝执行 rebuild:', err.message)
+      return { success: false, message: `备份失败，已中止 rebuild: ${err.message}` }
+    }
+
     database.exec('BEGIN')
     let rebuiltEvents = 0
     try {
@@ -1393,7 +1405,7 @@ export const db = {
       database.exec('ROLLBACK')
       throw error
     }
-    return { rebuiltEvents }
+    return { rebuiltEvents, backupPath }
   },
 
   getAnalyticsV1Overview() {
@@ -1780,13 +1792,25 @@ export const db = {
   },
 
   clearAccessLogs(options = {}) {
+    // ⚠️ 数据保护（硬性要求）：清理访问日志前必须备份，保证管理端数据一条不丢
+    const doClear = (clearFn) => {
+      try {
+        const backupPath = path.join(dataDir, `db.accesslog-backup-${Date.now()}.sqlite`)
+        fs.copyFileSync(DB_SQLITE_PATH, backupPath)
+        console.log(`💾 [Analytics] 访问日志清理前备份: ${backupPath}`)
+        const result = clearFn()
+        return { success: true, deletedCount: result.changes, backupPath }
+      } catch (err) {
+        console.error('❌ [Analytics] 备份失败，拒绝清理访问日志:', err.message)
+        return { success: false, message: `备份失败，已中止清理: ${err.message}` }
+      }
+    }
+
     if (options.clearAll) {
-      const result = database.prepare("DELETE FROM access_logs").run()
-      return { success: true, deletedCount: result.changes }
+      return doClear(() => database.prepare('DELETE FROM access_logs').run())
     }
     if (options.beforeDate) {
-      const result = database.prepare("DELETE FROM access_logs WHERE createdAt < ?").run(options.beforeDate)
-      return { success: true, deletedCount: result.changes }
+      return doClear(() => database.prepare('DELETE FROM access_logs WHERE createdAt < ?').run(options.beforeDate))
     }
     return { success: false, message: '请指定清理条件（如 beforeDate 或 clearAll）' }
   }

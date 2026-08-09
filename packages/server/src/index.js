@@ -968,15 +968,17 @@ app.post('/api/v1/events/batch', async (req, res) => {
 
   const receivedAt = new Date().toISOString()
   const ipSalt = process.env.ANALYTICS_IP_SALT || process.env.CLUSTER_SECRET || 'local-analytics-salt'
-  // GeoIP 解析：只取 ISO 国家码（地理画像），原始 IP 不落库；失败返回 '' 不阻塞入库
-  // 开关：ANALYTICS_GEOIP_ENABLED=false 时跳过外部解析；ANALYTICS_STORE_RAW_IP=true 时额外存原始 IP
+  // GeoIP 解析：只取 ISO 国家码（地理画像）；失败返回 '' 不阻塞入库
+  // 开关：ANALYTICS_GEOIP_ENABLED=false 时跳过外部解析；ANALYTICS_STORE_RAW_IP=true 时始终存原始 IP
+  // 数据兜底（硬性要求）：国家码解析失败时，必须记录真实 IP，保证管理端数据一条不丢
   const countryCode = config.analytics.geoipEnabled
     ? await getCountryCode(clientIp)
     : ''
   const requestContext = {
     receivedAt,
     ipHash: crypto.createHash('sha256').update(`${ipSalt}:${clientIp}`).digest('hex'),
-    clientIp: config.analytics.storeRawIp ? clientIp : '',
+    // 存真实 IP 的条件：显式开启 storeRawIp，或国家码解析失败（无法归属地域时用 IP 兜底可追溯）
+    clientIp: (config.analytics.storeRawIp || !countryCode) ? clientIp : '',
     userAgent: cleanAnalyticsText(req.headers['user-agent'], 500),
     referer: cleanAnalyticsText(req.headers.referer, 1000),
     countryCode
