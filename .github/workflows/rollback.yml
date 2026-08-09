@@ -84,6 +84,9 @@ jobs:
           port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
           script: |
             export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
+            # appleboy/ssh-action does NOT forward env: vars unless declared in envs:
+            # fall back to the default target dir here so the script always works.
+            TARGET_DIR="${TARGET_DIR:-/opt/storage_node}"
             cd "$TARGET_DIR"
             set -euo pipefail
 
