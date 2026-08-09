@@ -12,8 +12,17 @@ const DB_SQLITE_PATH = path.join(dataDir, 'db.sqlite')
 const DB_JSON_PATH = path.join(dataDir, 'db.json')
 
 // Initialize SQLite database instance
-
 const database = new DatabaseSync(DB_SQLITE_PATH)
+
+// ⚠️ 数据保护：WAL 模式（崩溃安全 + 读写并发），busy_timeout 避免锁冲突
+// 硬性要求：管理端数据一条不能丢
+try {
+  database.exec('PRAGMA journal_mode = WAL;')
+  database.exec('PRAGMA busy_timeout = 5000;')
+  database.exec('PRAGMA synchronous = NORMAL;')
+} catch (e) {
+  console.warn('⚠️ [SQLite] PRAGMA 设置失败:', e.message)
+}
 
 // Initialize Tables
 database.exec(`
