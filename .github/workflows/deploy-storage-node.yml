@@ -67,7 +67,8 @@ jobs:
           username: ${{ secrets.STORAGE_VPS_USER }}
           key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
           port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
-          source: "docker-compose.yml"
+          source: "packages/storage-node/docker-compose.yml"
+          strip_components: 2
           target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
 
       - name: SSH — Deploy Storage Node
