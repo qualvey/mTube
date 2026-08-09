@@ -1,0 +1,95 @@
+name: Rollback (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Target version to roll back to (e.g. v1.3.9)'
+        required: true
+      target:
+        description: 'Where to roll back'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - main
+          - storage
+
+jobs:
+  rollback-main:
+    if: github.event.inputs.target == 'both' || github.event.inputs.target == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose files to Main VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "docker-compose.yml,nginx-production-example.conf"
+          target: "/root/mobile-paywall"
+
+      - name: SSH - Pin main VPS to old version
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
+            cd /root/mobile-paywall
+            set -euo pipefail
+
+            export VERSION="${{ github.event.inputs.version }}"
+            export SERVER_IMAGE=ghcr.io/qualvey/mtube/server:$VERSION
+            export CLIENT_IMAGE=ghcr.io/qualvey/mtube/client:$VERSION
+            export ADMIN_IMAGE=ghcr.io/qualvey/mtube/admin:$VERSION
+
+            echo "Rolling back server/client/admin to $VERSION"
+            docker compose pull server client admin
+            docker compose up -d server client admin
+
+  rollback-storage:
+    if: github.event.inputs.target == 'both' || github.event.inputs.target == 'storage'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose file to Storage VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+          source: "packages/storage-node/docker-compose.yml"
+          strip_components: 2
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
+
+      - name: SSH - Pin storage VPS to old version
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          TARGET_DIR: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
+        with:
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+          script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
+            cd "$TARGET_DIR"
+            set -euo pipefail
+
+            export VERSION="${{ github.event.inputs.version }}"
+            export STORAGE_NODE_IMAGE=ghcr.io/qualvey/mtube/storage-node:$VERSION
+
+            echo "Rolling back storage-node to $VERSION"
+            docker compose pull storage-node
+            docker compose up -d storage-node

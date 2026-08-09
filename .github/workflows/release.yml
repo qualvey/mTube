@@ -1,0 +1,284 @@
+name: Release & Deploy (Tag)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_SERVER: ghcr.io/qualvey/mtube/server
+  IMAGE_CLIENT: ghcr.io/qualvey/mtube/client
+  IMAGE_ADMIN: ghcr.io/qualvey/mtube/admin
+  IMAGE_STORAGE_NODE: ghcr.io/qualvey/mtube/storage-node
+
+jobs:
+  build-server:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push Server Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_SERVER }}:${{ github.ref_name }}
+            ${{ env.IMAGE_SERVER }}:latest
+            ${{ env.IMAGE_SERVER }}:sha-${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-client:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push Client Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/client/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_CLIENT }}:${{ github.ref_name }}
+            ${{ env.IMAGE_CLIENT }}:latest
+            ${{ env.IMAGE_CLIENT }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-admin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push Admin Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/admin/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_ADMIN }}:${{ github.ref_name }}
+            ${{ env.IMAGE_ADMIN }}:latest
+            ${{ env.IMAGE_ADMIN }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-storage-node:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push Storage Node Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/storage-node/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_STORAGE_NODE }}:${{ github.ref_name }}
+            ${{ env.IMAGE_STORAGE_NODE }}:latest
+            ${{ env.IMAGE_STORAGE_NODE }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================================================
+  # Deploy A: Main VPS (server + client + admin)
+  # Secrets: VPS_HOST / VPS_USER / VPS_SSH_KEY / VPS_PORT
+  # ==========================================================================
+  deploy-main:
+    needs: [build-server, build-client, build-admin]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose files to Main VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "docker-compose.yml,nginx-production-example.conf"
+          target: "/root/mobile-paywall"
+
+      - name: SSH - Deploy pinned version to Main VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
+            cd /root/mobile-paywall
+            set -euo pipefail
+
+            # Fail-closed guard: CLUSTER_SECRET must exist in GitHub Secrets
+            if [ -z "${{ secrets.CLUSTER_SECRET }}" ]; then
+              echo "ERROR: GitHub Secret 'CLUSTER_SECRET' is not configured. Aborting deployment."
+              exit 1
+            fi
+
+            # Bootstrap .env if missing (first deploy)
+            if [ ! -f .env ]; then
+              echo "NODE_ENV=production"                                              > .env
+              echo "SERVER_PORT=3000"                                               >> .env
+              echo "CLIENT_PORT=5173"                                               >> .env
+              echo "ADMIN_PORT=5174"                                                >> .env
+              echo "ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME || 'admin' }}"        >> .env
+              echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD || 'admin123' }}"     >> .env
+              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET }}"                   >> .env
+              echo "ENABLE_DIRECT_UPLOAD=${{ secrets.ENABLE_DIRECT_UPLOAD || 'true' }}" >> .env
+            fi
+
+            # Ensure RUIZIF payment env vars exist
+            ensure_env() {
+              local key="$1" val="$2"
+              if ! grep -q "^${key}=" .env 2>/dev/null; then
+                echo "${key}=${val}" >> .env
+              fi
+            }
+            ensure_env "RUIZIF_SECRET"     "${{ secrets.RUIZIF_SECRET }}"
+            ensure_env "RUIZIF_NOTIFY_URL" "${{ secrets.RUIZIF_NOTIFY_URL || 'https://91cso.com/api/v1/paywall/notify' }}"
+            ensure_env "RUIZIF_CHANNEL"    "${{ secrets.RUIZIF_CHANNEL || '4444' }}"
+            ensure_env "RUIZIF_NOTIFY_IPS" "${{ secrets.RUIZIF_NOTIFY_IPS || '***REMOVED***' }}"
+
+            # Pin exact image versions (rollback = change VERSION, re-run)
+            export VERSION="${{ github.ref_name }}"
+            export SERVER_IMAGE=ghcr.io/qualvey/mtube/server:$VERSION
+            export CLIENT_IMAGE=ghcr.io/qualvey/mtube/client:$VERSION
+            export ADMIN_IMAGE=ghcr.io/qualvey/mtube/admin:$VERSION
+
+            echo "Deploying server/client/admin at version $VERSION"
+            docker compose pull server client admin
+            docker compose up -d server client admin
+            docker image prune -f || true
+
+  # ==========================================================================
+  # Deploy B: Storage VPS (storage-node)
+  # Secrets: STORAGE_VPS_HOST / STORAGE_VPS_USER / STORAGE_VPS_SSH_KEY / STORAGE_VPS_PORT
+  # ==========================================================================
+  deploy-storage:
+    needs: [build-storage-node]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose file to Storage VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+          source: "packages/storage-node/docker-compose.yml"
+          strip_components: 2
+          target: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
+
+      - name: SSH - Deploy pinned version to Storage VPS
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          TARGET_DIR: ${{ secrets.STORAGE_VPS_TARGET || '/opt/storage_node' }}
+        with:
+          host: ${{ secrets.STORAGE_VPS_HOST }}
+          username: ${{ secrets.STORAGE_VPS_USER }}
+          key: ${{ secrets.STORAGE_VPS_SSH_KEY }}
+          port: ${{ secrets.STORAGE_VPS_PORT || 22 }}
+          script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/snap/bin
+            cd "$TARGET_DIR"
+            set -euo pipefail
+
+            # Fail-closed guard
+            if [ -z "${{ secrets.CLUSTER_SECRET }}" ]; then
+              echo "ERROR: GitHub Secret 'CLUSTER_SECRET' is not configured. Aborting deployment."
+              exit 1
+            fi
+
+            # Bootstrap .env if missing
+            if [ ! -f .env ]; then
+              echo "NODE_ENV=production"                                                        > .env
+              echo "STORAGE_PORT=${{ secrets.STORAGE_PORT || 3001 }}"                         >> .env
+              echo "CLUSTER_SECRET=${{ secrets.CLUSTER_SECRET }}"                             >> .env
+              echo "STORAGE_ROOT=${{ secrets.STORAGE_ROOT || '/data/videos' }}"               >> .env
+              echo "MAIN_SERVER_URL=${{ secrets.MAIN_SERVER_URL || 'http://localhost:3000' }}" >> .env
+            fi
+
+            ensure_env() {
+              local key="$1" val="$2"
+              if ! grep -q "^${key}=" .env 2>/dev/null; then
+                echo "${key}=${val}" >> .env
+              fi
+            }
+            ensure_env "NODE_ID"        "${{ secrets.STORAGE_NODE_ID || 'node-01' }}"
+            ensure_env "NODE_LABEL"     "${{ secrets.STORAGE_NODE_LABEL || 'Storage Node 01' }}"
+            ensure_env "MAX_STORAGE_GB" "${{ secrets.MAX_STORAGE_GB || '500' }}"
+
+            # Pin exact image version
+            export VERSION="${{ github.ref_name }}"
+            export STORAGE_NODE_IMAGE=ghcr.io/qualvey/mtube/storage-node:$VERSION
+
+            echo "Deploying storage-node at version $VERSION"
+            docker compose pull storage-node
+            docker compose up -d storage-node
+            docker image prune -f || true
