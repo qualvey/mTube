@@ -37,3 +37,5 @@ jobs:
 
       - name: Storage node tests
         run: pnpm --filter storage-node test
+        env:
+          CLUSTER_SECRET: ci-test-secret-0123456789abcdef
