@@ -40,7 +40,27 @@
 - 构建验证:`cd packages/admin && pnpm build`(admin 前端)、server 改动用 `node --check` 或单测。
 - commit 遵循 Conventional Commits:`feat(scope): 描述` / `fix(scope): 描述`,正文列改动点。
 - 只提交本次任务相关文件,不混入无关改动(遗留文件如 `plan.md`、`err.txt`、`test/` 保持不动)。
-- 生产部署:push 触发 GitHub Actions;部署前确认本地已验证构建。
+
+## 版本号与发版(强制)
+
+**版本规则:SemVer + git tag。tag 是唯一发布依据,不手工改 package.json 版本号。**
+
+- 格式:`vMAJOR.MINOR.PATCH`(如 `v1.0.1` / `v1.1.0` / `v2.0.0`)
+- 递增规则:修 bug → PATCH;加功能(向后兼容) → MINOR;破坏性变更 → MAJOR。
+- **只在 main 分支、代码已 push 之后打 tag**。
+
+**发版流程(顺序固定):**
+
+1. 功能代码 commit + push 到 main(先保证 CI 绿)。
+2. 打 tag:`git tag v1.1.0 && git push origin v1.1.0`。
+3. push tag 自动触发 `.github/workflows/release.yml` → 构建 4 个镜像(server/client/admin/storage-node,打 `vX.Y.Z` + `latest` + `sha-xxx` 三 tag)→ 部署主站 VPS + storage VPS。
+4. 等 Actions 全绿;若 deploy 失败,查明原因修复后**删 tag 重打**(`git push origin --delete v1.1.0` 再重打)或手动跑 rollback。
+
+**注意:** push 到 main 只触发 CI(门禁),**不会部署生产**。只有 push tag 才触发部署。
+
+**回滚:** 出问题跑 `.github/workflows/rollback.yml`(Actions 手动触发),输入旧版本号(如 `v1.0.0`)+ 目标(both/main/storage),直接拉旧镜像恢复,不重新构建。
+
+**版本号信息来源:** 以 git tag 为准(`github.ref_name`),不要读 package.json 里的 version 字段。
 
 ## 已知要点
 
