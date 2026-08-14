@@ -34,6 +34,15 @@
   "sidebar": {
     "title": "视频分类"
   },
+  "detail": {
+    "pageTitle": "视频详情",
+    "back": "返回",
+    "related": "相关推荐",
+    "views": "次播放",
+    "published": "发布于",
+    "notFound": "视频不存在或已下架",
+    "noRelated": "暂无相关推荐"
+  },
   "feed": {
     "title": "热门视频",
     "filterAll": "推荐",
@@ -54,7 +63,8 @@
     "unlockNow": "立即解锁尊享 VIP 特权",
     "vipUnlocked": "VIP 尊享解禁",
     "verifiedCreator": "官方认证创作者",
-    "validViews": "2 秒有效播放量"
+    "validViews": "2 秒有效播放量",
+    "openDetail": "查看详情"
   },
   "player": {
     "invalidUrl": "视频 URL 无效",

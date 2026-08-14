@@ -71,7 +71,11 @@
             #{{ tag }}
           </span>
         </div>
-        <h4 class="text-base font-bold text-white leading-snug line-clamp-2">
+        <h4 
+          @click="goToDetail"
+          class="text-base font-bold text-white leading-snug line-clamp-2 cursor-pointer hover:text-yellow-400 transition-colors"
+          :title="t('card.openDetail')"
+        >
           {{ video.title }}
         </h4>
       </div>
@@ -118,6 +122,9 @@ import { useI18n } from 'vue-i18n'
 
 import MemoryVideoPlayer from './MemoryVideoPlayer.vue'
 import { trackAnalytics } from '../services/videoService'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 const { t } = useI18n()
 
@@ -152,6 +159,11 @@ const isTrialEnded = ref(false)
 const onVipClick = () => {
   trackAnalytics('VIDEO_CLICK', props.video.id)
   emit('trigger-paywall', props.video)
+}
+
+/** 点击标题 → 进入详情页（feed 保留自动播放，仅标题可点） */
+const goToDetail = () => {
+  router.push({ name: 'video-detail', params: { id: props.video.id } })
 }
 
 const handleTrialEnded = () => {

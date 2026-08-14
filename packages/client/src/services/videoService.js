@@ -131,6 +131,21 @@ export const videoService = {
     return []
   },
 
+  // Fetch single video detail
+  async getVideoById(videoId) {
+    try {
+      const lang = getCurrentLocale()
+      const res = await fetch(`/api/v1/videos/${encodeURIComponent(videoId)}?lang=${lang}`)
+      if (res.ok) {
+        const json = await res.json()
+        if (json && json.data) return json.data
+      }
+    } catch (e) {
+      console.warn('Video detail fetch failed:', e)
+    }
+    return null
+  },
+
   // Toggle video like
   async toggleLike(videoId) {
     try {

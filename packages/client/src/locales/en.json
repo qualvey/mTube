@@ -34,6 +34,15 @@
   "sidebar": {
     "title": "Categories"
   },
+  "detail": {
+    "pageTitle": "Video Details",
+    "back": "Back",
+    "related": "Related Videos",
+    "views": "views",
+    "published": "Published",
+    "notFound": "Video not found or removed",
+    "noRelated": "No related videos"
+  },
   "feed": {
     "title": "Trending",
     "filterAll": "Recommended",
@@ -54,7 +63,8 @@
     "unlockNow": "Unlock VIP Privileges Now",
     "vipUnlocked": "VIP Unlocked",
     "verifiedCreator": "Verified Creator",
-    "validViews": "2-second valid views"
+    "validViews": "2-second valid views",
+    "openDetail": "View details"
   },
   "player": {
     "invalidUrl": "Invalid video URL",
