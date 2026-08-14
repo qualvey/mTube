@@ -384,6 +384,8 @@ GET /api/v1/admin/settings
 
 返回全部设置项（siteTitle、noticeContent、alipay 配置、crypto 配置、paywall 配置等）。
 
+**`paywallEnabled` (boolean)**：收费模式全局开关。`false` = 全站免费（C 端不展示 VIP/付费墙，支付接口除回调外返回 403）；`true` = 恢复收费。默认 `false`。
+
 ### 更新系统设置
 
 ```

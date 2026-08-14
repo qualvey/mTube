@@ -18,7 +18,7 @@
 
       <!-- VIP Locked Overlay when trial ended -->
       <div 
-        v-else-if="video.isVip && !isVipUnlocked && isTrialEnded" 
+        v-else-if="paywallEnabled && video.isVip && !isVipUnlocked && isTrialEnded" 
         class="absolute inset-0 z-20 bg-zinc-950/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center cursor-pointer"
         @click="onVipClick"
       >
@@ -38,7 +38,7 @@
 
       <!-- VIP Badge (Top Left Overlay) -->
       <div 
-        v-if="video.isVip && !isVipUnlocked" 
+        v-if="paywallEnabled && video.isVip && !isVipUnlocked" 
         class="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-black text-xs font-black shadow-lg flex items-center gap-1 pointer-events-none"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3.5 h-3.5">
@@ -47,7 +47,7 @@
         <span>{{ t('card.vipPreview', { minutes: Math.round((video.previewDuration || 120) / 60) }) }}</span>
       </div>
       <div 
-        v-else-if="video.isVip && isVipUnlocked" 
+        v-else-if="paywallEnabled && video.isVip && isVipUnlocked" 
         class="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black text-xs font-black shadow-lg flex items-center gap-1 pointer-events-none"
       >
         <span>{{ t('card.vipUnlocked') }}</span>
@@ -129,6 +129,11 @@ const props = defineProps({
   isVipUnlocked: {
     type: Boolean,
     default: false
+  },
+  /** 收费模式开关（管理员控制）：false = 全站免费，不展示任何 VIP 标识/锁 */
+  paywallEnabled: {
+    type: Boolean,
+    default: true
   },
   /** 是否为当前激活（拉流/播放）的视频 */
   active: {

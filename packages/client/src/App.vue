@@ -19,14 +19,14 @@
           {{ langToggleLabel }}
         </button>
         <button 
-          v-if="!isVip"
+          v-if="paywallEnabled && !isVip"
           @click="showPaywall = true" 
           class="px-3.5 py-1.5 bg-gradient-to-r from-yellow-400 to-amber-500 text-black text-xs font-black rounded-full shadow-[0_0_15px_rgba(234,179,8,0.3)] hover:scale-105 active:scale-95 transition-all"
         >
           {{ t('app.openVip') }}
         </button>
         <div 
-          v-else 
+          v-else-if="paywallEnabled && isVip" 
           class="px-3 py-1 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-yellow-500/40 text-yellow-400 text-xs font-bold rounded-full flex items-center gap-1 shadow-[0_0_10px_rgba(234,179,8,0.15)]"
         >
           <span>👑</span>
@@ -48,6 +48,7 @@
       <VideoFeed 
         :class="{ 'blur-sm brightness-75 transition-all duration-500': showPaywall }" 
         :is-vip="isVip"
+        :paywall-enabled="paywallEnabled"
         @trigger-paywall="showPaywall = true"
       />
       
@@ -55,7 +56,7 @@
       <ScrollTransition :progress="scrollProgress" :blur="showPaywall" />
       
       <!-- Paywall Trigger Footer Section -->
-      <div v-if="!isVip" class="py-16 w-full flex flex-col items-center justify-center bg-zinc-950/90 border-t border-zinc-800 text-center px-4">
+      <div v-if="paywallEnabled && !isVip" class="py-16 w-full flex flex-col items-center justify-center bg-zinc-950/90 border-t border-zinc-800 text-center px-4">
         <h4 class="text-xl font-bold text-white mb-2">{{ t('app.wantMoreTitle') }}</h4>
         <p class="text-xs text-zinc-400 mb-6 max-w-xs">{{ t('app.wantMoreDesc') }}</p>
         <button 
@@ -110,6 +111,8 @@ const scrollContainer = ref(null)
 const ageVerified = ref(false)
 const showPaywall = ref(false)
 const isVip = ref(false)
+/** 收费模式全局开关（来自 /api/v1/settings，管理员控制）。false = 全站免费 */
+const paywallEnabled = ref(false)
 
 const showNotice = ref(false)
 const noticeTitle = ref('📢 官方重要公告')
@@ -130,6 +133,8 @@ const getOrCreateDeviceId = () => {
 }
 
 const checkVipStatus = async () => {
+  // 收费模式关闭时无需校验 VIP，全站免费
+  if (!paywallEnabled.value) return
   const deviceId = getOrCreateDeviceId()
   try {
     const res = await fetch(`/api/v1/paywall/vip-status?deviceId=${deviceId}`)
@@ -141,6 +146,26 @@ const checkVipStatus = async () => {
     }
   } catch (e) {
     console.warn('Failed to fetch VIP status:', e)
+  }
+}
+
+/**
+ * 拉取收费模式开关。关闭时：全站免费（isVip 恒 true，VIP 相关 UI/弹窗/试看全部不生效）
+ */
+const fetchPaywallMode = async () => {
+  try {
+    const res = await fetch('/api/v1/settings')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && json.data && typeof json.data.paywallEnabled === 'boolean') {
+        paywallEnabled.value = json.data.paywallEnabled
+        if (!json.data.paywallEnabled) {
+          isVip.value = true // 免费模式下所有内容可看
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to fetch paywall mode:', e)
   }
 }
 
@@ -223,6 +248,7 @@ onMounted(async () => {
   }
 
   // Check initial VIP status
+  await fetchPaywallMode()
   await checkVipStatus()
 
   // Explicitly pull notice from backend REST API GET /api/v1/notice
@@ -253,7 +279,7 @@ const handleScroll = (e) => {
   scrollProgress.value = progress
 
   // Scrolling DOWN past 75% -> Trigger Paywall modal (only if not VIP)
-  if (!isVip.value && progress > 0.75 && currentY > lastY.value && !showPaywall.value) {
+  if (paywallEnabled.value && !isVip.value && progress > 0.75 && currentY > lastY.value && !showPaywall.value) {
     showPaywall.value = true
   }
 

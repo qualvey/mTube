@@ -719,6 +719,7 @@ app.get('/api/v1/settings', (req, res) => {
   // 公开接口只暴露 C 端展示所需配置项，绝不返回支付私钥等敏感字段
   const settings = db.getSettings(req.query.lang)
   sendResponse(res, {
+    paywallEnabled: settings.paywallEnabled === true || settings.paywallEnabled === 'true',
     heroImageUrl: settings.heroImageUrl,
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,

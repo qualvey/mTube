@@ -150,6 +150,7 @@
   "code": 200,
   "message": "success",
   "data": {
+    "paywallEnabled": false,
     "siteTitle": "StreamVIP - 独家超清视频流与VIP特权",
     "heroImageUrl": "...",
     "enableNotice": true,

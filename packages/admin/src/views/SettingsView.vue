@@ -1,5 +1,32 @@
 <template>
   <div class="flex flex-col gap-4 sm:gap-6 max-w-4xl">
+    <!-- 收费模式全局开关 Card -->
+    <el-card class="rounded-2xl shadow-sm border-slate-200">
+      <template #header>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2 font-bold text-slate-800">
+            <span>💰 收费模式（全局开关）</span>
+          </div>
+          <el-tag :type="settings.paywallEnabled ? 'success' : 'info'" size="small">
+            {{ settings.paywallEnabled ? '已开启' : '已关闭' }}
+          </el-tag>
+        </div>
+      </template>
+
+      <el-form :model="settings" label-position="top">
+        <el-form-item label="启用收费模式（付费墙 / VIP / 试看）">
+          <el-switch v-model="settings.paywallEnabled" active-text="开启收费" inactive-text="全站免费" />
+        </el-form-item>
+        <div v-if="!settings.paywallEnabled" class="rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700 leading-relaxed">
+          ⚠️ 当前为<b>全站免费模式</b>：C 端不显示 VIP 徽标/锁/试看倒计时，付费墙与弹窗全部停用，
+          videos 表的 VIP 标记被忽略；支付接口返回停用（支付宝回调除外）。下方支付配置不会生效，可随时重新开启。
+        </div>
+        <div v-else class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 leading-relaxed">
+          收费模式已开启：C 端恢复 VIP 试看与付费墙逻辑，请确认下方支付接口与套餐配置正确。
+        </div>
+      </el-form>
+    </el-card>
+
     <!-- Payment & Currency Configuration Card -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
@@ -129,6 +156,7 @@ import { apiFetch } from '../utils/api.js'
 
 const saveLoading = ref(false)
 const settings = ref({
+  paywallEnabled: false,
   alipayAppId: '',
   alipayPrivateKey: '',
   alipayPublicKey: '',

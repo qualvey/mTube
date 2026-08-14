@@ -1273,6 +1273,8 @@ export const db = {
   getSettings(lang) {
     const rows = database.prepare('SELECT * FROM settings').all()
     const settings = {
+      // 收费模式全局开关（管理员控制）：false = 全站免费，付费墙/试看/VIP 全部停用
+      paywallEnabled: false,
       enableSeekPreview: true,
       uploadChunkConcurrency: 4,
       heroImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
@@ -1286,7 +1288,7 @@ export const db = {
       customerServiceText: '如有支付问题或需要协助，请联系官方客服 Telegram: @StreamVIP_Support'
     }
     for (const r of rows) {
-      if (r.key === 'enableSeekPreview' || r.key === 'enableNotice') {
+      if (r.key === 'enableSeekPreview' || r.key === 'enableNotice' || r.key === 'paywallEnabled') {
         settings[r.key] = r.value === 'true'
       } else if (r.key === 'uploadChunkConcurrency') {
         settings[r.key] = Number(r.value) || 4

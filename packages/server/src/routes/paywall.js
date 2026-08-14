@@ -8,6 +8,22 @@ import { verifyAlipayNotifySign } from '../integrations/alipay.js'
 
 const router = Router()
 
+// ── 收费模式全局开关守卫 ──────────────────────────────────────────────
+// paywallEnabled=false（管理员关闭收费）时，除支付异步回调外全部停用。
+// 回调保留：历史 PENDING 订单的支付宝回调仍需可到达（幂等，无害）。
+const PAYWALL_DISABLED_EXEMPT = ['/notify', '/alipay/notify']
+router.use((req, res, next) => {
+  const settings = db.getSettings()
+  const paywallEnabled = settings.paywallEnabled === true || settings.paywallEnabled === 'true'
+  if (!paywallEnabled) {
+    const exempt = PAYWALL_DISABLED_EXEMPT.some(p => req.path === p || req.path.startsWith(p + '/'))
+    if (!exempt) {
+      return sendResponse(res, null, 403, 'PAYWALL_DISABLED: 收费功能已停用，请联系管理员')
+    }
+  }
+  next()
+})
+
 // 套餐配置
 router.get('/config', (req, res) => {
   const plans = db.getPlans(req.query.lang)

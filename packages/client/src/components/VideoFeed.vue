@@ -44,6 +44,7 @@
         :key="video.id"
         :video="video"
         :is-vip-unlocked="isVip"
+        :paywall-enabled="paywallEnabled"
         :active="activeVideoId === video.id"
         @trigger-paywall="$emit('trigger-paywall', $event)"
         @request-activate="onRequestActivate"
@@ -94,6 +95,11 @@ const props = defineProps({
   isVip: {
     type: Boolean,
     default: false
+  },
+  /** 收费模式开关（管理员控制）：false = 全站免费，隐藏全部 VIP 相关 UI */
+  paywallEnabled: {
+    type: Boolean,
+    default: true
   }
 })
 
