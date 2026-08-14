@@ -37,3 +37,7 @@ data/
 .env.*
 !.env.example
 
+
+# Debug artifacts
+err.txt
+scripts/_dbg_*.mjs
