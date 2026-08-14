@@ -16,10 +16,7 @@
         @select="onMenuSelect"
         @toggle="category.sidebarCollapsed = !category.sidebarCollapsed"
       />
-      <div
-        class="min-w-0 transition-[padding] duration-300"
-        :class="category.sidebarCollapsed ? 'lg:pl-11' : 'lg:pl-60'"
-      >
+      <div class="min-w-0">
         <!-- Video Feed Stream (Backend Controlled) -->
         <VideoFeed
           :class="{ 'blur-sm brightness-75 transition-all duration-500': paywall.showPaywall }"
