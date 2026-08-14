@@ -44,13 +44,26 @@
       <!-- Hero Section -->
       <HeroSection :blur="showPaywall" />
       
-      <!-- Video Feed Stream (Backend Controlled) -->
-      <VideoFeed 
-        :class="{ 'blur-sm brightness-75 transition-all duration-500': showPaywall }" 
-        :is-vip="isVip"
-        :paywall-enabled="paywallEnabled"
-        @trigger-paywall="showPaywall = true"
-      />
+      <!-- Desktop Sidebar + Feed Two-Column Layout -->
+      <div class="max-w-6xl mx-auto w-full flex items-start lg:gap-6">
+        <CategorySidebar
+          :tags="tags"
+          :active-tag="activeTag"
+          @select="onTagSelect"
+        />
+        <div class="flex-1 min-w-0">
+          <!-- Video Feed Stream (Backend Controlled) -->
+          <VideoFeed 
+            :class="{ 'blur-sm brightness-75 transition-all duration-500': showPaywall }" 
+            :is-vip="isVip"
+            :paywall-enabled="paywallEnabled"
+            :tag="activeTag"
+            :tags="tags"
+            @trigger-paywall="showPaywall = true"
+            @tag-change="onTagSelect"
+          />
+        </div>
+      </div>
       
       <!-- Scroll Transition Area (Suspense Content) -->
       <ScrollTransition :progress="scrollProgress" :blur="showPaywall" />
@@ -91,9 +104,11 @@ import AgeGateModal from './components/AgeGateModal.vue'
 import NoticeModal from './components/NoticeModal.vue'
 import HeroSection from './components/HeroSection.vue'
 import VideoFeed from './components/VideoFeed.vue'
+import CategorySidebar from './components/CategorySidebar.vue'
 import ScrollTransition from './components/ScrollTransition.vue'
 import PaywallModal from './components/PaywallModal.vue'
 import { trackAnalytics } from './services/videoService'
+import { videoService } from './services/videoService'
 import { initAnalytics, shutdownAnalytics } from './services/analyticsService'
 import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT } from './i18n'
 
@@ -113,6 +128,14 @@ const showPaywall = ref(false)
 const isVip = ref(false)
 /** 收费模式全局开关（来自 /api/v1/settings，管理员控制）。false = 全站免费 */
 const paywallEnabled = ref(false)
+
+// 侧边栏分类：当前标签（null = 全部）+ 标签列表
+const activeTag = ref(null)
+const tags = ref([])
+
+const onTagSelect = (tag) => {
+  activeTag.value = tag
+}
 
 const showNotice = ref(false)
 const noticeTitle = ref('📢 官方重要公告')
@@ -203,6 +226,17 @@ const onLocaleChanged = () => {
   fetchNotice()
 }
 
+const fetchTags = async () => {
+  try {
+    const result = await videoService.getTags()
+    if (Array.isArray(result)) {
+      tags.value = result
+    }
+  } catch (e) {
+    console.warn('Failed to fetch tags:', e)
+  }
+}
+
 const fetchNotice = async () => {
   try {
     const lang = getCurrentLocale()
@@ -250,6 +284,7 @@ onMounted(async () => {
   // Check initial VIP status
   await fetchPaywallMode()
   await checkVipStatus()
+  fetchTags()
 
   // Explicitly pull notice from backend REST API GET /api/v1/notice
   fetchNotice()

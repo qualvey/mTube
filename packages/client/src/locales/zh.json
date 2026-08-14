@@ -31,6 +31,9 @@
     "title": "即将解锁...",
     "desc": "正在为您准备高清画集与独家视频"
   },
+  "sidebar": {
+    "title": "视频分类"
+  },
   "feed": {
     "title": "热门视频",
     "filterAll": "推荐",
@@ -41,7 +44,8 @@
     "unlockAll": "开通 VIP 解锁全部 5000+ 原画库",
     "searchPlaceholder": "搜索标题 / 创作者...",
     "searchNoResults": "未找到与搜索词相关的视频",
-    "clearSearch": "清除搜索"
+    "clearSearch": "清除搜索",
+    "allCategories": "全部分类"
   },
   "card": {
     "vipPreview": "VIP 试看 {minutes}分钟",

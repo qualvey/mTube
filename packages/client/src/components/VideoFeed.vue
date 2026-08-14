@@ -21,6 +21,27 @@
       </div>
     </div>
 
+    <!-- Mobile Category Chips (lg 以下显示，桌面用侧边栏) -->
+    <div class="lg:hidden flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style="scrollbar-width: none">
+      <button
+        @click="onMobileTagSelect(null)"
+        class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
+        :class="!tag ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'"
+      >
+        {{ t('feed.allCategories') }}
+      </button>
+      <button
+        v-for="item in tags"
+        :key="item.name"
+        @click="onMobileTagSelect(item.name)"
+        class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-1"
+        :class="tag === item.name ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'"
+      >
+        {{ item.name }}
+        <span class="text-[9px] font-mono opacity-60">{{ item.count }}</span>
+      </button>
+    </div>
+
     <!-- Search Bar (300ms debounce + stale response guard) -->
     <div class="relative">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none">
@@ -124,7 +145,7 @@ import { getCurrentLocale, LOCALE_CHANGED_EVENT } from '../i18n'
 
 const { t } = useI18n()
 
-defineEmits(['trigger-paywall'])
+const emit = defineEmits(['trigger-paywall', 'tag-change'])
 
 const props = defineProps({
   isVip: {
@@ -135,6 +156,16 @@ const props = defineProps({
   paywallEnabled: {
     type: Boolean,
     default: true
+  },
+  /** 当前分类标签（null = 全部），由 App 持有（侧边栏/移动端 chips 共用） */
+  tag: {
+    type: String,
+    default: null
+  },
+  /** 全量标签列表 [{ name, count }] */
+  tags: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -195,7 +226,7 @@ const loadPage = async (page = 1, append = false) => {
 
   try {
     const filter = activeFilter.value !== 'all' ? activeFilter.value : null
-    const result = await videoService.getVideos(filter, null, page, LIMIT, searchTerm.value)
+    const result = await videoService.getVideos(filter, props.tag, page, LIMIT, searchTerm.value)
     if (seq !== requestSeq) return // 过期响应直接丢弃
     preloadPosters(result.items)
 
@@ -291,6 +322,22 @@ const clearSearch = () => {
   activeVideoId.value = null
   loadPage(1, false)
 }
+
+/** 移动端分类 chips：点击选中（再点取消），由 App 统一持有 tag 状态 */
+const onMobileTagSelect = (tagName) => {
+  emit('tag-change', tagName === props.tag ? null : tagName)
+}
+
+// 分类标签变化（侧边栏/移动端 chips）→ 重置列表重新拉取
+watch(
+  () => props.tag,
+  () => {
+    currentPage.value = 1
+    hasMore.value = true
+    activeVideoId.value = null
+    loadPage(1, false)
+  }
+)
 
 /**
  * 切换过滤器 → 重置到第 1 页（保留当前搜索词，筛选与搜索叠加）

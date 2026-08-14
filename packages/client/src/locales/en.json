@@ -31,6 +31,9 @@
     "title": "Coming Soon...",
     "desc": "Preparing HD galleries and exclusive videos for you"
   },
+  "sidebar": {
+    "title": "Categories"
+  },
   "feed": {
     "title": "Trending",
     "filterAll": "Recommended",
@@ -41,7 +44,8 @@
     "unlockAll": "Go VIP to unlock the full 5000+ original library",
     "searchPlaceholder": "Search title / creator...",
     "searchNoResults": "No videos found for this search",
-    "clearSearch": "Clear search"
+    "clearSearch": "Clear search",
+    "allCategories": "All"
   },
   "card": {
     "vipPreview": "VIP Preview {minutes}min",
