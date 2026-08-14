@@ -43,7 +43,7 @@
     <ScrollTransition v-if="paywall.enabled && !paywall.isVip"  :progress="scrollProgress" :blur="paywall.showPaywall" />
 
     <!-- Paywall Trigger Footer Section -->
-    <div v-if="paywall.enabled && !paywall.isVip" class="py-16 w-full flex flex-col items-center justify-center bg-zinc-950/90 border-t border-zinc-800 text-center px-4">
+    <!-- <div v-if="paywall.enabled && !paywall.isVip" class="py-16 w-full flex flex-col items-center justify-center bg-zinc-950/90 border-t border-zinc-800 text-center px-4">
       <h4 class="text-xl font-bold text-white mb-2">{{ t('app.wantMoreTitle') }}</h4>
       <p class="text-xs text-zinc-400 mb-6 max-w-xs">{{ t('app.wantMoreDesc') }}</p>
       <button
@@ -52,7 +52,7 @@
       >
         {{ t('app.unlockNow') }}
       </button>
-    </div>
+    </div> -->
   </div>
 </template>
 

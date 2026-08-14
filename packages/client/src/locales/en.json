@@ -48,7 +48,8 @@
   "feed": {
     "title": "Trending",
     "loadingMore": "Loading more...",
-    "endOfFeed": "You've reached the end of free previews",
+    "endOfFeedCommon": "No more",
+    "endOfFeedVIP": "You've reached the end of free previews",
     "unlockAll": "Go VIP to unlock the full 5000+ original library",
     "searchPlaceholder": "Search title / creator...",
     "searchNoResults": "No videos found for this search",

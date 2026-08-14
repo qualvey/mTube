@@ -48,7 +48,8 @@
   "feed": {
     "title": "热门视频",
     "loadingMore": "加载更多...",
-    "endOfFeed": "已加载全部免费体验视频",
+    "endOfFeedCommon": "没有更多了，注意身体哦",
+    "endOfFeedVIP": "已加载全部免费体验视频",
     "unlockAll": "开通 VIP 解锁全部 5000+ 原画库",
     "searchPlaceholder": "搜索标题 / 创作者...",
     "searchNoResults": "未找到与搜索词相关的视频",
