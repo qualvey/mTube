@@ -1,201 +1,175 @@
-# StreamVIP (mTube) - 独家超清视频流与付费墙系统
+# StreamVIP · Generic Video Streaming Platform Skeleton
 
 [![Vue 3](https://img.shields.io/badge/Vue-3.x-4fc08d.svg?style=flat-square&logo=vuedotjs)](https://vuejs.org/)
 [![Express](https://img.shields.io/badge/Express-4.x-000000.svg?style=flat-square&logo=express)](https://expressjs.com/)
 [![SQLite](https://img.shields.io/badge/SQLite-3.x-003b57.svg?style=flat-square&logo=sqlite)](https://www.sqlite.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.x-38bdf8.svg?style=flat-square&logo=tailwindcss)](https://tailwindcss.com/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.x-38bdf8.svg?style=flat-square&logo=tailwindcss)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ed.svg?style=flat-square&logo=docker)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
-StreamVIP（内部代号 `mTube`）是一套采用 **Monorepo 单仓库架构** 与 **控制面与存储面解耦多节点集群架构** 构建的高性能移动端视频流平台及变现付费墙系统。
+**A production-ready, white-label streaming platform skeleton.** Monorepo with a mobile-first Vue 3 client, a full-featured admin dashboard, and a zero-dependency-leaning Express + SQLite backend. Built to be the starting point for any video site — OTT, short-form feeds, adult/VOD, education, or internal media portals.
 
-系统专为自建视频资源与高并发变现场景设计，支持主流 MP4/HLS(.m3u8) 视频流畅播放、自适应横竖屏、第 50 帧封面自动提取、雪碧图预览、支付宝 RSA2 网页支付、USDT 链上支付以及分布式多存储节点扩展。
-
----
-
-## ✨ 核心特性
-
-### 🎬 C 端极速播放体验 (`packages/client`)
-- **激活即自动播放（产品基础定位）**：视频卡片处于激活状态时自动播放——卡片滚动进入视口中心区域即自动激活并静音播放，无需手动点击；离开视口中心自动暂停。同一时间仅一路视频保持激活播放（单流单设备守护）。
-- **横竖屏动态自适应**：自动监听视频元数据（`loadedmetadata`），按真实宽高比（16:9 / 9:16）自动调整画面，彻底解决竖屏短视频裁剪截断问题。
-- **内存流式缓冲播放**：支持通过后端代理安全拉取视频流，注入自定义 Referer / User-Agent 请求头并写入 ArrayBuffer / Blob。
-- **拖拽进度条雪碧图预览**：支持 Surrit 动态 Seek Hover 帧预览（10x10 网格切片计算）。
-- **VIP 试看与付费墙倒计时**：支持针对 VIP 独家视频设定试看限制（如 120 秒），试看超时自动暂停并弹窗锁屏引导开通。
-
-### ⚙️ B 端管理控制台 (`packages/admin`)
-- **多存储节点集群管理**：可视化管理所有分布式存储节点（查看节点 ID、Base URL、连通性状态 `🟢 在线` / `🔴 离线` 及已存视频数）。
-- **一键节点配置**：支持 **【+ 注册新存储节点】**、**【设为默认上传节点】**、**【刷新连通性】** 及 **【注销节点】**。
-- **发布与上传透传**：发布/编辑视频时可下拉选择目标归属存储节点，上传视频时自动推送至指定服务器。
-- **可视化日志与设备管理**：支持全站 PV/UV 访问日志追踪、设备 VIP 手动开通/赠送/取消，以及支付宝 RSA2 / USDT 钱包配置。
-
-### 🛡️ 主站后端控制面 (`packages/server`)
-- **控制面与存储面彻底解耦**：主站仅保存数据库与业务逻辑，大容量视频文件全量存放于分布式存储节点，主站本地物理磁盘零开销。
-- **第 50 帧封面自动抽取**：未提供封面时，自动通过 FFmpeg 捕获视频的第 50 帧（`select=eq(n\,49)`）作为高质 Poster 图片。
-- **双引擎变现支付系统**：
-  - 支付宝 WAP 网页支付（内置 Node.js 原生 RSA2 签名与回调验签算法）。
-  - USDT 链上支付（独创微毫小数自动偏移碰撞校验算法）。
-
-### 📦 分布式存储节点 (`packages/storage-node`)
-- **独立运行与极轻量**：独立运行于异地存储服务器（`3001` 或自定义端口），提供 HTTP Range 断点续传与拖拽 Seeking。
-- **Docker 极速部署**：提供 Dockerfile 与独立的 Docker Compose 编排，2 分钟即可在新服务器完成节点上线。
+Streams MP4 and HLS (`.m3u8`) through an authenticated proxy (custom `Referer`/`User-Agent` headers), ships with VIP subscription paywall, feed ads, comments, search autocomplete, i18n, dark/light theme, and deploy-time white-label customization — without touching code.
 
 ---
 
-## 🏗️ Monorepo 目录结构
+## ✨ Features
 
-系统基于 `pnpm workspace` 统一管理：
+### Client (`packages/client`) — mobile-first, PC-aware
+| Area | Highlights |
+|---|---|
+| **Feed** | Responsive grid (1–3 columns, full-width), hover-to-play preview with single-instance playback mutex, 16:9 adaptive aspect, infinite scroll |
+| **Player** | HLS.js / MP4 via backend proxy (custom headers), dynamic aspect ratio, seek hover sprite preview, vertical volume control, trial-then-paywall for VIP content |
+| **Search** | Debounced autocomplete with keyboard navigation & match highlighting |
+| **Community** | Comments (login required, rate-limited), email-verified accounts |
+| **Theme** | Dark/light mode following system preference, manual override toggle |
+| **i18n** | zh / en language packs, runtime white-label overrides (no rebuild) |
 
-```text
-mobile-paywall/
-├── .github/
-│   └── workflows/
-│       └── deploy.yml            # CI/CD 路径感知增量打包与 GHCR 镜像推送
-├── doc/
-│   ├── storage_expansion_phase1_plan.md  # 存储架构扩展第一阶段计划
-│   └── admin_optimization_plan.md         # 后台优化实施方案
+### Admin (`packages/admin`) — Element Plus dashboard
+- Video resource management (multi-storage-node aware)
+- Storage node management (independent VPS nodes, HTTP Range streaming)
+- Ad management (in-feed native placements), Menu/navigation management
+- Orders & revenue, Analytics (PV/UV, VIP conversions, watch metrics)
+- **Site copy customization** (i18n overrides), site settings, **runtime log-level control**
+
+### Server (`packages/server`) — Express + SQLite
+- Zero-dependency pattern: `node:sqlite`, built-in `crypto` (scrypt password hashing, HMAC)
+- Auth: email + password with **optional email verification** (Resend), token sessions (revocable, DB-backed)
+- Rate limiting (register/login/comment), anti-enumeration login errors
+- Payments: Ruyizf (channel-based) + USDT/TRC-20 crypto checkout (extensible adapter pattern)
+- REST API with enforced documentation sync (pre-commit hook)
+
+---
+
+## 🏗 Architecture
+
+```
+┌─────────────┐      ┌──────────────────────────────────────────────┐
+│  Browser    │─────►│  Main VPS (Docker Compose)                    │
+│  (Vue 3 SPA)│      │  ┌──────────┐   ┌──────────┐   ┌──────────┐  │
+└─────────────┘      │  │  client  │   │  admin   │   │  server  │  │
+                     │  │ (Nginx)  │   │ (Nginx)  │   │ (Express)│  │
+                     │  └──────────┘   └──────────┘   └──────────┘  │
+                     │        │             │             │  SQLite │
+                     │        └──────┬──────┘             │  + data │
+                     └───────────────┼────────────────────┘         │
+                                     ▼                              │
+                     ┌──────────────────────────────┐               │
+                     │  Storage Node (optional VPS) │◄──HTTP Range──┘
+                     │  /data/videos, chunk uploads │  (proxy/blobs)
+                     └──────────────────────────────┘
+```
+
+- **Client → Server**: JSON REST API (`/api/v1/*`), video streams proxied with custom headers (ArrayBuffer/Blob fetch → HLS.js/Plyr)
+- **Storage nodes**: independent servers holding media, streamed via HTTP Range; cluster HMAC auth
+
+---
+
+## 🧱 Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | Vue 3 (Composition API), Vite 8, Tailwind CSS 4, vue-i18n, Element Plus (admin) |
+| Backend | Node.js 24 (ESM), Express 4, `node:sqlite`, HLS.js, Plyr |
+| Data | SQLite (WAL), file-based uploads, optional distributed storage nodes |
+| Infra | Docker Compose, GitHub Actions (release/rollback), Nginx |
+| Payments | Ruyizf channel API, USDT (TRC-20) — adapter-ready for more |
+
+---
+
+## 🚀 Quick Start (Docker Compose)
+
+```bash
+git clone https://github.com/qualvey/mTube.git
+cd mTube
+cp .env.example .env            # fill in required values (see below)
+docker compose up -d --build
+```
+
+| Service | URL |
+|---|---|
+| Client | `http://localhost` |
+| Admin | `http://localhost/admin` (default `admin` / `admin123` — **change it**) |
+| API | `http://localhost/api/v1` |
+
+### Required configuration
+- `ADMIN_PASSWORD` — change from default
+- `CLUSTER_SECRET` — shared HMAC secret for storage nodes
+- `RUIZIF_MCH` / `RUIZIF_SECRET` — payment merchant credentials (empty = payments disabled)
+- `RESEND_API_KEY` — email verification (empty = dev mode, codes returned in API response)
+
+Full reference: [`.env.example`](.env.example) · [GitHub Actions Secrets guide](docs/GITHUB-SECRETS.md)
+
+---
+
+## 📦 Monorepo Layout
+
+```
 ├── packages/
-│   ├── client/                   # [C端] Vue 3 移动端极速视频流主站 (Port 5173 / Nginx)
-│   ├── admin/                    # [B端] Vue 3 Element Plus 管理控制台 (Port 5174 / Nginx)
-│   ├── server/                   # [主站 API] Express 控制面与 SQLite 数据库 (Port 3000)
-│   └── storage-node/             # [存储节点] 独立媒体文件存储与 50 帧抽帧服务 (Port 3001+)
-├── docker-compose.yml            # 主站 (Server, Client, Admin) 一键编排
-├── pnpm-workspace.yaml           # Monorepo 工作区定义
-└── package.json                  # 全局依赖与脚本
+│   ├── client/          # C-end SPA (Vue 3 + Tailwind + vue-i18n)
+│   ├── admin/           # Admin dashboard (Vue 3 + Element Plus)
+│   └── server/          # API server (Express + SQLite)
+├── docs/                # Deployment & secrets guides
+├── doc/                 # API specifications (client & admin)
+├── test/                # Integration scripts
+└── docker-compose.yml   # Single-VPS deployment
 ```
 
 ---
 
-## 🛠️ 技术栈
+## 🎨 White-Label Customization (no code changes)
 
-| 模块 | 核心技术/框架 |
-| :--- | :--- |
-| **前端 C端/B端** | Vue 3 (Composition API, `<script setup>`), Vite, Tailwind CSS, Element Plus, Plyr |
-| **主站 API 服务** | Node.js (ES Module), Express, Better-SQLite3, FFmpeg, Ytdl-Core |
-| **存储节点服务** | Node.js, Express, Multer, FFmpeg |
-| **包管理 & 部署** | pnpm Workspaces, Docker, Docker Compose, GitHub Actions, GHCR |
+Built for resellers & multi-tenant deployments:
 
----
-
-## 🚀 本地开发快速开始
-
-### 1. 环境准备
-- Node.js >= 18.0.0
-- pnpm >= 9.0.0
-- 本地系统需安装 [FFmpeg](https://ffmpeg.org/)（用于第 50 帧封面生成）
-
-### 2. 安装依赖
-在项目根目录运行：
-```bash
-pnpm install
-```
-
-### 3. 一键启动全量服务 (Parallel Run)
-```bash
-pnpm dev
-```
-此命令将并行启动所有服务：
-- 📱 **C 端主站**：`http://localhost:5173`
-- ⚙️ **B 端管理后台**：`http://localhost:5174`
-- 🚀 **主站 API**：`http://localhost:3000`
-- 📦 **存储节点 01**：`http://localhost:3001`
-
-也可以单独启动指定模块：
-```bash
-pnpm dev:client   # 仅启动 C端
-pnpm dev:admin    # 仅启动 B端
-pnpm dev:server   # 仅启动主站 API
-```
+- **Site copy** — override any i18n key from the admin dashboard (`/site-i18n`): brand name, buttons, notices, legal text. Stored in DB, applied at runtime via `mergeLocaleMessage`
+- **Branding** — site title/logo/hero via settings; swap `public/branding` assets per deployment
+- **Theme** — dark/light follows system, manual toggle; palette is CSS-variable driven
+- **Multi-tenant env** — every deployment-specific value (domains, merchants, mail) flows through environment variables / GitHub Secrets, never code
 
 ---
 
-## 🐳 生产环境部署最佳实践
+## 📚 Documentation
 
-按照生产环境最佳实践，**代码统一在 Monorepo 管理**，镜像通过 CI/CD 打包发布至 GHCR，主站与存储节点按需拉取。
+| Doc | Content |
+|---|---|
+| [API Specification](doc/api_specification.md) | All public endpoints (videos, auth, comments, payments, analytics…) |
+| [Admin API](doc/api/admin.md) | Admin dashboard endpoints |
+| [GitHub Secrets](docs/GITHUB-SECRETS.md) | CI/CD secret reference |
+| [Analytics System](docs/analytics-system-v1.md) | Event tracking & aggregation design |
 
-### 1. 主站服务器部署 (Server + Client + Admin)
-
-使用根目录的 [docker-compose.yml](file:///c:/Users/Ryu/Documents/mobile-paywall/mobile-paywall/docker-compose.yml)：
-
-```bash
-# 启动主站控制面服务
-docker compose up -d
-```
-
-### 2. 异地存储节点部署 (Storage Node 01, Node 02...)
-
-在任何新的独立存储服务器（VPS/物理机）上，使用 [packages/storage-node/docker-compose.yml](file:///c:/Users/Ryu/Documents/mobile-paywall/mobile-paywall/packages/storage-node/docker-compose.yml) 部署：
-
-```bash
-# 下载存储节点编排文件
-curl -fsSL https://raw.githubusercontent.com/qualvey/mTube/main/packages/storage-node/docker-compose.yml -o docker-compose.yml
-
-# 启动存储节点 (通过环境变量指定节点信息与硬盘挂载目录)
-PORT=3002 \
-NODE_ID=node-02 \
-NODE_NAME="香港存储节点 02" \
-STORAGE_DATA_PATH=/var/storage/uploads \
-docker compose up -d
-```
-
-启动完成后，在 **B 端管理后台 -> ⚙️ 系统设置 -> 多存储节点管理** 中点击 **【+ 注册新存储节点】**，输入 `node-02` 及 `http://<服务器IP>:3002` 即可上线！
-
-### 3. GitHub Actions CI/CD 增量部署与动态密钥注入
-项目内置 `.github/workflows/deploy.yml` 与 `.github/workflows/deploy-storage-node.yml`：
-- **增量构建**：精准识别改动路径（Path Filter），**仅构建修改过的模块镜像**并推送到 GHCR。
-- **动态密钥注入**：在部署时自动从 GitHub Secrets 中读取配置并生成远程 `.env`，**无需人工登录服务器手动修改配置文件**。
+API docs are **enforced** by a pre-commit hook — every route change must update docs or the commit is rejected.
 
 ---
 
-## 🔐 GitHub Actions Secrets 完整配置指南
+## 🗺 Roadmap
 
-请在 GitHub 仓库后台 (**Settings -> Secrets and variables -> Actions**) 配置以下环境变量：
+The skeleton is intentionally generic — plug in your own business layer:
 
-### 1. 主站服务器 (Main VPS) 核心配置
-| Secret 名称 | 必须 | 示例配置值 | 说明 |
-| :--- | :---: | :--- | :--- |
-| `VPS_HOST` | **是** | `23.141.204.202` | 主站 VPS 服务器的公网 IP 地址 |
-| `VPS_USER` | **是** | `root` | 主站 VPS 服务器 SSH 登录用户名 |
-| `VPS_SSH_KEY` | **是** | `-----BEGIN OPENSSH PRIVATE KEY-----...` | 主站 VPS 服务器 SSH 私钥 |
-| `VPS_PORT` | 否 | `22` (或自定义如 `52222`) | 主站 VPS 服务器 SSH 端口号 |
-| `ADMIN_USERNAME` | 否 | `admin` | 主站后台默认管理员账号 |
-| `ADMIN_PASSWORD` | 否 | `MySecurePass2026!` | 主站后台默认管理员密码 |
+- **Short-term**
+  - Admin comment moderation & sensitive-word filtering
+  - Comment likes, reply threads
+  - Search history & hot-search rankings
+- **Mid-term**
+  - User profile & avatar upload
+  - **UGC creator pipeline** (upload → transcode → review) — creator info UI is already behind a feature flag
+  - Third-party OAuth login (Google / WeChat)
+- **Long-term**
+  - Personalized recommendations (beyond tag/hotness ranking)
+  - Video transcoding & adaptive-bitrate ladder
+  - CDN integration, multi-region storage
+  - Community features (dashboards, follow, notifications)
 
-### 2. 集群通信安全密钥 (Cluster HMAC Secret)
-| Secret 名称 | 必须 | 示例配置值 | 说明 |
-| :--- | :---: | :--- | :--- |
-| `CLUSTER_SECRET` | **是** | `sk_cluster_9f8e7d6c5b4a` | 主站与所有存储节点间 **HMAC-SHA256 动态签名校验的集群统一密钥** |
-
-### 3. 存储节点 (Storage Node VPS) 专属配置
-*(若无异地节点，可留空自动回退复用主站 VPS Secrets)*
-| Secret 名称 | 必须 | 示例配置值 | 说明 |
-| :--- | :---: | :--- | :--- |
-| `STORAGE_NODE_HOST` | 异地 | `***REMOVED***` | 存储节点 VPS 服务器的公网 IP 地址 |
-| `STORAGE_NODE_USER` | 异地 | `root` 或 `linuxuser` | 存储节点 VPS 服务器 SSH 登录用户名 |
-| `STORAGE_NODE_SSH_KEY` | 异地 | `-----BEGIN OPENSSH PRIVATE KEY-----...` | 存储节点 VPS 服务器 SSH 私钥 |
-| `STORAGE_NODE_PORT` | 否 | `22` | 存储节点 VPS 服务器 SSH 端口号 |
-| `STORAGE_NODE_DEPLOY_PATH` | 否 | `/opt/storage_node` 或 `/root/storage-node` | 存储节点部署在 VPS 上的目标路径 |
-| `STORAGE_NODE_ID` | 建议 | `node-hk-02` | 存储节点唯一标识 ID |
-| `STORAGE_NODE_NAME` | 建议 | `香港 8TB 存储节点 02` | 存储节点后台显示名称 |
-| `MAIN_SERVER_URL` | **是** | `https://yourdomain.com` | **主站 API 控制面的公网 URL**（节点向此地址自动注册与心跳） |
-| `STORAGE_PUBLIC_URL` | **是** | `https://storage02.yourdomain.com` | **存储节点的真实公网/HTTPS 访问地址**（用于直传、视频播放与封面） |
+The account system, comment layer, and white-label engine are designed so these can be added as modules **without re-architecting**.
 
 ---
 
-## 📝 常用管理命令
+## 🤝 Contributing
 
-```bash
-# 全局代码打包检查
-pnpm build
+1. Fork & create a feature branch (`feat/`, `fix/` — Conventional Commits enforced)
+2. API changes must update `doc/api_specification.md` (pre-commit check)
+3. UI changes: **prototype first** (static HTML), then implement (see project `AGENTS.md`)
+4. Open a PR — CI runs build + docs sync checks
 
-# 单独打包管理后台
-pnpm build:admin
+## 📄 License
 
-# 单独打包 C 端
-pnpm build:client
-```
-
----
-
-## 📄 开源许可证
-
-本项目采用 [MIT License](LICENSE) 许可证。
+MIT — see [LICENSE](LICENSE) (file pending). Branding and merchant credentials are intentionally not included; configure via environment.
