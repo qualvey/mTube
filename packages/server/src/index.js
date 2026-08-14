@@ -12,6 +12,8 @@ import { config } from './config.js'
 import { logger, requestLoggerMiddleware } from './logger.js'
 import { sendResponse } from './utils/response.js'
 import { issueAdminToken, requireAdminAuth, adminAuthMiddleware } from './middleware/adminAuth.js'
+import { hashPassword, verifyPassword, createUserToken, publicUser, requireUserAuth } from './middleware/userAuth.js'
+import { rateLimit, ipKey } from './utils/rateLimit.js'
 import { getCountryCode } from './geoip.js'
 import paywallRouter from './routes/paywall.js'
 
@@ -715,6 +717,88 @@ app.get('/api/v1/videos/suggest', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 8, 20)
   const suggestions = q ? db.suggestVideos(q, lang, limit) : []
   sendResponse(res, suggestions)
+})
+
+// ── 用户认证（评论身份体系）────────────────────────────────
+// 注册：邮箱 + 密码（≥8 位），注册即登录
+app.post('/api/v1/auth/register',
+  rateLimit({ windowMs: 60000, max: 5, keyFn: ipKey, message: '注册过于频繁，请稍后再试' }),
+  (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+    const nickname = String(req.body?.nickname || '').trim().slice(0, 24)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return sendResponse(res, null, 400, '邮箱格式不正确')
+    }
+    if (password.length < 8) return sendResponse(res, null, 400, '密码至少 8 位')
+    if (db.findUserByEmail(email)) return sendResponse(res, null, 409, '该邮箱已注册')
+    const user = db.createUser({
+      email,
+      passwordHash: hashPassword(password),
+      nickname: nickname || email.split('@')[0]
+    })
+    const { token, expiresAt } = createUserToken(user.id)
+    sendResponse(res, { user: publicUser(user), token, expiresAt }, 201, '注册成功')
+  }
+)
+
+// 登录：统一错误文案防账号枚举
+app.post('/api/v1/auth/login',
+  rateLimit({
+    windowMs: 60000, max: 10,
+    keyFn: (req) => `${ipKey(req)}|${String(req.body?.email || '').trim().toLowerCase()}`,
+    message: '尝试过于频繁，请稍后再试'
+  }),
+  (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+    const user = db.findUserByEmail(email)
+    if (!user || !verifyPassword(password, user.password_hash)) {
+      return sendResponse(res, null, 401, '邮箱或密码错误')
+    }
+    if (user.status !== 'active') return sendResponse(res, null, 403, '账号已被禁用')
+    const { token, expiresAt } = createUserToken(user.id)
+    sendResponse(res, { user: publicUser(user), token, expiresAt }, 200, '登录成功')
+  }
+)
+
+// 登出：吊销当前会话
+app.post('/api/v1/auth/logout', requireUserAuth, (req, res) => {
+  db.deleteSession(req.user.tokenHash)
+  sendResponse(res, { success: true }, 200, '已退出登录')
+})
+
+// 当前登录用户信息
+app.get('/api/v1/auth/me', requireUserAuth, (req, res) => {
+  sendResponse(res, publicUser(req.user))
+})
+
+// ── 评论（登录后发表，防滥评）──────────────────────────────
+// 评论列表（公开，游客可看）
+app.get('/api/v1/videos/:id/comments', (req, res) => {
+  const page = parseInt(req.query.page) || 1
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50)
+  sendResponse(res, db.getCommentsByVideo(req.params.id, page, limit))
+})
+
+// 发表评论（登录 + 限流：每用户 10 条/分钟）
+app.post('/api/v1/videos/:id/comments',
+  requireUserAuth,
+  rateLimit({ windowMs: 60000, max: 10, keyFn: (req) => `cmt:${req.user.id}`, message: '评论太频繁了，歇会儿再聊' }),
+  (req, res) => {
+    const content = String(req.body?.content || '').trim()
+    if (!content) return sendResponse(res, null, 400, '评论内容不能为空')
+    if (content.length > 500) return sendResponse(res, null, 400, '评论最多 500 字')
+    const comment = db.addComment({ videoId: req.params.id, userId: req.user.id, content })
+    sendResponse(res, comment, 201, '评论成功')
+  }
+)
+
+// 删除自己的评论
+app.delete('/api/v1/comments/:id', requireUserAuth, (req, res) => {
+  const ok = db.deleteComment(req.params.id, req.user.id)
+  if (!ok) return sendResponse(res, null, 404, '评论不存在或无权删除')
+  sendResponse(res, { success: true }, 200, '评论已删除')
 })
 
 app.get('/api/v1/videos/tag/:tag', (req, res) => {

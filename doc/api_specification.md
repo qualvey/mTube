@@ -305,6 +305,45 @@
 - **说明**：带限流（429）；分析系统设计详见 `docs/analytics-system-v1.md`。
 - **响应**：`200`，`data` 为写入统计结果
 
+### 2.15 用户注册
+- **请求**:`POST /api/v1/auth/register`
+- **请求体**（JSON）:
+  - `email` (string, 必填) - 邮箱（唯一，自动小写）
+  - `password` (string, 必填) - 密码，至少 8 位
+  - `nickname` (string, 可选, ≤24 字符) - 昵称；缺省用邮箱前缀
+- **响应**:注册即登录，返回用户信息 + 会话 token
+```json
+{
+  "code": 201,
+  "message": "注册成功",
+  "data": {
+    "user": { "id": "usr_xxx", "email": "a@b.com", "nickname": "abc", "avatar": "", "createdAt": "..." },
+    "token": "usr_xxxxx",
+    "expiresAt": "2026-08-21T12:00:00.000Z"
+  }
+}
+```
+- **限流**:同 IP 5 次/分钟；密码 scrypt 哈希存储，不存明文
+
+### 2.16 用户登录
+- **请求**:`POST /api/v1/auth/login`
+- **请求体**（JSON）: `email` + `password`
+- **响应**:`200`，结构同注册（token 有效期默认 7 天，可 `AUTH_TOKEN_TTL_DAYS` 覆盖）
+- **说明**:邮箱或密码错误统一返回 `401 邮箱或密码错误`（防账号枚举）；限流同 IP+邮箱 10 次/分钟
+
+### 2.17 登出 / 当前用户
+- **登出**:`POST /api/v1/auth/logout`（Bearer token，吊销当前会话）
+- **当前用户**:`GET /api/v1/auth/me`（Bearer token，返回 `data` 为用户信息）
+- **认证方式**:所有需登录接口带 `Authorization: Bearer <token>`
+
+### 2.18 评论
+- **列表（公开）**:`GET /api/v1/videos/:id/comments?page=&limit=`（limit ≤50，默认 20；按时间倒序，分页结构与视频列表一致）
+- **发表（需登录）**:`POST /api/v1/videos/:id/comments`，请求体 `{ "content": "..." }`（1~500 字）
+  - 限流：每用户 10 条/分钟（防滥评）
+  - 响应 `201`，`data` 为评论对象（含 `nickname`/`avatar`）
+- **删除（仅本人）**:`DELETE /api/v1/comments/:id`（需登录；他人评论返回 404）
+- **状态**:`status` 字段预留审核流（`PUBLISHED`/`PENDING`/`HIDDEN`），当前默认直接发布，管理端审核后置
+
 ---
 
 ## 三、 付费墙、VIP 与支付引擎接口

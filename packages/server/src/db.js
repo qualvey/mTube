@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 import { DatabaseSync } from 'node:sqlite'
 
@@ -297,6 +298,37 @@ database.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_first ON sessions (firstAt);
   CREATE INDEX IF NOT EXISTS idx_sessions_visitor ON sessions (visitorId);
+
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    nickname TEXT DEFAULT '',
+    avatar TEXT DEFAULT '',
+    status TEXT DEFAULT 'active',
+    createdAt TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    tokenHash TEXT UNIQUE NOT NULL,
+    expiresAt TEXT NOT NULL,
+    createdAt TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS comments (
+    id TEXT PRIMARY KEY,
+    videoId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT DEFAULT 'PUBLISHED',
+    likes INTEGER DEFAULT 0,
+    createdAt TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(videoId, createdAt DESC);
+  CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(userId);
 
   CREATE TABLE IF NOT EXISTS storage_nodes (
     id TEXT PRIMARY KEY,
@@ -907,6 +939,91 @@ export const db = {
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .slice(0, limit)
       .map(([word]) => word)
+  },
+
+  // ── 用户（评论身份）──────────────────────────────────────
+  findUserByEmail(email) {
+    return database.prepare('SELECT * FROM users WHERE email = ?').get(String(email || '').trim().toLowerCase())
+  },
+
+  getUserById(id) {
+    return database.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  },
+
+  createUser({ email, passwordHash, nickname }) {
+    const id = `usr_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const createdAt = new Date().toISOString()
+    database.prepare(
+      'INSERT INTO users (id, email, password_hash, nickname, avatar, status, createdAt) VALUES (?, ?, ?, ?, \'\', \'active\', ?)'
+    ).run(id, String(email).trim().toLowerCase(), passwordHash, nickname, createdAt)
+    return this.getUserById(id)
+  },
+
+  // ── 会话 ──────────────────────────────────────────────────
+  createSession(userId, tokenHash, expiresAt) {
+    const id = `ses_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const createdAt = new Date().toISOString()
+    database.prepare(
+      'INSERT INTO user_sessions (id, userId, tokenHash, expiresAt, createdAt) VALUES (?, ?, ?, ?, ?)'
+    ).run(id, userId, tokenHash, expiresAt, createdAt)
+    return id
+  },
+
+  findSessionByTokenHash(tokenHash) {
+    return database.prepare(`
+      SELECT s.id AS sessionId, s.tokenHash, s.expiresAt, u.id, u.email, u.nickname, u.avatar, u.status
+      FROM user_sessions s JOIN users u ON u.id = s.userId
+      WHERE s.tokenHash = ?
+    `).get(tokenHash)
+  },
+
+  deleteSession(tokenHash) {
+    return database.prepare('DELETE FROM user_sessions WHERE tokenHash = ?').run(tokenHash).changes > 0
+  },
+
+  deleteUserSessions(userId) {
+    return database.prepare('DELETE FROM user_sessions WHERE userId = ?').run(userId).changes
+  },
+
+  // ── 评论 ──────────────────────────────────────────────────
+  addComment({ videoId, userId, content }) {
+    const id = `cmt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const createdAt = new Date().toISOString()
+    database.prepare(
+      'INSERT INTO comments (id, videoId, userId, content, status, likes, createdAt) VALUES (?, ?, ?, ?, \'PUBLISHED\', 0, ?)'
+    ).run(id, videoId, userId, content, createdAt)
+    return this.getCommentById(id)
+  },
+
+  getCommentById(id) {
+    return database.prepare(`
+      SELECT c.id, c.videoId, c.userId, c.content, c.status, c.likes, c.createdAt,
+             u.nickname, u.avatar
+      FROM comments c LEFT JOIN users u ON u.id = c.userId
+      WHERE c.id = ?
+    `).get(id)
+  },
+
+  getCommentsByVideo(videoId, page = 1, limit = 20) {
+    const total = database.prepare(
+      "SELECT COUNT(*) AS c FROM comments WHERE videoId = ? AND status != 'HIDDEN'"
+    ).get(videoId).c
+    const offset = (page - 1) * limit
+    const items = database.prepare(`
+      SELECT c.id, c.videoId, c.userId, c.content, c.status, c.likes, c.createdAt,
+             u.nickname, u.avatar
+      FROM comments c LEFT JOIN users u ON u.id = c.userId
+      WHERE c.videoId = ? AND c.status != 'HIDDEN'
+      ORDER BY c.createdAt DESC
+      LIMIT ? OFFSET ?
+    `).all(videoId, limit, offset)
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) || 1 }
+  },
+
+  /** 删除评论：仅本人（管理员后置）；返回是否删除 */
+  deleteComment(id, userId) {
+    const r = database.prepare('DELETE FROM comments WHERE id = ? AND userId = ?').run(id, userId)
+    return r.changes > 0
   },
 
   getVideoById(id, lang) {
