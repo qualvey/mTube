@@ -115,6 +115,23 @@ export const videoService = {
     return { items, total: mockFallbackVideos.length, page, limit, totalPages: Math.ceil(mockFallbackVideos.length / limit) }
   },
 
+  // Fetch search suggestions (autocomplete) from backend
+  async getSuggestions(q, limit = 8) {
+    try {
+      const params = new URLSearchParams({ q })
+      params.append('limit', limit)
+      params.append('lang', getCurrentLocale())
+      const res = await fetch(`/api/v1/videos/suggest?${params.toString()}`)
+      if (res.ok) {
+        const json = await res.json()
+        if (json && Array.isArray(json.data)) return json.data
+      }
+    } catch (e) {
+      console.warn('Suggestion fetch failed:', e)
+    }
+    return []
+  },
+
   // Fetch all tags with video counts
   async getTags() {
     try {

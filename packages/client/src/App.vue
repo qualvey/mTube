@@ -18,10 +18,10 @@
 
       <router-link to="/" class="flex items-center gap-2 shrink-0">
         <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-red-600 to-yellow-500 flex items-center justify-center font-black text-black text-sm shadow-md">
-          ▶
+          91
         </div>
         <span class="font-extrabold text-base tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-300 hidden sm:inline">
-          StreamVIP
+          91色骚网
         </span>
       </router-link>
 
@@ -35,6 +35,8 @@
           type="text"
           :placeholder="t('feed.searchPlaceholder')"
           @input="onSearchInput"
+          @keydown="onSearchKeydown"
+          @focus="onSearchFocus"
           class="w-full bg-white/10 border border-white/15 rounded-full pl-9 pr-8 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 focus:ring-1 focus:ring-yellow-500/30 transition-all"
         />
         <button
@@ -47,6 +49,34 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+
+        <!-- 搜索实时建议下拉（autocomplete） -->
+        <div
+          v-if="suggestOpen && suggestions.length"
+          class="absolute top-full mt-2 inset-x-0 z-50 bg-zinc-900/95 backdrop-blur-md border border-zinc-700/60 rounded-xl shadow-2xl overflow-hidden"
+        >
+          <ul role="listbox" class="py-1 max-h-72 overflow-y-auto">
+            <li
+              v-for="(word, i) in suggestions"
+              :key="word"
+              role="option"
+              :aria-selected="i === highlightIndex"
+              class="px-3 py-2 flex items-center gap-2.5 cursor-pointer text-sm transition-colors"
+              :class="i === highlightIndex ? 'bg-white/10 text-white' : 'text-zinc-300 hover:bg-white/5'"
+              @mousedown.prevent="applySuggestion(word)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-zinc-500 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
+              </svg>
+              <span class="truncate">
+                <template v-for="(seg, si) in highlightSegments(word)" :key="si">
+                  <mark v-if="si === 1 && seg" class="bg-transparent text-yellow-400 font-bold">{{ seg }}</mark>
+                  <template v-else>{{ seg }}</template>
+                </template>
+              </span>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div class="flex items-center gap-2 shrink-0">
@@ -201,8 +231,91 @@ const searchInput = ref('')
 const searchTerm = ref('')
 let searchDebounceTimer = null
 
+// ── 搜索实时建议（autocomplete）────────────────────────────
+const suggestions = ref([])
+const suggestOpen = ref(false)
+const highlightIndex = ref(-1)
+let suggestSeq = 0
+let suggestTimer = null
+
+/** 拉取联想词（150ms 防抖由 onSearchInput 控制），带竞态保护 */
+const fetchSuggestions = async () => {
+  const q = searchInput.value.trim()
+  if (!q) {
+    suggestions.value = []
+    suggestOpen.value = false
+    return
+  }
+  const seq = ++suggestSeq
+  const words = await videoService.getSuggestions(q)
+  if (seq !== suggestSeq) return
+  suggestions.value = words
+  suggestOpen.value = true
+  highlightIndex.value = -1
+}
+
+/** 点击 / Enter 选中建议词：立即搜索 */
+const applySuggestion = (word) => {
+  searchInput.value = word
+  suggestions.value = []
+  suggestOpen.value = false
+  highlightIndex.value = -1
+  if (searchTerm.value !== word) searchTerm.value = word
+}
+
+/** 键盘导航：↑↓ 选择、Enter 确认、Esc 关闭 */
+const onSearchKeydown = (e) => {
+  if (e.key === 'Escape') {
+    suggestOpen.value = false
+    highlightIndex.value = -1
+    return
+  }
+  const hasList = suggestOpen.value && suggestions.value.length > 0
+  if (!hasList) return
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    highlightIndex.value = (highlightIndex.value + 1) % suggestions.value.length
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    highlightIndex.value = highlightIndex.value <= 0 ? suggestions.value.length - 1 : highlightIndex.value - 1
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (highlightIndex.value >= 0) {
+      applySuggestion(suggestions.value[highlightIndex.value])
+    } else if (searchTerm.value !== searchInput.value.trim()) {
+      // 无高亮：立即执行当前输入搜索
+      searchTerm.value = searchInput.value.trim()
+      suggestOpen.value = false
+    }
+  }
+}
+
+/** 失焦后重新聚焦：若已有建议词则重新打开下拉 */
+const onSearchFocus = () => {
+  if (suggestions.value.length && searchInput.value.trim()) suggestOpen.value = true
+}
+
+/** 匹配词高亮分段：返回 [前缀, 匹配段, 后缀] */
+const highlightSegments = (word) => {
+  const term = searchInput.value.trim().toLowerCase()
+  if (!term) return [word]
+  const idx = word.toLowerCase().indexOf(term)
+  if (idx === -1) return [word]
+  return [word.slice(0, idx), word.slice(idx, idx + term.length), word.slice(idx + term.length)]
+}
+
+/** 输入：建议 150ms 防抖，搜索 300ms 防抖（原逻辑） */
 const onSearchInput = () => {
   clearTimeout(searchDebounceTimer)
+  clearTimeout(suggestTimer)
+  if (!searchInput.value.trim()) {
+    suggestions.value = []
+    suggestOpen.value = false
+    highlightIndex.value = -1
+    if (searchTerm.value !== '') searchTerm.value = ''
+    return
+  }
+  suggestTimer = setTimeout(fetchSuggestions, 150)
   searchDebounceTimer = setTimeout(() => {
     if (searchTerm.value === searchInput.value.trim()) return
     searchTerm.value = searchInput.value.trim()
@@ -211,8 +324,12 @@ const onSearchInput = () => {
 
 const clearSearch = () => {
   clearTimeout(searchDebounceTimer)
+  clearTimeout(suggestTimer)
   searchInput.value = ''
   searchTerm.value = ''
+  suggestions.value = []
+  suggestOpen.value = false
+  highlightIndex.value = -1
 }
 const langToggleLabel = ref(getToggleLabel())
 

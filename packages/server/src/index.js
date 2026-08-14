@@ -708,6 +708,15 @@ app.get('/api/v1/menus', (req, res) => {
   sendResponse(res, db.getMenuTree())
 })
 
+app.get('/api/v1/videos/suggest', (req, res) => {
+  // 搜索实时建议（联想词）：q 必填，lang 多语言，limit 默认 8 上限 20
+  const q = String(req.query.q || '').trim().slice(0, 50)
+  const lang = req.query.lang || null
+  const limit = Math.min(parseInt(req.query.limit) || 8, 20)
+  const suggestions = q ? db.suggestVideos(q, lang, limit) : []
+  sendResponse(res, suggestions)
+})
+
 app.get('/api/v1/videos/tag/:tag', (req, res) => {
   const { tag } = req.params
   const videoList = db.getVideos({ tag, lang: req.query.lang })

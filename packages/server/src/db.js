@@ -880,6 +880,35 @@ export const db = {
     return results
   },
 
+  /**
+   * 搜索实时建议（联想词）：匹配翻译后标题 + 标签，按热度（validViews）排序去重
+   */
+  suggestVideos(q, lang = null, limit = 8) {
+    const term = String(q || '').trim().toLowerCase()
+    if (!term) return []
+    // 无分页调用：返回数组（已应用语言翻译 + validViews）
+    const videos = this.getVideos({ lang })
+    const scored = new Map() // word -> score
+    for (const v of videos) {
+      const heat = 1 + Math.min(Number(v.validViews) || 0, 1000)
+      const title = v.title ? String(v.title).trim() : ''
+      if (title && title.toLowerCase().includes(term)) {
+        scored.set(title, (scored.get(title) || 0) + heat)
+      }
+      const tags = Array.isArray(v.tags) ? v.tags : []
+      for (const t of tags) {
+        const tag = String(t).trim()
+        if (tag && tag.toLowerCase().includes(term)) {
+          scored.set(tag, (scored.get(tag) || 0) + heat)
+        }
+      }
+    }
+    return [...scored.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, limit)
+      .map(([word]) => word)
+  },
+
   getVideoById(id, lang) {
     const row = database.prepare(`
       SELECT videos.*,
