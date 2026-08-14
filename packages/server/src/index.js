@@ -25,7 +25,7 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 app.set('trust proxy', true)
-const PORT = 3000
+const PORT = config.port
 
 
 const uploadsDir = path.resolve(__dirname, '../public/uploads')

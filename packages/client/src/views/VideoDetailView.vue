@@ -89,6 +89,9 @@
                 {{ video.description }}
               </div>
             </div>
+
+            <!-- 评论区 -->
+            <CommentSection :video-id="video.id" />
           </div>
 
           <!-- Right: Related Videos -->
@@ -143,6 +146,7 @@ import { ref, computed, watch, onMounted, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MemoryVideoPlayer from '../components/MemoryVideoPlayer.vue'
+import CommentSection from '../components/CommentSection.vue'
 import { videoService } from '../services/videoService'
 import { trackEvent } from '../services/analyticsService'
 

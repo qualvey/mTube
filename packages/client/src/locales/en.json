@@ -115,5 +115,38 @@
     "errRestoreFail": "Order verification failed",
     "errNetwork": "Network error, please try again later",
     "errPay": "Failed to initiate payment, please retry"
+  },
+  "auth": {
+    "login": "Sign in",
+    "register": "Sign up",
+    "logout": "Sign out",
+    "email": "Email",
+    "emailPlaceholder": "you@example.com",
+    "password": "Password (min 8 chars)",
+    "passwordPlaceholder": "Enter your password",
+    "nickname": "Nickname",
+    "nicknamePlaceholder": "Pick a nickname",
+    "submitting": "Please wait...",
+    "switchToRegister": "Don't have an account? Sign up",
+    "switchToLogin": "Already have an account? Sign in",
+    "close": "Close"
+  },
+  "comment": {
+    "title": "Comments",
+    "loginPrompt": "Sign in to join the discussion",
+    "placeholder": "Say something...",
+    "submit": "Post",
+    "submitting": "Posting...",
+    "failed": "Failed to post, try again later",
+    "empty": "No comments yet. Be the first!",
+    "loadMore": "Load more",
+    "delete": "Delete",
+    "anonymous": "Anonymous",
+    "time": {
+      "justNow": "Just now",
+      "minutes": "{n}m ago",
+      "hours": "{n}h ago",
+      "days": "{n}d ago"
+    }
   }
 }

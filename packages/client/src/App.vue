@@ -484,6 +484,9 @@ onMounted(async () => {
   // 分类标签 + 导航菜单（header 热门 tag / 左侧菜单 / 抽屉共用）
   fetchTagsAndMenus()
 
+  // 恢复登录态（评论身份）
+  loadMe()
+
   // Explicitly pull notice from backend REST API GET /api/v1/notice
   fetchNotice()
 

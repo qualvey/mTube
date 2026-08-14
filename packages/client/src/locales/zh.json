@@ -115,5 +115,38 @@
     "errRestoreFail": "订单验证失败",
     "errNetwork": "网络请求失败，请稍后再试",
     "errPay": "支付发起失败，请稍后重试"
+  },
+  "auth": {
+    "login": "登录",
+    "register": "注册",
+    "logout": "退出登录",
+    "email": "邮箱",
+    "emailPlaceholder": "you@example.com",
+    "password": "密码（至少 8 位）",
+    "passwordPlaceholder": "请输入密码",
+    "nickname": "昵称",
+    "nicknamePlaceholder": "给自己起个名字",
+    "submitting": "请稍候...",
+    "switchToRegister": "没有账号？去注册",
+    "switchToLogin": "已有账号？去登录",
+    "close": "关闭"
+  },
+  "comment": {
+    "title": "评论",
+    "loginPrompt": "登录后即可参与评论",
+    "placeholder": "说点什么...",
+    "submit": "发表",
+    "submitting": "发表中...",
+    "failed": "评论失败，请稍后再试",
+    "empty": "暂无评论，快来抢沙发",
+    "loadMore": "加载更多",
+    "delete": "删除",
+    "anonymous": "匿名用户",
+    "time": {
+      "justNow": "刚刚",
+      "minutes": "{n} 分钟前",
+      "hours": "{n} 小时前",
+      "days": "{n} 天前"
+    }
   }
 }
