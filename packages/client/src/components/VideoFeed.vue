@@ -95,17 +95,19 @@
 
     <!-- Video Feed List -->
     <div v-else class="flex flex-col gap-6">
-      <VideoCard
-        v-for="video in videos"
-        :key="video.id"
-        :video="video"
-        :is-vip-unlocked="isVip"
-        :paywall-enabled="paywallEnabled"
-        :active="activeVideoId === video.id"
-        @trigger-paywall="$emit('trigger-paywall', $event)"
-        @request-activate="onRequestActivate"
-        @request-pause="onRequestPause"
-      />
+      <template v-for="item in displayItems" :key="item.__isAd ? 'ad-' + item.id : item.id">
+        <AdCard v-if="item.__isAd" :ad="item" />
+        <VideoCard
+          v-else
+          :video="item"
+          :is-vip-unlocked="isVip"
+          :paywall-enabled="paywallEnabled"
+          :active="activeVideoId === item.id"
+          @trigger-paywall="$emit('trigger-paywall', $event)"
+          @request-activate="onRequestActivate"
+          @request-pause="onRequestPause"
+        />
+      </template>
 
       <!-- Infinite Scroll Sentinel + Loading More Indicator -->
       <div ref="sentinelRef" class="flex flex-col items-center py-4 gap-3">
@@ -140,6 +142,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import VideoCard from './VideoCard.vue'
+import AdCard from './AdCard.vue'
 import { videoService } from '../services/videoService'
 import { getCurrentLocale, LOCALE_CHANGED_EVENT } from '../i18n'
 
@@ -182,6 +185,56 @@ const searchTerm = ref('')
 let searchDebounceTimer = null
 // 请求竞态保护：只认最后一次发起的请求结果
 let requestSeq = 0
+
+// ── 广告（信息流原生插卡）──
+const ads = ref([])
+const adsEnabled = ref(false)
+const adsFeedInterval = ref(6)
+
+/**
+ * 拉取广告配置（总开关 + 间隔）与当前广告列表。
+ * 展示规则：adsEnabled 且（收费模式关闭 或 非 VIP）——VIP 免广告是会员权益。
+ */
+const fetchAdConfig = async () => {
+  try {
+    const res = await fetch('/api/v1/settings')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && json.data) {
+        adsEnabled.value = json.data.adsEnabled === true || json.data.adsEnabled === 'true'
+        adsFeedInterval.value = Math.max(2, Number(json.data.adsFeedInterval) || 6)
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to fetch ad config:', e)
+  }
+  if (adsEnabled.value) {
+    ads.value = await videoService.getAds('feed', false)
+  }
+}
+
+/** 是否展示广告：总开关开 + （免费模式 或 非 VIP） */
+const showAds = computed(() => adsEnabled.value && !(props.paywallEnabled && props.isVip))
+
+/**
+ * 交错渲染列表：每 adsFeedInterval 条视频插 1 条广告；
+ * 按当前页轮换广告顺序，避免每页都从第一条开始。
+ */
+const displayItems = computed(() => {
+  if (!showAds.value || !ads.value.length) return videos.value
+  const interval = Math.max(2, adsFeedInterval.value)
+  const items = []
+  const offset = ((currentPage.value - 1) * Math.ceil(LIMIT / interval)) % ads.value.length
+  let adIndex = offset
+  videos.value.forEach((v, i) => {
+    items.push(v)
+    if ((i + 1) % interval === 0) {
+      items.push({ __isAd: true, ...ads.value[adIndex % ads.value.length] })
+      adIndex++
+    }
+  })
+  return items
+})
 
 /** 当前激活（拉流/播放）的视频 ID，同一时间只允许一个 */
 const activeVideoId = ref(null)
@@ -277,6 +330,7 @@ const setupScrollObserver = () => {
 
 onMounted(async () => {
   await loadPage(1, false)
+  fetchAdConfig()
   setupScrollObserver()
   window.addEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
 })

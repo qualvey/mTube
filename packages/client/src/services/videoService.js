@@ -160,6 +160,20 @@ export const videoService = {
     return { success: true }
   },
 
+  // Fetch ads for a placement (feed / preroll / midroll)
+  async getAds(placement = 'feed', isVip = false) {
+    try {
+      const res = await fetch(`/api/v1/ads?placement=${encodeURIComponent(placement)}&vip=${isVip ? 1 : 0}`)
+      if (res.ok) {
+        const json = await res.json()
+        if (json && json.data) return json.data
+      }
+    } catch (e) {
+      console.warn('Ads fetch failed:', e)
+    }
+    return []
+  },
+
   // Get dynamic paywall config from backend
   async getPaywallConfig() {
     try {

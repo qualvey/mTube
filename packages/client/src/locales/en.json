@@ -56,6 +56,10 @@
     "clearSearch": "Clear search",
     "allCategories": "All"
   },
+  "ad": {
+    "sponsored": "Ad",
+    "cta": "Learn More"
+  },
   "card": {
     "vipPreview": "VIP Preview {minutes}min",
     "trialEndedTitle": "Preview ended ({minutes}min)",

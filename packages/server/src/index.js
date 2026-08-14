@@ -694,6 +694,15 @@ app.get('/api/v1/tags', (req, res) => {
   sendResponse(res, tags)
 })
 
+// GET /api/v1/ads?placement=feed&vip=0|1 - 获取指定广告位当前生效的广告
+// placement: feed(信息流) / preroll(前贴片) / midroll(中插)；vip=1 表示请求方是 VIP（跳过仅免费用户的广告）
+app.get('/api/v1/ads', (req, res) => {
+  const placement = req.query.placement || 'feed'
+  const isVip = req.query.vip === '1' || req.query.vip === 'true'
+  const ads = db.getAds({ placement, isVip })
+  sendResponse(res, ads)
+})
+
 app.get('/api/v1/videos/tag/:tag', (req, res) => {
   const { tag } = req.params
   const videoList = db.getVideos({ tag, lang: req.query.lang })
@@ -722,6 +731,8 @@ app.get('/api/v1/settings', (req, res) => {
   const settings = db.getSettings(req.query.lang)
   sendResponse(res, {
     paywallEnabled: settings.paywallEnabled === true || settings.paywallEnabled === 'true',
+    adsEnabled: settings.adsEnabled === true || settings.adsEnabled === 'true',
+    adsFeedInterval: Number(settings.adsFeedInterval) || 6,
     heroImageUrl: settings.heroImageUrl,
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,
@@ -1099,6 +1110,32 @@ app.get('/api/v1/admin/videos', (req, res) => {
   // includeScheduled：管理端可见全部（含待发布的 SCHEDULED 队列），C 端接口默认隐藏
   const videos = db.getVideos({ includeScheduled: true })
   sendResponse(res, videos)
+})
+
+// ── 广告管理（CRUD）──────────────────────────────────────────────────────
+app.get('/api/v1/admin/ads', (req, res) => {
+  sendResponse(res, db.getAllAds())
+})
+
+app.post('/api/v1/admin/ads', (req, res) => {
+  const ad = db.addAd(req.body)
+  sendResponse(res, ad, 201, '广告已创建')
+})
+
+app.put('/api/v1/admin/ads/:id', (req, res) => {
+  const updated = db.updateAd(req.params.id, req.body)
+  if (!updated) {
+    return sendResponse(res, null, 404, '广告不存在')
+  }
+  sendResponse(res, updated, 200, '广告已更新')
+})
+
+app.delete('/api/v1/admin/ads/:id', (req, res) => {
+  const success = db.deleteAd(req.params.id)
+  if (!success) {
+    return sendResponse(res, null, 404, '广告不存在')
+  }
+  sendResponse(res, { success: true }, 200, '广告已删除')
 })
 
 app.post('/api/v1/admin/videos', (req, res) => {

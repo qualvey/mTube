@@ -111,6 +111,32 @@
     <!-- Player & Performance Configuration Card -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
+        <span class="font-bold text-slate-800">🎯 广告投放配置</span>
+      </template>
+
+      <el-form :model="settings" label-position="top">
+        <el-form-item label="启用信息流广告（C 端视频流插卡）">
+          <el-switch v-model="settings.adsEnabled" active-text="投放广告" inactive-text="不投放" />
+        </el-form-item>
+        <div v-if="settings.adsEnabled" class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 leading-relaxed mb-3">
+          广告仅对<b>非 VIP 用户</b>展示（VIP 免广告作为会员权益）。当前收费模式{{ settings.paywallEnabled ? '开启，VIP 用户免广告' : '关闭，所有用户均为免费身份（都会看到广告）' }}。
+        </div>
+
+        <el-form-item label="信息流广告间隔（每 N 条视频插 1 条广告）">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+            <el-input-number v-model="settings.adsFeedInterval" :min="2" :max="20" :step="1" />
+            <span class="text-xs text-slate-500">(默认 6，即每 6 条视频插入 1 条广告卡)</span>
+          </div>
+        </el-form-item>
+        <div class="text-xs text-slate-400">
+          广告素材与投放窗口在「广告管理」页面维护。前贴片 / 中插类型已预留数据结构，播放器接入后自动生效。
+        </div>
+      </el-form>
+    </el-card>
+
+    <!-- Player & Performance Configuration Card -->
+    <el-card class="rounded-2xl shadow-sm border-slate-200">
+      <template #header>
         <span class="font-bold text-slate-800">⚙️ 播放器试看与传输参数配置</span>
       </template>
 
@@ -171,7 +197,9 @@ const settings = ref({
   heroSubtitle: '滑动探索更多独家无删减内容',
   enableSeekPreview: true,
   uploadChunkConcurrency: 4,
-  activeStorageNodeUrl: 'https://storage02.91cso.com'
+  activeStorageNodeUrl: 'https://storage02.91cso.com',
+  adsEnabled: false,
+  adsFeedInterval: 6
 })
 
 const fetchSettings = async () => {

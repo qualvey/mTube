@@ -7,6 +7,7 @@ import VideosView from '../views/VideosView.vue'
 import StorageNodesView from '../views/StorageNodesView.vue'
 import OrdersView from '../views/OrdersView.vue'
 import SettingsView from '../views/SettingsView.vue'
+import AdsView from '../views/AdsView.vue'
 
 const routes = [
   {
@@ -50,6 +51,12 @@ const routes = [
         name: 'Orders',
         component: OrdersView,
         meta: { title: '营收与订单明细', icon: 'ShoppingCart' }
+      },
+      {
+        path: 'ads',
+        name: 'Ads',
+        component: AdsView,
+        meta: { title: '广告管理', icon: 'Promotion' }
       },
       {
         path: 'settings',

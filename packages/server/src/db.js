@@ -59,6 +59,23 @@ try {
 }
 
 database.exec(`
+  CREATE TABLE IF NOT EXISTS ads (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    type TEXT DEFAULT 'feed',
+    imageUrl TEXT DEFAULT '',
+    videoUrl TEXT DEFAULT '',
+    linkUrl TEXT DEFAULT '',
+    isVip INTEGER DEFAULT 0,
+    enabled INTEGER DEFAULT 1,
+    startAt TEXT DEFAULT NULL,
+    endAt TEXT DEFAULT NULL,
+    sortOrder INTEGER DEFAULT 0,
+    createdAt TEXT NOT NULL
+  );
+`)
+
+database.exec(`
   CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY,
     key TEXT NOT NULL,
@@ -480,6 +497,15 @@ export const getIpLocation = (ip, reqHeaders = {}) => {
   }
 
   return '公网 IP'
+}
+
+const formatAdRow = (row) => {
+  if (!row) return null
+  return {
+    ...row,
+    isVip: Boolean(row.isVip),
+    enabled: Boolean(row.enabled)
+  }
 }
 
 const formatVideoRow = (row) => {
@@ -1114,6 +1140,90 @@ export const db = {
     return result.changes > 0
   },
 
+  // ── 广告位 ──────────────────────────────────────────────────────────────
+  // type: feed(信息流原生卡) / preroll(前贴片) / midroll(中插) —— 后两者客户端暂未接入，字段预留
+  // 可见性：enabled=1 且处于 [startAt, endAt] 投放窗口内；目标人群 isVip=1 表示仅对免费用户投放
+  getAds(options = {}) {
+    const { placement = 'feed', isVip = false, limit = 20 } = options
+    const now = new Date().toISOString()
+    let rows = database.prepare(`
+      SELECT * FROM ads
+      WHERE enabled = 1 AND type = ?
+        AND (startAt IS NULL OR startAt <= ?)
+        AND (endAt IS NULL OR endAt >= ?)
+      ORDER BY sortOrder ASC, createdAt DESC
+    `).all(placement, now, now)
+
+    // 目标人群过滤：广告标记 isVip=1（仅免费用户）时，VIP 用户跳过；
+    // isVip=0 表示全部用户可见（但 C 端 VIP 免广告由全局开关控制）
+    if (isVip) {
+      rows = rows.filter(a => a.isVip !== 1)
+    }
+    return rows.slice(0, limit).map(formatAdRow)
+  },
+
+  getAllAds() {
+    return database.prepare('SELECT * FROM ads ORDER BY sortOrder ASC, createdAt DESC').all().map(formatAdRow)
+  },
+
+  addAd(data) {
+    const newId = `ad-${Date.now()}`
+    const stmt = database.prepare(`
+      INSERT INTO ads (id, title, type, imageUrl, videoUrl, linkUrl, isVip, enabled, startAt, endAt, sortOrder, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    stmt.run(
+      newId,
+      data.title || '未命名广告',
+      data.type === 'preroll' || data.type === 'midroll' ? data.type : 'feed',
+      data.imageUrl || '',
+      data.videoUrl || '',
+      data.linkUrl || '',
+      data.isVip ? 1 : 0,
+      data.enabled === false ? 0 : 1,
+      data.startAt ? String(data.startAt) : null,
+      data.endAt ? String(data.endAt) : null,
+      Number(data.sortOrder) || 0,
+      new Date().toISOString()
+    )
+    return this.getAdById(newId)
+  },
+
+  updateAd(id, data) {
+    const existing = this.getAdById(id)
+    if (!existing) return null
+    const stmt = database.prepare(`
+      UPDATE ads
+      SET title = ?, type = ?, imageUrl = ?, videoUrl = ?, linkUrl = ?, isVip = ?, enabled = ?, startAt = ?, endAt = ?, sortOrder = ?
+      WHERE id = ?
+    `)
+    stmt.run(
+      data.title !== undefined ? data.title : existing.title,
+      data.type === 'preroll' || data.type === 'midroll' ? data.type : (data.type || existing.type),
+      data.imageUrl !== undefined ? data.imageUrl : existing.imageUrl,
+      data.videoUrl !== undefined ? data.videoUrl : existing.videoUrl,
+      data.linkUrl !== undefined ? data.linkUrl : existing.linkUrl,
+      data.isVip ? 1 : 0,
+      data.enabled === false ? 0 : 1,
+      data.startAt !== undefined ? (data.startAt ? String(data.startAt) : null) : existing.startAt,
+      data.endAt !== undefined ? (data.endAt ? String(data.endAt) : null) : existing.endAt,
+      data.sortOrder !== undefined ? Number(data.sortOrder) || 0 : existing.sortOrder,
+      id
+    )
+    return this.getAdById(id)
+  },
+
+  deleteAd(id) {
+    const stmt = database.prepare('DELETE FROM ads WHERE id = ?')
+    const result = stmt.run(id)
+    return result.changes > 0
+  },
+
+  getAdById(id) {
+    const row = database.prepare('SELECT * FROM ads WHERE id = ?').get(id)
+    return row ? formatAdRow(row) : null
+  },
+
   getPlans(lang) {
     const rows = database.prepare('SELECT * FROM plans').all()
     const plans = rows.map(r => ({ ...r, isHot: Boolean(r.isHot) }))
@@ -1331,6 +1441,10 @@ export const db = {
     const settings = {
       // 收费模式全局开关（管理员控制）：false = 全站免费，付费墙/试看/VIP 全部停用
       paywallEnabled: false,
+      // 广告系统开关：false = 不投放任何广告；true = 按 adsFeedInterval 在信息流插卡
+      adsEnabled: false,
+      // 信息流广告间隔：每 N 条视频插 1 条广告（2-20）
+      adsFeedInterval: 6,
       enableSeekPreview: true,
       uploadChunkConcurrency: 4,
       heroImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
@@ -1344,10 +1458,10 @@ export const db = {
       customerServiceText: '如有支付问题或需要协助，请联系官方客服 Telegram: @StreamVIP_Support'
     }
     for (const r of rows) {
-      if (r.key === 'enableSeekPreview' || r.key === 'enableNotice' || r.key === 'paywallEnabled') {
+      if (r.key === 'enableSeekPreview' || r.key === 'enableNotice' || r.key === 'paywallEnabled' || r.key === 'adsEnabled') {
         settings[r.key] = r.value === 'true'
-      } else if (r.key === 'uploadChunkConcurrency') {
-        settings[r.key] = Number(r.value) || 4
+      } else if (r.key === 'uploadChunkConcurrency' || r.key === 'adsFeedInterval') {
+        settings[r.key] = Number(r.value) || (r.key === 'adsFeedInterval' ? 6 : 4)
       } else {
         settings[r.key] = r.value
       }

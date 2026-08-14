@@ -143,7 +143,31 @@
 - **路径参数**：`tag` (string, 必填) — 分类标签
 - **响应**：视频数组，结构同 2.1
 
-### 2.8 站点配置（公告/活动/Hero 等）
+### 2.8 获取广告（信息流/前贴片/中插）
+- **请求方式**：`GET /api/v1/ads`
+- **请求参数**：
+  - `placement` (string, 可选，默认 `feed`) — 广告位：`feed`(信息流原生) / `preroll`(前贴片) / `midroll`(中插)
+  - `vip` (`0`/`1`, 可选，默认 `0`) — 请求方是否 VIP；VIP 会跳过标记为「仅免费用户」的广告
+- **响应**：`data` 为广告数组，仅返回已启用且处于投放窗口内的广告：
+```json
+[
+  {
+    "id": "ad-1722589200000",
+    "title": "618 推广",
+    "type": "feed",
+    "imageUrl": "https://.../ad.jpg",
+    "videoUrl": "",
+    "linkUrl": "https://...",
+    "isVip": true,
+    "enabled": true,
+    "startAt": null,
+    "endAt": null,
+    "sortOrder": 0
+  }
+]
+```
+
+### 2.9 站点配置（公告/活动/Hero 等）
 - **请求方式**：`GET /api/v1/settings`（兼容别名 `/api/v1/site-config`、`/api/v1/paywall/config`）
 - **请求参数**：`lang` (string, 可选)
 - **响应示例**：
@@ -153,6 +177,8 @@
   "message": "success",
   "data": {
     "paywallEnabled": false,
+    "adsEnabled": false,
+    "adsFeedInterval": 6,
     "siteTitle": "StreamVIP - 独家超清视频流与VIP特权",
     "heroImageUrl": "...",
     "enableNotice": true,

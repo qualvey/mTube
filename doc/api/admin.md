@@ -228,6 +228,32 @@ GET /api/v1/admin/videos
 
 响应 `data` 为视频数组（含 id、title、poster、videoUrl、isVip、status、tags 等）。管理端返回**全部视频**（含 `status=SCHEDULED` 的定时发布队列，带 `publishAt` 字段），与 C 端只返回已发布不同。
 
+### 广告管理（CRUD）
+
+```
+GET /api/v1/admin/ads
+```
+
+返回全部广告（含已停用/未到投放窗口的）。字段：`id, title, type(feed/preroll/midroll), imageUrl, videoUrl, linkUrl, isVip(仅免费用户), enabled, startAt, endAt, sortOrder`。
+
+```
+POST /api/v1/admin/ads
+```
+
+Body：广告对象（`title` 必填；`type` 默认 `feed`；其余可选）。成功：`201`，`data` 为新建广告。
+
+```
+PUT /api/v1/admin/ads/:id
+```
+
+Body：需要更新的字段（部分更新）。成功：`200`；不存在：`404`。
+
+```
+DELETE /api/v1/admin/ads/:id
+```
+
+成功：`200`；不存在：`404`。
+
 ### 创建视频
 
 ```
@@ -389,6 +415,8 @@ GET /api/v1/admin/settings
 返回全部设置项（siteTitle、noticeContent、alipay 配置、crypto 配置、paywall 配置等）。
 
 **`paywallEnabled` (boolean)**：收费模式全局开关。`false` = 全站免费（C 端不展示 VIP/付费墙，支付接口除回调外返回 403）；`true` = 恢复收费。默认 `false`。
+
+**`adsEnabled` (boolean)**：信息流广告总开关，默认 `false`。**`adsFeedInterval` (number, 2-20)**：每 N 条视频插 1 条广告，默认 `6`。广告素材在「广告管理」页维护。
 
 ### 更新系统设置
 
