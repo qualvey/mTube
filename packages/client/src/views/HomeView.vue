@@ -43,9 +43,9 @@
     <ScrollTransition v-if="paywall.enabled && !paywall.isVip"  :progress="scrollProgress" :blur="paywall.showPaywall" />
 
     <!-- Paywall Trigger Footer Section -->
-    <!-- <div v-if="paywall.enabled && !paywall.isVip" class="py-16 w-full flex flex-col items-center justify-center bg-zinc-950/90 border-t border-zinc-800 text-center px-4">
-      <h4 class="text-xl font-bold text-white mb-2">{{ t('app.wantMoreTitle') }}</h4>
-      <p class="text-xs text-zinc-400 mb-6 max-w-xs">{{ t('app.wantMoreDesc') }}</p>
+    <!-- <div v-if="paywall.enabled && !paywall.isVip" class="py-16 w-full flex flex-col items-center justify-center bg-(--bg-page)/90 border-t border-(--border-subtle) text-center px-4">
+      <h4 class="text-xl font-bold text-(--text-primary) mb-2">{{ t('app.wantMoreTitle') }}</h4>
+      <p class="text-xs text-(--text-muted) mb-6 max-w-xs">{{ t('app.wantMoreDesc') }}</p>
       <button
         @click="paywall.showPaywall = true"
         class="px-8 py-3.5 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 text-black font-black text-sm rounded-2xl shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:scale-105 active:scale-95 transition-all"

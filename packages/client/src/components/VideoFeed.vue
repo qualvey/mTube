@@ -1,7 +1,7 @@
 <template>
   <div class="w-full px-[4vw] py-6 sm:py-8">
     <!-- Stream Header -->
-    <!-- <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+    <!-- <div class="flex items-center justify-between border-b border-(--border-subtle) pb-4">
       <div class="flex items-center gap-2">
         <div class="w-3 h-3 rounded-full bg-red-500 animate-ping"></div>
         <h3 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
@@ -11,28 +11,28 @@
     </div> -->
 
     <!-- Empty Search Result State -->
-    <div v-if="!loading && !loadingMore && videos.length === 0 && searchTerm" class="flex flex-col items-center py-14 text-zinc-500 gap-3">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 text-zinc-600">
+    <div v-if="!loading && !loadingMore && videos.length === 0 && searchTerm" class="flex flex-col items-center py-14 text-(--text-faint) gap-3">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 text-(--text-faint)">
         <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
       </svg>
       <p class="text-sm">{{ t('feed.searchNoResults') }}</p>
-      <button @click="$emit('clear-search')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl border border-zinc-700 transition-all">
+      <button @click="$emit('clear-search')" class="px-4 py-2 bg-(--bg-hover) hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl border border-(--border-subtle) transition-all">
         {{ t('feed.clearSearch') }}
       </button>
     </div>
 
     <!-- Skeleton Loaders (first page) -->
     <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-      <div v-for="n in 8" :key="n" class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-3 animate-pulse">
-        <div class="w-full aspect-video bg-zinc-800 rounded-xl"></div>
-        <div class="h-4 bg-zinc-800 rounded w-3/4"></div>
-        <div class="h-3 bg-zinc-800/60 rounded w-1/2"></div>
+      <div v-for="n in 8" :key="n" class="w-full bg-(--bg-card) border border-(--border-subtle) rounded-2xl p-4 flex flex-col gap-3 animate-pulse">
+        <div class="w-full aspect-video bg-(--bg-hover) rounded-xl"></div>
+        <div class="h-4 bg-(--bg-hover) rounded w-3/4"></div>
+        <div class="h-3 bg-(--bg-hover)/60 rounded w-1/2"></div>
         <div class="flex items-center justify-between pt-2">
           <div class="flex items-center gap-2">
-            <div class="w-7 h-7 rounded-full bg-zinc-800"></div>
-            <div class="h-3 bg-zinc-800 rounded w-20"></div>
+            <div class="w-7 h-7 rounded-full bg-(--bg-hover)"></div>
+            <div class="h-3 bg-(--bg-hover) rounded w-20"></div>
           </div>
-          <div class="h-6 bg-zinc-800 rounded w-16"></div>
+          <div class="h-6 bg-(--bg-hover) rounded w-16"></div>
         </div>
       </div>
     </div>
@@ -57,7 +57,7 @@
       <!-- Infinite Scroll Sentinel + Loading More Indicator -->
       <div ref="sentinelRef" class="col-span-full flex flex-col items-center py-4 gap-3">
         <!-- Loading More Spinner -->
-        <div v-if="loadingMore" class="flex items-center gap-2 text-zinc-500 text-xs">
+        <div v-if="loadingMore" class="flex items-center gap-2 text-(--text-faint) text-xs">
           <svg class="animate-spin w-4 h-4 text-yellow-500" viewBox="0 0 24 24" fill="none">
             <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
             <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -66,8 +66,8 @@
         </div>
 
         <!-- End of Feed -->
-        <div v-else-if="!hasMore" class="text-center py-6 text-zinc-500 text-xs flex flex-col items-center gap-2 border-t border-zinc-800/60 w-full">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-zinc-600">
+        <div v-else-if="!hasMore" class="text-center py-6 text-(--text-faint) text-xs flex flex-col items-center gap-2 border-t border-(--border-subtle)/60 w-full">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-(--text-faint)">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
           </svg>
           <span v-if="!isVip">{{ t('feed.endOfFeedVIP') }}</span>

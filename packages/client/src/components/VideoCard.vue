@@ -1,7 +1,7 @@
 <template>
   <div 
     ref="cardRef"
-    class="relative w-full rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 shadow-2xl transition-all duration-300 hover:border-zinc-700/80"
+    class="relative w-full rounded-2xl overflow-hidden bg-(--bg-card) border border-(--border-subtle)/80 shadow-2xl transition-all duration-300 hover:border-(--border-subtle)/80"
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
   >
@@ -69,34 +69,34 @@
           <span 
             v-for="tag in (typeof video.tags === 'string' ? JSON.parse(video.tags) : video.tags)" 
             :key="tag"
-            class="px-2 py-0.5 bg-zinc-800 text-zinc-300 text-[10px] font-medium rounded-md border border-zinc-700/50"
+            class="px-2 py-0.5 bg-(--bg-hover) text-(--text-secondary) text-[10px] font-medium rounded-md border border-(--border-subtle)/50"
           >
             #{{ tag }}
           </span>
         </div>
         <h4 
           @click="goToDetail"
-          class="text-sm font-bold text-white leading-snug line-clamp-2 cursor-pointer hover:text-yellow-400 transition-colors"
+          class="text-sm font-bold text-(--text-primary) leading-snug line-clamp-2 cursor-pointer hover:text-yellow-400 transition-colors"
           :title="t('card.openDetail')"
         >
           {{ video.title }}
         </h4>
       </div>
 
-      <div class="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+      <div class="flex items-center justify-between pt-2 border-t border-(--border-subtle)/80">
         <div v-if="showCreatorInfo" class="flex items-center gap-2.5">
           <img 
             :src="video.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop'" 
-            class="w-6 h-6 rounded-full object-cover border border-zinc-700 shadow-sm"
+            class="w-6 h-6 rounded-full object-cover border border-(--border-subtle) shadow-sm"
           />
           <div class="flex flex-col">
             <span class="text-xs font-bold text-zinc-200">{{ video.author }}</span>
-            <span class="text-[10px] text-zinc-500">{{ t('card.verifiedCreator') }}</span>
+            <span class="text-[10px] text-(--text-faint)">{{ t('card.verifiedCreator') }}</span>
           </div>
         </div>
 
         <div class="flex items-center gap-3">
-          <div class="flex items-center gap-1 text-xs text-zinc-400" :title="t('card.validViews')">
+          <div class="flex items-center gap-1 text-xs text-(--text-muted)" :title="t('card.validViews')">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12 18 18.75 12 18.75 2.25 12 2.25 12z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -105,7 +105,7 @@
           </div>
           <button 
             @click="handleLike" 
-            class="flex items-center gap-1 text-xs text-zinc-400 hover:text-red-400 transition-colors"
+            class="flex items-center gap-1 text-xs text-(--text-muted) hover:text-red-400 transition-colors"
             :class="{ 'text-red-500': isLiked }"
           >
             <svg xmlns="http://www.w3.org/2000/svg" :fill="isLiked ? 'currentColor' : 'none'" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">

@@ -1,13 +1,13 @@
 <template>
-  <div class="relative w-full h-screen bg-black overflow-hidden font-sans text-white">
+  <div class="relative w-full h-screen bg-(--bg-page) overflow-hidden font-sans text-(--text-primary)">
     <!-- Header Navbar -->
-    <header class="fixed top-0 inset-x-0 z-30 bg-gradient-to-b from-black/90 via-black/50 to-transparent backdrop-blur-md border-b border-white/5 flex flex-col">
+    <header class="fixed top-0 inset-x-0 z-30 bg-[image:var(--header-gradient)] backdrop-blur-md border-b border-(--border-subtle) flex flex-col">
       <!-- 第一行：菜单按钮 / logo / 搜索 / 右侧按钮 -->
       <div class="px-3 sm:px-4 py-2.5 flex items-center gap-2 w-full">
       <!-- 菜单按钮：移动端开抽屉 / PC 切换侧边栏 -->
       <button
         v-if="isHome"
-        class="w-9 h-9 shrink-0 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all active:scale-95"
+        class="w-9 h-9 shrink-0 rounded-xl bg-(--bg-input) hover:bg-(--bg-input) border border-white/15 text-(--text-primary) flex items-center justify-center transition-all active:scale-95"
         @click="onToggleMenu"
         :aria-label="t('feed.openCategories')"
       >
@@ -27,7 +27,7 @@
 
       <!-- 搜索框（仅首页） -->
       <div v-if="isHome" class="relative flex-1 min-w-0 max-w-md mx-auto">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-(--text-faint) pointer-events-none">
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
         </svg>
         <input
@@ -37,12 +37,12 @@
           @input="onSearchInput"
           @keydown="onSearchKeydown"
           @focus="onSearchFocus"
-          class="w-full bg-white/10 border border-white/15 rounded-full pl-9 pr-8 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 focus:ring-1 focus:ring-yellow-500/30 transition-all"
+          class="w-full bg-(--bg-input) border border-white/15 rounded-full pl-9 pr-8 py-1.5 text-sm text-(--text-primary) placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 focus:ring-1 focus:ring-yellow-500/30 transition-all"
         />
         <button
           v-if="searchInput"
           @click="clearSearch"
-          class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-zinc-700/80 hover:bg-zinc-600 flex items-center justify-center text-zinc-300 transition-all"
+          class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-zinc-700/80 hover:bg-zinc-600 flex items-center justify-center text-(--text-secondary) transition-all"
           :title="t('feed.clearSearch')"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3">
@@ -53,7 +53,7 @@
         <!-- 搜索实时建议下拉（autocomplete） -->
         <div
           v-if="suggestOpen && suggestions.length"
-          class="absolute top-full mt-2 inset-x-0 z-50 bg-zinc-900/95 backdrop-blur-md border border-zinc-700/60 rounded-xl shadow-2xl overflow-hidden"
+          class="absolute top-full mt-2 inset-x-0 z-50 bg-(--bg-card)/95 backdrop-blur-md border border-(--border-subtle)/60 rounded-xl shadow-2xl overflow-hidden"
         >
           <ul role="listbox" class="py-1 max-h-72 overflow-y-auto">
             <li
@@ -62,10 +62,10 @@
               role="option"
               :aria-selected="i === highlightIndex"
               class="px-3 py-2 flex items-center gap-2.5 cursor-pointer text-sm transition-colors"
-              :class="i === highlightIndex ? 'bg-white/10 text-white' : 'text-zinc-300 hover:bg-white/5'"
+              :class="i === highlightIndex ? 'bg-(--bg-input) text-(--text-primary)' : 'text-(--text-secondary) hover:bg-(--bg-input)'"
               @mousedown.prevent="applySuggestion(word)"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-zinc-500 shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-(--text-faint) shrink-0">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
               </svg>
               <span class="truncate">
@@ -83,7 +83,7 @@
         <!-- Language Switcher (Top Right) -->
         <button
           @click="handleToggleLang"
-          class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-black rounded-full backdrop-blur-md transition-all active:scale-95"
+          class="px-3 py-1.5 bg-(--bg-input) hover:bg-(--bg-input) border border-white/15 text-(--text-primary) text-xs font-black rounded-full backdrop-blur-md transition-all active:scale-95"
         >
           {{ langToggleLabel }}
         </button>
@@ -93,7 +93,7 @@
           <span class="hidden sm:inline text-xs font-bold text-zinc-200 max-w-[80px] truncate">{{ currentUser.nickname }}</span>
           <button
             @click="handleLogout"
-            class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-black rounded-full transition-all active:scale-95"
+            class="px-3 py-1.5 bg-(--bg-input) hover:bg-(--bg-input) border border-white/15 text-(--text-primary) text-xs font-black rounded-full transition-all active:scale-95"
             :title="t('auth.logout')"
           >
             {{ t('auth.logout') }}
@@ -102,7 +102,7 @@
         <button
           v-else
           @click="openAuth"
-          class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-black rounded-full transition-all active:scale-95"
+          class="px-3 py-1.5 bg-(--bg-input) hover:bg-(--bg-input) border border-white/15 text-(--text-primary) text-xs font-black rounded-full transition-all active:scale-95"
         >
           {{ t('auth.login') }}
         </button>
@@ -129,7 +129,7 @@
           <button
             @click="selectTag(null)"
             class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
-            :class="!category.activeTag ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
+            :class="!category.activeTag ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-(--bg-input) text-(--text-secondary) border-white/10 hover:bg-(--bg-input)'"
           >
             {{ t('feed.allCategories') }}
           </button>
@@ -138,7 +138,7 @@
             :key="tag.name"
             @click="selectTag(tag.name)"
             class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
-            :class="category.activeTag === tag.name ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
+            :class="category.activeTag === tag.name ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-(--bg-input) text-(--text-secondary) border-white/10 hover:bg-(--bg-input)'"
           >
             {{ tag.name }}
           </button>

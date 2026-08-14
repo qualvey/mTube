@@ -1,14 +1,44 @@
 @import "tailwindcss";
 
+/* ── 明暗主题（CSS 变量，默认深色；跟随系统 prefers-color-scheme）── */
+:root {
+  color-scheme: dark;
+  --bg-page: #000000;
+  --bg-surface: #09090b;
+  --bg-card: #18181b;
+  --bg-hover: #27272a;
+  --bg-input: rgba(255, 255, 255, 0.08);
+  --text-primary: #ffffff;
+  --text-secondary: #d4d4d8;
+  --text-muted: #a1a1aa;
+  --text-faint: #71717a;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --header-gradient: linear-gradient(to bottom, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.45), transparent);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-page: #f4f4f5;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #e4e4e7;
+  --bg-input: rgba(0, 0, 0, 0.06);
+  --text-primary: #18181b;
+  --text-secondary: #3f3f46;
+  --text-muted: #52525b;
+  --text-faint: #71717a;
+  --border-subtle: rgba(0, 0, 0, 0.12);
+  --header-gradient: linear-gradient(to bottom, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.55), transparent);
+}
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  color-scheme: dark;
 }
 
 body {
   margin: 0;
   padding: 0;
-  background-color: #000;
+  background-color: var(--bg-page);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;

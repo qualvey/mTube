@@ -5,14 +5,14 @@
       <!-- 遮罩 -->
       <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="$emit('close')"></div>
       <!-- 抽屉面板 -->
-      <div class="absolute left-0 top-0 h-full w-72 max-w-[85vw] bg-zinc-950 border-r border-zinc-800 shadow-2xl flex flex-col">
-        <div class="flex items-center justify-between px-4 py-4 border-b border-zinc-800/70">
-          <span class="text-sm font-black text-zinc-300 tracking-widest uppercase select-none">
+      <div class="absolute left-0 top-0 h-full w-72 max-w-[85vw] bg-(--bg-page) border-r border-(--border-subtle) shadow-2xl flex flex-col">
+        <div class="flex items-center justify-between px-4 py-4 border-b border-(--border-subtle)/70">
+          <span class="text-sm font-black text-(--text-secondary) tracking-widest uppercase select-none">
             {{ t('sidebar.title') }}
           </span>
           <button
             @click="$emit('close')"
-            class="w-8 h-8 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-all"
+            class="w-8 h-8 rounded-lg bg-(--bg-hover)/80 hover:bg-zinc-700 flex items-center justify-center text-(--text-muted) hover:text-(--text-primary) transition-all"
             :aria-label="t('feed.closeCategories')"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
@@ -30,7 +30,7 @@
             :depth="0"
             @select="$emit('select', $event)"
           />
-          <div v-if="!menus.length" class="px-3 py-2 text-xs text-zinc-600">—</div>
+          <div v-if="!menus.length" class="px-3 py-2 text-xs text-(--text-faint)">—</div>
         </div>
       </div>
     </div>

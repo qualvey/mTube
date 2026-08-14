@@ -18,15 +18,15 @@
     <Transition name="slide-in">
       <aside
         v-if="!collapsed"
-        class="hidden lg:flex fixed left-0 top-0 bottom-0 z-50 w-72 flex-col bg-zinc-950/95 backdrop-blur-md border-r border-zinc-800/80 shadow-2xl"
+        class="hidden lg:flex fixed left-0 top-0 bottom-0 z-50 w-72 flex-col bg-(--bg-page)/95 backdrop-blur-md border-r border-(--border-subtle)/80 shadow-2xl"
       >
-        <div class="flex items-center justify-between px-4 py-3.5 border-b border-zinc-800/60 shrink-0">
-          <span class="text-[11px] font-black text-zinc-500 tracking-widest uppercase select-none">
+        <div class="flex items-center justify-between px-4 py-3.5 border-b border-(--border-subtle)/60 shrink-0">
+          <span class="text-[11px] font-black text-(--text-faint) tracking-widest uppercase select-none">
             {{ t('sidebar.title') }}
           </span>
           <button
             @click="$emit('toggle')"
-            class="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-zinc-300 flex items-center justify-center transition-all active:scale-95"
+            class="w-7 h-7 rounded-lg bg-(--bg-input) hover:bg-(--bg-input) border border-white/10 text-(--text-secondary) flex items-center justify-center transition-all active:scale-95"
             :title="t('sidebar.collapse')"
             :aria-label="t('sidebar.collapse')"
           >
@@ -44,7 +44,7 @@
             :depth="0"
             @select="$emit('select', $event)"
           />
-          <div v-if="!menus.length" class="px-3 py-2 text-xs text-zinc-600">-</div>
+          <div v-if="!menus.length" class="px-3 py-2 text-xs text-(--text-faint)">-</div>
         </div>
       </aside>
     </Transition>
@@ -53,7 +53,7 @@
     <button
       v-if="collapsed"
       @click="$emit('toggle')"
-      class="hidden lg:flex fixed left-0 top-24 bottom-0 z-20 w-11 flex-col items-center pt-4 gap-3 text-zinc-500 hover:text-zinc-300 bg-zinc-950/70 border-r border-zinc-800/60 transition-colors"
+      class="hidden lg:flex fixed left-0 top-24 bottom-0 z-20 w-11 flex-col items-center pt-4 gap-3 text-(--text-faint) hover:text-(--text-secondary) bg-(--bg-page)/70 border-r border-(--border-subtle)/60 transition-colors"
       :title="t('sidebar.expand')"
       :aria-label="t('sidebar.expand')"
     >
