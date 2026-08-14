@@ -8,62 +8,6 @@
           {{ t('feed.title') }}
         </h3>
       </div>
-      <div class="flex items-center gap-1 bg-zinc-800/80 p-1 rounded-xl border border-zinc-700/50 text-xs">
-        <button 
-          v-for="filter in filters" 
-          :key="filter.key"
-          @click="onFilterChange(filter.key)"
-          class="px-2.5 py-1 rounded-lg font-medium transition-all"
-          :class="activeFilter === filter.key ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-bold shadow' : 'text-zinc-400 hover:text-white'"
-        >
-          {{ t(`feed.filter${filter.key === 'all' ? 'All' : filter.key === 'vip' ? 'Vip' : 'Free'}`) }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Mobile Category Chips (lg 以下显示，桌面用侧边栏) -->
-    <div class="lg:hidden flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style="scrollbar-width: none">
-      <button
-        @click="onMobileTagSelect(null)"
-        class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
-        :class="!tag ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'"
-      >
-        {{ t('feed.allCategories') }}
-      </button>
-      <button
-        v-for="item in tags"
-        :key="item.name"
-        @click="onMobileTagSelect(item.name)"
-        class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-1"
-        :class="tag === item.name ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'"
-      >
-        {{ item.name }}
-        <span class="text-[9px] font-mono opacity-60">{{ item.count }}</span>
-      </button>
-    </div>
-
-    <!-- Search Bar (300ms debounce + stale response guard) -->
-    <div class="relative">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
-      </svg>
-      <input
-        v-model="searchInput"
-        type="text"
-        :placeholder="t('feed.searchPlaceholder')"
-        @input="onSearchInput"
-        class="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl pl-10 pr-9 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 focus:ring-1 focus:ring-yellow-500/30 transition-all"
-      />
-      <button
-        v-if="searchInput"
-        @click="clearSearch"
-        class="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-zinc-700/80 hover:bg-zinc-600 flex items-center justify-center text-zinc-300 transition-all"
-        :title="t('feed.clearSearch')"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
     </div>
 
     <!-- Empty Search Result State -->
@@ -72,7 +16,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
       </svg>
       <p class="text-sm">{{ t('feed.searchNoResults') }}</p>
-      <button @click="clearSearch" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl border border-zinc-700 transition-all">
+      <button @click="$emit('clear-search')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl border border-zinc-700 transition-all">
         {{ t('feed.clearSearch') }}
       </button>
     </div>
@@ -127,6 +71,7 @@
           </svg>
           <span>{{ t('feed.endOfFeed') }}</span>
           <button 
+          v-if="paywallEnabled && !isVip"
             @click="$emit('trigger-paywall')" 
             class="mt-1 px-4 py-2 bg-gradient-to-r from-yellow-500 to-amber-600 text-black font-extrabold text-xs rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all"
           >
@@ -148,7 +93,7 @@ import { getCurrentLocale, LOCALE_CHANGED_EVENT } from '../i18n'
 
 const { t } = useI18n()
 
-const emit = defineEmits(['trigger-paywall', 'tag-change'])
+const emit = defineEmits(['trigger-paywall', 'clear-search'])
 
 const props = defineProps({
   isVip: {
@@ -160,15 +105,15 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
-  /** 当前分类标签（null = 全部），由 App 持有（侧边栏/移动端 chips 共用） */
+  /** 当前分类标签（null = 全部），由 App 持有（侧边栏/移动端抽屉共用） */
   tag: {
     type: String,
     default: null
   },
-  /** 全量标签列表 [{ name, count }] */
-  tags: {
-    type: Array,
-    default: () => []
+  /** 搜索词（App header 输入，防抖 300ms 后生效），变化时重置重拉 */
+  searchTerm: {
+    type: String,
+    default: ''
   }
 })
 
@@ -177,12 +122,7 @@ const LIMIT = 10  // 每页条数
 const loading = ref(true)       // 首页加载
 const loadingMore = ref(false)  // 下一页加载
 const videos = ref([])
-const activeFilter = ref('all')
 
-// 搜索：searchInput 即时输入（防抖 300ms 后生效），searchTerm 为实际查询词
-const searchInput = ref('')
-const searchTerm = ref('')
-let searchDebounceTimer = null
 // 请求竞态保护：只认最后一次发起的请求结果
 let requestSeq = 0
 
@@ -245,11 +185,6 @@ const hasMore = ref(true)
 const sentinelRef = ref(null)
 let scrollObserver = null
 
-const filters = [
-  { key: 'all', label: '推荐' },
-  { key: 'vip', label: 'VIP独家' },
-  { key: 'free', label: '免费试看' }
-]
 /**
  * 预加载一批视频的封面图片
  * 通过 new Image() 触发浏览器提前下载，确保 VideoCard 挂载时封面已在缓存
@@ -278,8 +213,7 @@ const loadPage = async (page = 1, append = false) => {
   const seq = ++requestSeq
 
   try {
-    const filter = activeFilter.value !== 'all' ? activeFilter.value : null
-    const result = await videoService.getVideos(filter, props.tag, page, LIMIT, searchTerm.value)
+    const result = await videoService.getVideos(null, props.tag, page, LIMIT, props.searchTerm)
     if (seq !== requestSeq) return // 过期响应直接丢弃
     preloadPosters(result.items)
 
@@ -340,7 +274,6 @@ onUnmounted(() => {
     scrollObserver.disconnect()
     scrollObserver = null
   }
-  clearTimeout(searchDebounceTimer)
   window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
 })
 
@@ -353,36 +286,20 @@ const onLocaleChanged = () => {
   }
 }
 
-/** 搜索防抖：输入停止 300ms 后触发查询（保留当前筛选条件） */
-const onSearchInput = () => {
-  clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = setTimeout(() => {
-    if (searchTerm.value === searchInput.value.trim()) return
-    searchTerm.value = searchInput.value.trim()
+/** 搜索词变化（header 输入防抖生效/清除）→ 重置列表重拉，保留当前分类 */
+watch(
+  () => props.searchTerm,
+  () => {
     currentPage.value = 1
     hasMore.value = true
     activeVideoId.value = null
     loadPage(1, false)
-  }, 300)
-}
+  }
+)
 
-/** 清除搜索并恢复全部列表 */
-const clearSearch = () => {
-  clearTimeout(searchDebounceTimer)
-  searchInput.value = ''
-  searchTerm.value = ''
-  currentPage.value = 1
-  hasMore.value = true
-  activeVideoId.value = null
-  loadPage(1, false)
-}
+/** 移动端分类入口已改为抽屉（CategoryDrawer），由 HomeView 持有 tag 状态 */
 
-/** 移动端分类 chips：点击选中（再点取消），由 App 统一持有 tag 状态 */
-const onMobileTagSelect = (tagName) => {
-  emit('tag-change', tagName === props.tag ? null : tagName)
-}
-
-// 分类标签变化（侧边栏/移动端 chips）→ 重置列表重新拉取
+// 分类标签变化（侧边栏/移动端抽屉）→ 重置列表重新拉取（搜索词保留叠加）
 watch(
   () => props.tag,
   () => {
@@ -392,18 +309,6 @@ watch(
     loadPage(1, false)
   }
 )
-
-/**
- * 切换过滤器 → 重置到第 1 页（保留当前搜索词，筛选与搜索叠加）
- */
-const onFilterChange = (filterKey) => {
-  if (activeFilter.value === filterKey) return
-  activeFilter.value = filterKey
-  currentPage.value = 1
-  hasMore.value = true
-  activeVideoId.value = null
-  loadPage(1, false)
-}
 
 /**
  * 某个视频请求成为唯一激活视频（进入视口中心或手动点击）

@@ -173,20 +173,29 @@
         </div>
       </el-form-item>
 
-      <el-form-item label="定时发布（可选，留空 = 立即发布上线）">
-        <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
-          <el-date-picker
-            v-model="form.publishAtMs"
-            type="datetime"
-            placeholder="选择发布时间，到点自动在主站上线"
-            :disabled-date="disabledPublishDate"
-            style="width: 100%"
-          />
-          <span v-if="form.publishAtMs" class="text-xs text-amber-600 font-bold">
-            ⏰ 将加入定时发布队列：{{ formatPublishTime(form.publishAtMs) }} 后主站可见
-          </span>
+      <el-form-item label="发布策略">
+        <div class="flex flex-col gap-2 w-full">
+          <div class="flex items-center justify-between w-full">
+            <span class="text-sm font-bold text-slate-700 flex items-center gap-1.5">⏰ 定时发布</span>
+            <el-switch v-model="form.scheduled" />
+          </div>
+          <template v-if="form.scheduled">
+            <el-date-picker
+              v-model="form.publishAtMs"
+              type="datetime"
+              placeholder="不选择则默认下个北京时间零点自动上线"
+              :disabled-date="disabledPublishDate"
+              style="width: 100%"
+            />
+            <span v-if="form.publishAtMs" class="text-xs text-amber-600 font-bold">
+              ⏰ 将加入定时发布队列：{{ formatPublishTime(form.publishAtMs) }} 后主站可见
+            </span>
+            <span v-else class="text-xs text-slate-400">
+              未指定时间，提交后默认下个 UTC+8 00:00（北京时间零点）自动发布上线
+            </span>
+          </template>
           <span v-else class="text-xs text-slate-400">
-            文件上传后即存入存储节点，主站展示时间由此处控制
+            关闭 = 提交后立即在主站上线
           </span>
         </div>
       </el-form-item>
@@ -213,6 +222,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DEFAULT_UA, formatBytes } from '../utils/formatters.js'
+import { savePublishPref, nextUtc8MidnightTs } from '../utils/publishPref.js'
 import { apiFetch } from '../utils/api.js'
 import { uploadFileWithProgress, uploadFileParallelChunks } from '../utils/uploader.js'
 
@@ -381,6 +391,19 @@ const handleFileUpload = async (event, fieldName) => {
 const disabledPublishDate = (date) => {
   return date.getTime() < Date.now() - 60 * 1000
 }
+
+// 切换发布策略：即时记忆偏好；定时且未指定时间 → 自动预填默认零点；切回立即发布 → 清空时间
+watch(
+  () => props.form.scheduled,
+  (scheduled) => {
+    savePublishPref(scheduled)
+    if (scheduled && !props.form.publishAtMs) {
+      props.form.publishAtMs = nextUtc8MidnightTs()
+    } else if (!scheduled) {
+      props.form.publishAtMs = null
+    }
+  }
+)
 
 /** 本地时间戳 → 可读时间 */
 const formatPublishTime = (ts) => {

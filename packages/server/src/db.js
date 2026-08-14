@@ -76,6 +76,20 @@ database.exec(`
 `)
 
 database.exec(`
+  CREATE TABLE IF NOT EXISTS menus (
+    id TEXT PRIMARY KEY,
+    parentId TEXT DEFAULT NULL,
+    name TEXT NOT NULL,
+    type TEXT DEFAULT 'category',
+    target TEXT DEFAULT '{}',
+    icon TEXT DEFAULT '',
+    sortOrder INTEGER DEFAULT 0,
+    enabled INTEGER DEFAULT 1,
+    createdAt TEXT NOT NULL
+  );
+`)
+
+database.exec(`
   CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY,
     key TEXT NOT NULL,
@@ -682,6 +696,18 @@ const applyEventToAggregates = (event) => {
   }
 }
 
+/**
+ * 定时发布默认时间：下个 UTC+8 00:00（严格取“下一个”零点，当前恰为零点时取次日零点）
+ * @returns {string} ISO 8601 字符串
+ */
+const nextUtc8Midnight = () => {
+  const UTC8_OFFSET_MS = 8 * 60 * 60 * 1000
+  const DAY_MS = 24 * 60 * 60 * 1000
+  const utc8Now = Date.now() + UTC8_OFFSET_MS
+  const nextMidnightUtc8 = Math.floor(utc8Now / DAY_MS) * DAY_MS + DAY_MS
+  return new Date(nextMidnightUtc8 - UTC8_OFFSET_MS).toISOString()
+}
+
 export const db = {
   // ── i18n 动态内容翻译（通用翻译表抽象，新增语言零代码改动） ────────────────
   // 可翻译字段白名单（按实体类型）
@@ -898,10 +924,10 @@ export const db = {
 
     const storageNodeId = data.storageNodeId || 'node-01'
 
-    // 定时发布：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 必须带 publishAt
+    // 定时发布：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 未带 publishAt 时默认下个 UTC+8 00:00 自动发布
     let status = data.status === 'SCHEDULED' ? 'SCHEDULED' : 'PUBLISHED'
-    const publishAt = data.publishAt ? String(data.publishAt) : null
-    if (status === 'SCHEDULED' && !publishAt) status = 'PUBLISHED'
+    let publishAt = data.publishAt ? String(data.publishAt) : null
+    if (status === 'SCHEDULED' && !publishAt) publishAt = nextUtc8Midnight()
 
     const stmt = database.prepare(`
       INSERT INTO videos (id, title, description, author, authorAvatar, videoUrl, poster, duration, likes, shares, isVip, status, tags, headers, previewDuration, storageNodeId, publishAt, createdAt)
@@ -953,12 +979,12 @@ export const db = {
 
     const storageNodeId = updated.storageNodeId || 'node-01'
 
-    // 定时发布字段：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 无 publishAt 时回退 PUBLISHED
+    // 定时发布字段：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 未带 publishAt 时默认下个 UTC+8 00:00
     let status = updated.status === 'SCHEDULED' ? 'SCHEDULED' : 'PUBLISHED'
-    const publishAt = updated.publishAt !== undefined && updated.publishAt !== null
+    let publishAt = updated.publishAt !== undefined && updated.publishAt !== null
       ? String(updated.publishAt)
       : null
-    if (status === 'SCHEDULED' && !publishAt) status = 'PUBLISHED'
+    if (status === 'SCHEDULED' && !publishAt) publishAt = nextUtc8Midnight()
 
     const stmt = database.prepare(`
       UPDATE videos
@@ -1215,6 +1241,134 @@ export const db = {
 
   deleteAd(id) {
     const stmt = database.prepare('DELETE FROM ads WHERE id = ?')
+    const result = stmt.run(id)
+    return result.changes > 0
+  },
+
+  // ── 菜单系统 ──────────────────────────────────────────────────────────────
+  // 全站通用导航菜单（App 设置式）：type = category(视频分类, target.tags) | link(路由跳转, target.url)
+  // | page(内置页, target.pageKey) | group(纯分组)。管理侧 CRUD 控制，C 端按树渲染。
+  formatMenuRow(row) {
+    if (!row) return null
+    let target = {}
+    try {
+      target = row.target ? JSON.parse(row.target) : {}
+    } catch (e) { /* 忽略非法 JSON */ }
+    return {
+      ...row,
+      target,
+      enabled: Boolean(row.enabled)
+    }
+  },
+
+  /** 管理端：全部菜单（含停用，扁平列表） */
+  getAllMenus() {
+    return database.prepare('SELECT * FROM menus ORDER BY sortOrder ASC, createdAt ASC').all()
+      .map(r => this.formatMenuRow(r))
+  },
+
+  getMenuById(id) {
+    const row = database.prepare('SELECT * FROM menus WHERE id = ?').get(id)
+    return this.formatMenuRow(row)
+  },
+
+  /**
+   * C 端：启用中的菜单树。
+   * 未配置任何菜单时，自动生成默认菜单（全部视频 + 最热 8 个 tag），保证上线即可用。
+   */
+  getMenuTree() {
+    const rows = database.prepare('SELECT * FROM menus WHERE enabled = 1 ORDER BY sortOrder ASC, createdAt ASC').all()
+      .map(r => this.formatMenuRow(r))
+
+    const source = rows.length ? rows : this.buildDefaultMenu()
+
+    const nodeMap = new Map()
+    source.forEach(m => nodeMap.set(m.id, { ...m, children: [] }))
+    const tree = []
+    for (const node of nodeMap.values()) {
+      if (node.parentId && nodeMap.has(node.parentId)) {
+        nodeMap.get(node.parentId).children.push(node)
+      } else {
+        tree.push(node)
+      }
+    }
+    return tree
+  },
+
+  /** 默认菜单：全部视频 + 最热 8 个 tag（不落库，管理侧配置后自动覆盖） */
+  buildDefaultMenu() {
+    const hotTags = this.getAllTags().slice(0, 8)
+    return [
+      {
+        id: 'menu-default-all',
+        parentId: null,
+        name: '全部视频',
+        type: 'category',
+        target: { tags: [] },
+        icon: '▶',
+        sortOrder: 0,
+        enabled: true,
+        createdAt: ''
+      },
+      ...hotTags.map((t, i) => ({
+        id: `menu-default-${t.name}`,
+        parentId: null,
+        name: t.name,
+        type: 'category',
+        target: { tags: [t.name] },
+        icon: '',
+        sortOrder: i + 1,
+        enabled: true,
+        createdAt: ''
+      }))
+    ]
+  },
+
+  addMenu(data) {
+    const newId = data.id ? String(data.id).trim() : `menu-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const stmt = database.prepare(`
+      INSERT INTO menus (id, parentId, name, type, target, icon, sortOrder, enabled, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    stmt.run(
+      newId,
+      data.parentId ? String(data.parentId) : null,
+      data.name || '未命名菜单',
+      ['category', 'link', 'page', 'group'].includes(data.type) ? data.type : 'category',
+      data.target ? JSON.stringify(data.target) : '{}',
+      data.icon || '',
+      Number(data.sortOrder) || 0,
+      data.enabled === false ? 0 : 1,
+      new Date().toISOString()
+    )
+    return this.getMenuById(newId)
+  },
+
+  updateMenu(id, data) {
+    const existing = this.getMenuById(id)
+    if (!existing) return null
+    const stmt = database.prepare(`
+      UPDATE menus
+      SET parentId = ?, name = ?, type = ?, target = ?, icon = ?, sortOrder = ?, enabled = ?
+      WHERE id = ?
+    `)
+    stmt.run(
+      data.parentId !== undefined ? (data.parentId ? String(data.parentId) : null) : existing.parentId,
+      data.name !== undefined ? (data.name || '未命名菜单') : existing.name,
+      data.type !== undefined && ['category', 'link', 'page', 'group'].includes(data.type) ? data.type : existing.type,
+      data.target !== undefined ? JSON.stringify(data.target) : JSON.stringify(existing.target),
+      data.icon !== undefined ? (data.icon || '') : existing.icon,
+      data.sortOrder !== undefined ? Number(data.sortOrder) || 0 : existing.sortOrder,
+      data.enabled !== undefined ? (data.enabled === false ? 0 : 1) : (existing.enabled ? 1 : 0),
+      id
+    )
+    return this.getMenuById(id)
+  },
+
+  deleteMenu(id) {
+    // 删除菜单时将其直接子级挂到顶级（保持树不丢节点）
+    database.prepare('UPDATE menus SET parentId = NULL WHERE parentId = ?').run(id)
+    const stmt = database.prepare('DELETE FROM menus WHERE id = ?')
     const result = stmt.run(id)
     return result.changes > 0
   },

@@ -703,6 +703,11 @@ app.get('/api/v1/ads', (req, res) => {
   sendResponse(res, ads)
 })
 
+// GET /api/v1/menus - 全站导航菜单树（管理侧配置；未配置时返回默认菜单：全部视频 + 最热 tag）
+app.get('/api/v1/menus', (req, res) => {
+  sendResponse(res, db.getMenuTree())
+})
+
 app.get('/api/v1/videos/tag/:tag', (req, res) => {
   const { tag } = req.params
   const videoList = db.getVideos({ tag, lang: req.query.lang })
@@ -1136,6 +1141,32 @@ app.delete('/api/v1/admin/ads/:id', (req, res) => {
     return sendResponse(res, null, 404, '广告不存在')
   }
   sendResponse(res, { success: true }, 200, '广告已删除')
+})
+
+// ── 菜单管理（CRUD）──────────────────────────────────────────────────────
+app.get('/api/v1/admin/menus', (req, res) => {
+  sendResponse(res, db.getAllMenus())
+})
+
+app.post('/api/v1/admin/menus', (req, res) => {
+  const menu = db.addMenu(req.body)
+  sendResponse(res, menu, 201, '菜单已创建')
+})
+
+app.put('/api/v1/admin/menus/:id', (req, res) => {
+  const updated = db.updateMenu(req.params.id, req.body)
+  if (!updated) {
+    return sendResponse(res, null, 404, '菜单不存在')
+  }
+  sendResponse(res, updated, 200, '菜单已更新')
+})
+
+app.delete('/api/v1/admin/menus/:id', (req, res) => {
+  const success = db.deleteMenu(req.params.id)
+  if (!success) {
+    return sendResponse(res, null, 404, '菜单不存在')
+  }
+  sendResponse(res, { success: true }, 200, '菜单已删除')
 })
 
 app.post('/api/v1/admin/videos', (req, res) => {

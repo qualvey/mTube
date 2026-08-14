@@ -131,6 +131,22 @@ export const videoService = {
     return []
   },
 
+  // Fetch navigation menu tree (admin-configured; falls back to default menu)
+  async getMenus() {
+    try {
+      const res = await fetch('/api/v1/menus')
+      if (res.ok) {
+        const json = await res.json()
+        if (json && json.data) {
+          return json.data
+        }
+      }
+    } catch (e) {
+      console.warn('Menu fetch failed:', e)
+    }
+    return []
+  },
+
   // Fetch single video detail
   async getVideoById(videoId) {
     try {

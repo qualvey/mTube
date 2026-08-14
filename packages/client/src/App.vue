@@ -1,16 +1,55 @@
 <template>
   <div class="relative w-full h-screen bg-black overflow-hidden font-sans text-white">
     <!-- Header Navbar -->
-    <header class="fixed top-0 inset-x-0 z-30 px-4 py-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent backdrop-blur-md border-b border-white/5 flex items-center justify-between">
-      <router-link to="/" class="flex items-center gap-2">
+    <header class="fixed top-0 inset-x-0 z-30 bg-gradient-to-b from-black/90 via-black/50 to-transparent backdrop-blur-md border-b border-white/5 flex flex-col">
+      <!-- 第一行：菜单按钮 / logo / 搜索 / 右侧按钮 -->
+      <div class="px-3 sm:px-4 py-2.5 flex items-center gap-2 w-full">
+      <!-- 分类菜单按钮（移动端，仅首页） -->
+      <button
+        v-if="isHome"
+        class="lg:hidden w-9 h-9 shrink-0 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all active:scale-95"
+        @click="category.drawerOpen = true"
+        :aria-label="t('feed.openCategories')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+        </svg>
+      </button>
+
+      <router-link to="/" class="flex items-center gap-2 shrink-0">
         <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-red-600 to-yellow-500 flex items-center justify-center font-black text-black text-sm shadow-md">
           ▶
         </div>
-        <span class="font-extrabold text-base tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-300">
+        <span class="font-extrabold text-base tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-300 hidden sm:inline">
           StreamVIP
         </span>
       </router-link>
-      <div class="flex items-center gap-2">
+
+      <!-- 搜索框（仅首页） -->
+      <div v-if="isHome" class="relative flex-1 min-w-0 max-w-md mx-auto">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
+        </svg>
+        <input
+          v-model="searchInput"
+          type="text"
+          :placeholder="t('feed.searchPlaceholder')"
+          @input="onSearchInput"
+          class="w-full bg-white/10 border border-white/15 rounded-full pl-9 pr-8 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 focus:ring-1 focus:ring-yellow-500/30 transition-all"
+        />
+        <button
+          v-if="searchInput"
+          @click="clearSearch"
+          class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-zinc-700/80 hover:bg-zinc-600 flex items-center justify-center text-zinc-300 transition-all"
+          :title="t('feed.clearSearch')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3 h-3">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
         <!-- Language Switcher (Top Right) -->
         <button
           @click="handleToggleLang"
@@ -33,6 +72,27 @@
           <span>{{ t('app.vipMember') }}</span>
         </div>
       </div>
+      </div>
+
+      <!-- 第二行：热门 tag 快捷入口（仅移动端，横向滚动） -->
+      <div v-if="isHome" class="lg:hidden flex items-center gap-2 overflow-x-auto px-3 pb-2.5 pt-0.5" style="scrollbar-width: none">
+        <button
+          @click="selectTag(null)"
+          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
+          :class="!category.activeTag ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
+        >
+          {{ t('feed.allCategories') }}
+        </button>
+        <button
+          v-for="tag in hotTags"
+          :key="tag.name"
+          @click="selectTag(tag.name)"
+          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
+          :class="category.activeTag === tag.name ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
+        >
+          {{ tag.name }}
+        </button>
+      </div>
     </header>
 
     <!-- Router View: Home / Video Detail -->
@@ -40,7 +100,12 @@
       v-slot="{ Component }"
       @trigger-paywall="paywall.showPaywall = true"
     >
-      <component :is="Component" @trigger-paywall="paywall.showPaywall = true" />
+      <component
+        :is="Component"
+        @trigger-paywall="paywall.showPaywall = true"
+        :search-term="isHome ? searchTerm : undefined"
+        @clear-search="clearSearch"
+      />
     </router-view>
 
     <!-- Modals Overlay -->
@@ -52,24 +117,91 @@
       <AgeGateModal v-if="!ageVerified" @verified="onAgeVerified" />
     </Transition>
 
-    <Transition name="slide-up">
+    <!-- <Transition name="slide-up">
       <PaywallModal v-if="paywall.showPaywall" @close="paywall.showPaywall = false" @vip-unlocked="onVipUnlocked" />
-    </Transition>
+    </Transition> -->
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, provide, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, provide, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AgeGateModal from './components/AgeGateModal.vue'
 import NoticeModal from './components/NoticeModal.vue'
 import PaywallModal from './components/PaywallModal.vue'
-import { trackAnalytics } from './services/videoService'
+import { trackAnalytics, videoService } from './services/videoService'
 import { initAnalytics, shutdownAnalytics } from './services/analyticsService'
 import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT } from './i18n'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
+/** 分类菜单按钮/搜索框仅在首页（feed）展示 */
+const isHome = computed(() => route.path === '/')
+
+// ── 分类/菜单全局状态（header 热门 tag、左侧菜单、移动端抽屉、feed 过滤共用）──
+const category = reactive({
+  activeTag: null,   // 当前选中 tag（null = 全部），feed 按此过滤
+  tags: [],          // 全量标签 [{ name, count }]
+  menus: [],         // 导航菜单树（管理侧配置 / 默认菜单）
+  drawerOpen: false  // 移动端分类抽屉显隐
+})
+provide('category', category)
+
+/** 选择 tag（header 热门行 / 菜单 category 类型 / 抽屉） */
+const selectTag = (tag) => {
+  category.activeTag = tag === category.activeTag ? null : tag
+  category.drawerOpen = false
+}
+
+/** 点击菜单项：category → 过滤 feed；link → 路由跳转 */
+const onMenuSelect = (menu) => {
+  if (!menu) return
+  if (menu.type === 'category') {
+    const tags = (menu.target && menu.target.tags) || []
+    selectTag(tags.length ? tags[0] : null)
+  } else if (menu.type === 'link' && menu.target && menu.target.url) {
+    category.drawerOpen = false
+    router.push(menu.target.url)
+  } else {
+    category.drawerOpen = false
+  }
+}
+
+/** 分类/菜单动作（供 HomeView 侧边栏/抽屉回调） */
+provide('categoryActions', {
+  selectTag,
+  onMenuSelect
+})
+
+/** header 热门 tag：全量标签最热前 8 */
+const hotTags = computed(() => category.tags.slice(0, 8))
+
+const fetchTagsAndMenus = async () => {
+  category.tags = await videoService.getTags()
+  category.menus = await videoService.getMenus()
+}
+
+// ── 搜索：header 输入防抖 300ms 后生效，searchTerm 为实际查询词（下传 VideoFeed）──
+const searchInput = ref('')
+const searchTerm = ref('')
+let searchDebounceTimer = null
+
+const onSearchInput = () => {
+  clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(() => {
+    if (searchTerm.value === searchInput.value.trim()) return
+    searchTerm.value = searchInput.value.trim()
+  }, 300)
+}
+
+const clearSearch = () => {
+  clearTimeout(searchDebounceTimer)
+  searchInput.value = ''
+  searchTerm.value = ''
+}
 const langToggleLabel = ref(getToggleLabel())
 
 const handleToggleLang = async () => {
@@ -219,6 +351,9 @@ onMounted(async () => {
   // Check initial VIP status
   await fetchPaywallMode()
   await checkVipStatus()
+
+  // 分类标签 + 导航菜单（header 热门 tag / 左侧菜单 / 抽屉共用）
+  fetchTagsAndMenus()
 
   // Explicitly pull notice from backend REST API GET /api/v1/notice
   fetchNotice()

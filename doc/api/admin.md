@@ -254,6 +254,34 @@ DELETE /api/v1/admin/ads/:id
 
 成功：`200`；不存在：`404`。
 
+### 菜单管理（CRUD）
+
+全站导航菜单（App 设置式），C 端通过 `GET /api/v1/menus` 消费（见 `doc/api_specification.md` 2.11）。
+
+```
+GET /api/v1/admin/menus
+```
+
+返回全部菜单（含停用，扁平列表）。字段：`id, parentId, name, type, target, icon, sortOrder, enabled, createdAt`。
+
+```
+POST /api/v1/admin/menus
+```
+
+Body：菜单对象。`name` 必填；`type` 枚举 `category`/`link`/`page`/`group`（默认 `category`）；`target` 为 JSON 对象——`category` 用 `{ tags: ["标签名"] }`（空数组 = 全部视频），`link` 用 `{ url: "/vip" }`；`parentId`/`icon`/`sortOrder`/`enabled` 可选。成功：`201`，`data` 为新建菜单。
+
+```
+PUT /api/v1/admin/menus/:id
+```
+
+Body：需要更新的字段（部分更新）。成功：`200`；不存在：`404`。
+
+```
+DELETE /api/v1/admin/menus/:id
+```
+
+删除菜单；其直接子级自动挂到顶级（树不丢节点）。成功：`200`；不存在：`404`。
+
 ### 创建视频
 
 ```
@@ -262,7 +290,7 @@ POST /api/v1/admin/videos
 
 请求 Body：视频对象（title、description、author、videoUrl、poster、isVip、previewDuration、tags 等）。
 
-**定时发布字段**：`status` (`PUBLISHED`/`SCHEDULED`，可选，默认 `PUBLISHED`)；`publishAt` (ISO 8601 字符串，可选)。`status=SCHEDULED` 时必须带 `publishAt`（否则回退为 `PUBLISHED`），到点后服务端自动转为 `PUBLISHED` 并在 C 端可见。
+**定时发布字段**：`status` (`PUBLISHED`/`SCHEDULED`，可选，默认 `PUBLISHED`)；`publishAt` (ISO 8601 字符串，可选)。`status=SCHEDULED` 未带 `publishAt` 时，默认取**下个 UTC+8 00:00** 作为发布时间（不立即发布），到点后服务端自动转为 `PUBLISHED` 并在 C 端可见。
 成功响应：`201`，`data` 为新建视频对象。
 
 ### 更新视频
@@ -273,7 +301,7 @@ PUT /api/v1/admin/videos/:id
 
 成功：`200` `data` 为更新后的视频；视频不存在：`404`。
 
-**定时发布字段**：支持 `status` (`PUBLISHED`/`SCHEDULED`) 与 `publishAt` (ISO 8601，可传 `null` 清除)。传 `{ status: 'PUBLISHED', publishAt: null }` 即立即发布。
+**定时发布字段**：支持 `status` (`PUBLISHED`/`SCHEDULED`) 与 `publishAt` (ISO 8601，可传 `null` 清除)。`status=SCHEDULED` 未带 `publishAt` 时，默认取**下个 UTC+8 00:00** 作为发布时间。传 `{ status: 'PUBLISHED', publishAt: null }` 即立即发布。
 
 ### 删除视频
 

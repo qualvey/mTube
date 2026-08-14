@@ -146,6 +146,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import VideoUploadModal from '../components/VideoUploadModal.vue'
 import { DEFAULT_UA, buildHeadersJson } from '../utils/formatters.js'
+import { getPublishPref, nextUtc8MidnightTs } from '../utils/publishPref.js'
 import { apiFetch } from '../utils/api.js'
 
 const videoList = ref([])
@@ -169,8 +170,9 @@ const videoForm = ref({
   isVip: true,
   previewDuration: 120,
   tags: ['新增'],
-  // 定时发布：publishAtMs(时间戳) 非空 = SCHEDULED，留空 = 立即发布
+  // 发布策略：scheduled=true 定时发布（publishAtMs 可空，留空默认下个 UTC+8 00:00）；false = 立即发布
   status: 'PUBLISHED',
+  scheduled: false,
   publishAtMs: null
 })
 
@@ -241,6 +243,8 @@ const getStorageNodeName = (nodeId) => {
 const openAddModal = () => {
   isEdit.value = false
   const defaultNode = storageNodes.value.find(n => n.isDefault) || storageNodes.value[0]
+  // 新增弹窗：发布策略记忆上次状态（定时发布 → 预填默认下个 UTC+8 00:00）
+  const scheduled = getPublishPref()
   videoForm.value = {
     id: '',
     title: '',
@@ -254,8 +258,9 @@ const openAddModal = () => {
     isVip: true,
     previewDuration: 120,
     tags: ['新增'],
-    status: 'PUBLISHED',
-    publishAtMs: null
+    status: scheduled ? 'SCHEDULED' : 'PUBLISHED',
+    scheduled,
+    publishAtMs: scheduled ? nextUtc8MidnightTs() : null
   }
   modalVisible.value = true
 }
@@ -290,6 +295,7 @@ const openEditModal = (video) => {
     previewDuration: video.previewDuration !== undefined ? Number(video.previewDuration) : 120,
     tags: Array.isArray(video.tags) ? [...video.tags] : [],
     status: video.status || 'PUBLISHED',
+    scheduled: video.status === 'SCHEDULED',
     publishAtMs: video.publishAt ? new Date(video.publishAt).getTime() : null
   }
   modalVisible.value = true
@@ -298,12 +304,15 @@ const openEditModal = (video) => {
 const handleModalSubmit = async () => {
   const headersJson = buildHeadersJson(videoForm.value.referer, videoForm.value.userAgent)
 
-  // 定时发布：publishAtMs 非空 → SCHEDULED + ISO 时间；留空 → 立即发布
-  const { publishAtMs, ...formFields } = videoForm.value
+  // 发布策略：scheduled=true → SCHEDULED；publishAtMs 非空用指定时间，留空不传 publishAt（后端默认下个 UTC+8 00:00）
+  // 留空 = 立即发布 → PUBLISHED + publishAt null
+  const { publishAtMs, scheduled, ...formFields } = videoForm.value
   const payload = {
     ...formFields,
-    publishAt: publishAtMs ? new Date(publishAtMs).toISOString() : null,
-    status: publishAtMs ? 'SCHEDULED' : 'PUBLISHED',
+    publishAt: scheduled
+      ? (publishAtMs ? new Date(publishAtMs).toISOString() : undefined)
+      : null,
+    status: scheduled ? 'SCHEDULED' : 'PUBLISHED',
     headers: headersJson
   }
 

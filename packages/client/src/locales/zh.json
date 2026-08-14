@@ -45,16 +45,15 @@
   },
   "feed": {
     "title": "热门视频",
-    "filterAll": "推荐",
-    "filterVip": "VIP独家",
-    "filterFree": "免费试看",
     "loadingMore": "加载更多...",
     "endOfFeed": "已加载全部免费体验视频",
     "unlockAll": "开通 VIP 解锁全部 5000+ 原画库",
     "searchPlaceholder": "搜索标题 / 创作者...",
     "searchNoResults": "未找到与搜索词相关的视频",
     "clearSearch": "清除搜索",
-    "allCategories": "全部分类"
+    "allCategories": "全部分类",
+    "openCategories": "打开分类菜单",
+    "closeCategories": "关闭分类菜单"
   },
   "ad": {
     "sponsored": "广告",

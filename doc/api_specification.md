@@ -53,33 +53,40 @@
 - **请求参数**：
   - `tag` (string, 可选): 按分类标签过滤（如 `新增`, `VIP独家`）
   - `search` (string, 可选): 按关键词搜索标题或创作者
-  - `page` / `limit` (number, 可选): 分页（默认 page=1, limit=10），响应为 `{ items, total, page, limit, totalPages }`
+  - `page` / `limit` (number, 可选): 分页（默认 page=1, limit=10）
 - **可见性规则**：只返回已发布视频（`status=PUBLISHED`，或 `status=SCHEDULED` 且已到 `publishAt` 的自动转已发布）。未到发布时间的定时队列对 C 端不可见。
-- **响应示例**：
+- **响应示例**（分页结构）：
 ```json
 {
   "code": 200,
   "message": "success",
-  "data": [
-    {
-      "id": "vid_1722589200",
-      "title": "【4K原画】独家高能短视频",
-      "description": "精彩剪辑视频描述",
-      "author": "官方创作者",
-      "authorAvatar": "https://...",
-      "videoUrl": "https://storage.domain.com/uploads/videos/vid_xxx.mp4",
-      "poster": "https://storage.domain.com/uploads/posters/poster_xxx.jpg",
-      "duration": "05:20",
-      "isVip": true,
-      "previewDuration": 120,
-      "likes": 128,
-      "views": 3520,
-      "tags": ["新增", "4K画质"],
-      "storageNodeId": "node-01"
-    }
-  ]
+  "data": {
+    "items": [
+      {
+        "id": "vid_1722589200",
+        "title": "【4K原画】独家高能短视频",
+        "description": "精彩剪辑视频描述",
+        "author": "官方创作者",
+        "authorAvatar": "https://...",
+        "videoUrl": "https://storage.domain.com/uploads/videos/vid_xxx.mp4",
+        "poster": "https://storage.domain.com/uploads/posters/poster_xxx.jpg",
+        "duration": "05:20",
+        "isVip": true,
+        "previewDuration": 120,
+        "likes": 128,
+        "views": 3520,
+        "tags": ["新增", "4K画质"],
+        "storageNodeId": "node-01"
+      }
+    ],
+    "total": 56,
+    "page": 1,
+    "limit": 10,
+    "totalPages": 6
+  }
 }
 ```
+> 兼容旧格式：`data` 为纯数组时视为单页全部数据。
 
 ### 2.2 获取单个视频详情
 - **请求方式**：`GET /api/v1/videos/:id`
@@ -129,12 +136,16 @@
 
 ### 2.6 获取分类标签列表
 - **请求方式**：`GET /api/v1/tags`
-- **响应示例**：
+- **响应**：`data` 为标签数组（按视频数降序）：
 ```json
 {
   "code": 200,
   "message": "success",
-  "data": ["新增", "VIP独家", "4K画质"]
+  "data": [
+    { "name": "新增", "count": 42 },
+    { "name": "VIP独家", "count": 18 },
+    { "name": "4K画质", "count": 9 }
+  ]
 }
 ```
 
@@ -192,7 +203,7 @@
 }
 ```
 
-### 2.9 获取公告
+### 2.10 获取公告
 - **请求方式**：`GET /api/v1/notice?lang=zh`
 - **响应示例**：
 ```json
@@ -207,11 +218,47 @@
 }
 ```
 
-### 2.10 直接上传视频（主站入口）
+### 2.11 全站导航菜单（管理侧配置）
+- **请求方式**：`GET /api/v1/menus`
+- **说明**：返回启用中的导航菜单树（管理侧在 `/api/v1/admin/menus` 配置）。未配置任何菜单时自动返回默认菜单（全部视频 + 最热 8 个 tag）。
+- **菜单类型 `type`**：`category`(视频分类，`target.tags` 为绑定 tag 数组，空数组 = 全部) | `link`(路由跳转，`target.url`) | `page`(内置页，`target.pageKey`，预留) | `group`(纯分组，预留)
+- **响应示例**：
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "id": "menu-xxx",
+      "parentId": null,
+      "name": "全部视频",
+      "type": "category",
+      "target": { "tags": [] },
+      "icon": "▶",
+      "sortOrder": 0,
+      "enabled": true,
+      "children": []
+    },
+    {
+      "id": "menu-yyy",
+      "parentId": null,
+      "name": "热门",
+      "type": "category",
+      "target": { "tags": ["热门"] },
+      "icon": "",
+      "sortOrder": 1,
+      "enabled": true,
+      "children": []
+    }
+  ]
+}
+```
+
+### 2.12 直接上传视频（主站入口）
 - **请求方式**：`POST /api/v1/upload`
 - **说明**：需管理员鉴权（同 `/api/v1/admin/*` 的 Bearer Token 体系）。用于浏览器直传场景的入口，内部会代理到存储节点或生成直传凭证。
 
-### 2.11 埋点上报（Legacy C 端统计）
+### 2.13 埋点上报（Legacy C 端统计）
 - **请求方式**：`POST /api/v1/analytics/track`
 - **请求 Body**：
 ```json
@@ -224,8 +271,23 @@
   "referer": "..."
 }
 ```
-- **说明**：`action` 缺省为 `PV`；`videoId` 可选。兼容旧版采集，新采集统一走 `POST /api/v1/events/batch`。
+- **说明**：`action` 缺省为 `PV`；`videoId` 可选。兼容旧版采集，新采集统一走 `POST /api/v1/events/batch`（见 2.14）。
 - **响应**：`200`，`data` 为采集结果
+
+### 2.14 事件批量上报（新版埋点）
+- **请求方式**：`POST /api/v1/events/batch`
+- **请求 Body**：
+```json
+{
+  "events": [
+    { "event": "VIDEO_2S", "videoId": "vid_xxx", "receivedAt": "2026-08-14T12:00:00.000Z" },
+    { "event": "WATCH_TIME", "videoId": "vid_xxx", "watchSeconds": 30, "receivedAt": "2026-08-14T12:00:05.000Z" }
+  ]
+}
+```
+- **事件类型**：`VIDEO_2S`（有效播放）/ `WATCH_TIME`（观看时长，带 `watchSeconds`）/ `VIDEO_COMPLETE`（完整播放）/ `PAGE_VIEW`（页面 PV）等，数据落库供 Analytics 聚合。
+- **说明**：带限流（429）；分析系统设计详见 `docs/analytics-system-v1.md`。
+- **响应**：`200`，`data` 为写入统计结果
 
 ---
 
@@ -560,14 +622,22 @@
   "tags": ["新增", "VIP独家"]
 }
 ```
-- **响应示例**：
+- **响应示例**（`201`，完整视频对象）：
 ```json
 {
   "code": 200,
-  "message": "视频发布成功！",
-  "data": { "id": "vid_1722589300" }
+  "message": "success",
+  "data": {
+    "id": "vid_1722589300",
+    "title": "【4K原画】最新发布独家视频",
+    "status": "PUBLISHED",
+    "isVip": true,
+    "tags": ["新增", "VIP独家"],
+    "publishAt": null
+  }
 }
 ```
+> `status=SCHEDULED` 未带 `publishAt` 时默认下个 UTC+8 00:00 发布（详见 `doc/api/admin.md`）。
 
 ### 5.6 获取系统全局数据分析
 - **请求方式**：`GET /api/v1/admin/analytics`
@@ -646,14 +716,26 @@
 - **planId 时长映射**：`day`→1天、`month`/`plan-1`→30天、`season`/`plan-2`→90天、`year`/`plan-3`→365天、`lifetime`/`plan-4`→36500天；已有未过期 VIP 时顺延叠加。
 - **成功响应**：结构同「按订单授予」。
 
-### 5.9 系统设置与统计（详见 doc/api/admin.md）
-- **请求方式**：`GET /api/v1/admin/settings` / `PUT /api/v1/admin/settings` / `POST /api/v1/admin/settings`
-- **请求方式**：`GET /api/v1/admin/stats`（严格 PAID 口径营收统计）
-- **请求方式**：`GET /api/v1/admin/dashboard/stats`
+### 5.9 菜单管理（全站导航菜单）
+- **请求方式**：`GET /api/v1/admin/menus`（全部菜单，含停用）/ `POST /api/v1/admin/menus`（新建）/ `PUT /api/v1/admin/menus/:id`（更新）/ `DELETE /api/v1/admin/menus/:id`（删除，子级自动挂顶级）
+- **说明**：菜单类型 `category`(绑定 tag 过滤视频) / `link`(路由跳转) / `page` / `group`；C 端消费见 2.11。详见 `doc/api/admin.md`「菜单管理（CRUD）」。
 
-### 5.10 运维与调试（详见 doc/api/admin.md）
-- **请求方式**：`GET /api/v1/admin/upload-config` / `GET /api/v1/admin/debug` / `GET|POST /api/v1/admin/loglevel`
-- **请求方式**：`POST /api/v1/admin/videos/upload-ticket`
+### 5.10 系统设置 / 套餐 / 统计（详见 doc/api/admin.md）
+- **请求方式**：`GET|PUT|POST /api/v1/admin/settings`（系统设置）
+- **请求方式**：`GET /api/v1/admin/paywall/plans` / `PUT /api/v1/admin/paywall/plans`（套餐管理）
+- **请求方式**：`GET /api/v1/admin/stats`（严格 PAID 口径营收）/ `GET /api/v1/admin/dashboard/stats`（控制台统计）
 
-### 5.11 翻译管理（详见 doc/api/admin.md）
-- **请求方式**：`GET /api/v1/admin/translations` / `PUT /api/v1/admin/translations` / `GET /api/v1/admin/translations/overview`
+### 5.11 订单管理（详见 doc/api/admin.md）
+- **请求方式**：`GET /api/v1/admin/orders`（订单列表，含设备实时 VIP 状态）/ `DELETE /api/v1/admin/orders/:id`（删除记录）/ `POST /api/v1/admin/orders/:id/confirm-crypto`（确认 USDT 订单）
+- **请求方式**：`POST /api/v1/admin/orders/:id/grant-vip`（按订单授予 VIP）/ `POST /api/v1/admin/devices/:deviceId/grant-vip`（按设备授予）/ `POST /api/v1/admin/devices/:deviceId/revoke-vip`（撤销，兼容 `POST /api/v1/admin/devices/revoke-vip`）
+
+### 5.12 存储节点管理（详见 doc/api/admin.md）
+- **请求方式**：`GET /api/v1/admin/storage-nodes`（列表+连通监控）/ `POST /api/v1/admin/storage-nodes`（新增）/ `PUT /api/v1/admin/storage-nodes/:id`（更新）/ `DELETE /api/v1/admin/storage-nodes/:id`（删除）/ `POST /api/v1/admin/storage-nodes/:id/set-default`（设默认）/ `GET /api/v1/admin/storage/status`（默认节点健康状态）
+
+### 5.13 数据分析（详见 doc/api/admin.md）
+- **请求方式**：`GET /api/v1/admin/analytics/overview`（PV/UV 概览）/ `GET /api/v1/admin/analytics/trend?days=7`（趋势）/ `GET /api/v1/admin/analytics/top-videos?limit=10`（热门 Top N）/ `GET /api/v1/admin/analytics/logs` + `DELETE /api/v1/admin/analytics/logs`（访问日志与清理）
+- **请求方式**：`GET /api/v1/admin/analytics/v1/overview` / `GET /api/v1/admin/analytics/v1/report?days=N` / `GET /api/v1/admin/analytics/v1/export.csv?type=daily|videos|paths|countries`（CSV 导出）/ `POST /api/v1/admin/analytics/v1/rebuild`（重算聚合）
+
+### 5.14 运维与调试 / 翻译管理（详见 doc/api/admin.md）
+- **运维**：`GET /api/v1/admin/upload-config`（上传模式）/ `GET /api/v1/admin/debug`（诊断）/ `GET|POST /api/v1/admin/loglevel`（日志级别）/ `POST /api/v1/admin/videos/upload-ticket`（直传凭证）
+- **翻译**：`GET /api/v1/admin/translations` / `PUT /api/v1/admin/translations` / `GET /api/v1/admin/translations/overview`

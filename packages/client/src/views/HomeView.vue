@@ -1,18 +1,18 @@
 <template>
   <div
-    class="w-full h-full overflow-y-auto scroll-smooth pt-14"
+    class="w-full h-full overflow-y-auto scroll-smooth pt-28 lg:pt-14"
     ref="scrollContainer"
     @scroll="handleScroll"
   >
     <!-- Hero Section -->
-    <HeroSection :blur="paywall.showPaywall" />
+    <!-- <HeroSection :blur="paywall.showPaywall" /> -->
 
     <!-- Desktop Sidebar + Feed Two-Column Layout -->
     <div class="max-w-6xl mx-auto w-full flex items-start lg:gap-6">
       <CategorySidebar
-        :tags="tags"
-        :active-tag="activeTag"
-        @select="onTagSelect"
+        :menus="category.menus"
+        :active-tag="category.activeTag"
+        @select="onMenuSelect"
       />
       <div class="flex-1 min-w-0">
         <!-- Video Feed Stream (Backend Controlled) -->
@@ -20,16 +20,25 @@
           :class="{ 'blur-sm brightness-75 transition-all duration-500': paywall.showPaywall }"
           :is-vip="paywall.isVip"
           :paywall-enabled="paywall.enabled"
-          :tag="activeTag"
-          :tags="tags"
+          :tag="category.activeTag"
+          :search-term="searchTerm"
           @trigger-paywall="paywall.showPaywall = true"
-          @tag-change="onTagSelect"
+          @clear-search="emit('clear-search')"
         />
       </div>
     </div>
 
+    <!-- 移动端分类抽屉（左侧滑出） -->
+    <CategoryDrawer
+      :open="category.drawerOpen"
+      :menus="category.menus"
+      :active-tag="category.activeTag"
+      @select="onMenuSelect"
+      @close="category.drawerOpen = false"
+    />
+
     <!-- Scroll Transition Area (Suspense Content) -->
-    <ScrollTransition :progress="scrollProgress" :blur="paywall.showPaywall" />
+    <ScrollTransition v-if="paywall.enabled && !paywall.isVip"  :progress="scrollProgress" :blur="paywall.showPaywall" />
 
     <!-- Paywall Trigger Footer Section -->
     <div v-if="paywall.enabled && !paywall.isVip" class="py-16 w-full flex flex-col items-center justify-center bg-zinc-950/90 border-t border-zinc-800 text-center px-4">
@@ -46,49 +55,38 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, inject } from 'vue'
 import { useScroll } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import HeroSection from '../components/HeroSection.vue'
 import VideoFeed from '../components/VideoFeed.vue'
 import CategorySidebar from '../components/CategorySidebar.vue'
+import CategoryDrawer from '../components/CategoryDrawer.vue'
 import ScrollTransition from '../components/ScrollTransition.vue'
-import { videoService } from '../services/videoService'
 
 const { t } = useI18n()
 
 // 全局付费墙状态（App 提供）：{ enabled, isVip, showPaywall }
 const paywall = inject('paywall')
 
+// 分类/菜单全局状态（App 提供）：{ activeTag, tags, menus, drawerOpen }
+const category = inject('category')
+// 分类/菜单动作（App 提供）：{ selectTag, onMenuSelect }
+const { onMenuSelect } = inject('categoryActions')
+
+// 搜索词（App header 输入，防抖后下传）与清除事件
+const props = defineProps({
+  searchTerm: {
+    type: String,
+    default: ''
+  }
+})
+const emit = defineEmits(['clear-search'])
+const searchTerm = computed(() => props.searchTerm)
+
 const scrollContainer = ref(null)
 const scrollProgress = ref(0)
 const lastY = ref(0)
 const { y } = useScroll(scrollContainer)
-
-// 侧边栏分类：当前标签（null = 全部）+ 标签列表
-const activeTag = ref(null)
-const tags = ref([])
-
-const onTagSelect = (tag) => {
-  activeTag.value = tag
-}
-
-const fetchTags = async () => {
-  try {
-    const result = await videoService.getTags()
-    if (Array.isArray(result)) {
-      tags.value = result
-    }
-  } catch (e) {
-    console.warn('Failed to fetch tags:', e)
-  }
-}
-
-onMounted(() => {
-  fetchTags()
-})
-
-onUnmounted(() => {})
 
 const handleScroll = (e) => {
   const target = e.target

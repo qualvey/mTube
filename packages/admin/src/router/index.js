@@ -8,6 +8,7 @@ import StorageNodesView from '../views/StorageNodesView.vue'
 import OrdersView from '../views/OrdersView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import AdsView from '../views/AdsView.vue'
+import MenusView from '../views/MenusView.vue'
 
 const routes = [
   {
@@ -57,6 +58,12 @@ const routes = [
         name: 'Ads',
         component: AdsView,
         meta: { title: '广告管理', icon: 'Promotion' }
+      },
+      {
+        path: 'menus',
+        name: 'Menus',
+        component: MenusView,
+        meta: { title: '菜单管理', icon: 'Menu' }
       },
       {
         path: 'settings',
