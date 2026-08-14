@@ -94,6 +94,7 @@
 <script setup>
 import { ref, computed, inject, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { authService } from '../services/authService'
 
 const props = defineProps({
   videoId: { type: String, required: true }
@@ -144,7 +145,10 @@ const submitComment = async () => {
   try {
     const res = await fetch(`/api/v1/videos/${props.videoId}/comments`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authService.getToken()}`
+      },
       body: JSON.stringify({ content })
     })
     const json = await res.json().catch(() => null)
@@ -164,7 +168,10 @@ const submitComment = async () => {
 
 const removeComment = async (c) => {
   try {
-    const res = await fetch(`/api/v1/comments/${c.id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/v1/comments/${c.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authService.getToken()}` }
+    })
     if (res.ok) {
       items.value = items.value.filter(x => x.id !== c.id)
       total.value = Math.max(0, total.value - 1)
