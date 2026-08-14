@@ -766,6 +766,7 @@ export const db = {
     const lang = typeof options === 'object' ? options.lang : null
     const filter = typeof options === 'string' ? options : options.filter
     const tag = typeof options === 'object' ? options.tag : null
+    const search = typeof options === 'object' ? options.search : null
     const pageParam = options.page !== undefined ? parseInt(options.page) : null
     const limitParam = options.limit !== undefined ? parseInt(options.limit) : null
 
@@ -803,6 +804,16 @@ export const db = {
 
     // i18n：按 lang 覆盖 title/description/author（无译文自动回退中文）
     results = this.applyLangToEntities('video', results, lang)
+
+    // 搜索：对翻译后的 title/description/author 做子字符匹配（用户用自己的语言搜索也能命中）
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase()
+      results = results.filter(v =>
+        (v.title && String(v.title).toLowerCase().includes(term)) ||
+        (v.description && String(v.description).toLowerCase().includes(term)) ||
+        (v.author && String(v.author).toLowerCase().includes(term))
+      )
+    }
 
     // \u5206\u9875\u6a21\u5f0f\uff08\u4f20\u5165 page/limit \u65f6\uff09
     if (pageParam !== null && limitParam !== null) {

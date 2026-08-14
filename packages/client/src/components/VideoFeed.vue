@@ -21,6 +21,41 @@
       </div>
     </div>
 
+    <!-- Search Bar (300ms debounce + stale response guard) -->
+    <div class="relative">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
+      </svg>
+      <input
+        v-model="searchInput"
+        type="text"
+        :placeholder="t('feed.searchPlaceholder')"
+        @input="onSearchInput"
+        class="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl pl-10 pr-9 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 focus:ring-1 focus:ring-yellow-500/30 transition-all"
+      />
+      <button
+        v-if="searchInput"
+        @click="clearSearch"
+        class="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-zinc-700/80 hover:bg-zinc-600 flex items-center justify-center text-zinc-300 transition-all"
+        :title="t('feed.clearSearch')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Empty Search Result State -->
+    <div v-if="!loading && !loadingMore && videos.length === 0 && searchTerm" class="flex flex-col items-center py-14 text-zinc-500 gap-3">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 text-zinc-600">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+      </svg>
+      <p class="text-sm">{{ t('feed.searchNoResults') }}</p>
+      <button @click="clearSearch" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl border border-zinc-700 transition-all">
+        {{ t('feed.clearSearch') }}
+      </button>
+    </div>
+
     <!-- Skeleton Loaders (first page) -->
     <div v-if="loading" class="flex flex-col gap-6">
       <div v-for="n in 3" :key="n" class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-3 animate-pulse">
@@ -110,6 +145,13 @@ const loadingMore = ref(false)  // 下一页加载
 const videos = ref([])
 const activeFilter = ref('all')
 
+// 搜索：searchInput 即时输入（防抖 300ms 后生效），searchTerm 为实际查询词
+const searchInput = ref('')
+const searchTerm = ref('')
+let searchDebounceTimer = null
+// 请求竞态保护：只认最后一次发起的请求结果
+let requestSeq = 0
+
 /** 当前激活（拉流/播放）的视频 ID，同一时间只允许一个 */
 const activeVideoId = ref(null)
 const currentPage = ref(1)
@@ -149,9 +191,12 @@ const loadPage = async (page = 1, append = false) => {
     loadingMore.value = true
   }
 
+  const seq = ++requestSeq
+
   try {
     const filter = activeFilter.value !== 'all' ? activeFilter.value : null
-    const result = await videoService.getVideos(filter, null, page, LIMIT)
+    const result = await videoService.getVideos(filter, null, page, LIMIT, searchTerm.value)
+    if (seq !== requestSeq) return // 过期响应直接丢弃
     preloadPosters(result.items)
 
     if (append) {
@@ -161,14 +206,18 @@ const loadPage = async (page = 1, append = false) => {
       // 默认激活第一个视频
       if (result.items.length > 0) {
         activeVideoId.value = result.items[0].id
+      } else {
+        activeVideoId.value = null
       }
     }
 
     currentPage.value = result.page
     hasMore.value = result.page < result.totalPages
   } finally {
-    loading.value = false
-    loadingMore.value = false
+    if (seq === requestSeq) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
 }
 
@@ -206,6 +255,7 @@ onUnmounted(() => {
     scrollObserver.disconnect()
     scrollObserver = null
   }
+  clearTimeout(searchDebounceTimer)
   window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
 })
 
@@ -218,8 +268,32 @@ const onLocaleChanged = () => {
   }
 }
 
+/** 搜索防抖：输入停止 300ms 后触发查询（保留当前筛选条件） */
+const onSearchInput = () => {
+  clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(() => {
+    if (searchTerm.value === searchInput.value.trim()) return
+    searchTerm.value = searchInput.value.trim()
+    currentPage.value = 1
+    hasMore.value = true
+    activeVideoId.value = null
+    loadPage(1, false)
+  }, 300)
+}
+
+/** 清除搜索并恢复全部列表 */
+const clearSearch = () => {
+  clearTimeout(searchDebounceTimer)
+  searchInput.value = ''
+  searchTerm.value = ''
+  currentPage.value = 1
+  hasMore.value = true
+  activeVideoId.value = null
+  loadPage(1, false)
+}
+
 /**
- * 切换过滤器 → 重置到第 1 页
+ * 切换过滤器 → 重置到第 1 页（保留当前搜索词，筛选与搜索叠加）
  */
 const onFilterChange = (filterKey) => {
   if (activeFilter.value === filterKey) return

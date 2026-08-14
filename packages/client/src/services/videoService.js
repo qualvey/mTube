@@ -82,11 +82,12 @@ export const trackAnalytics = (action = 'PV', videoId = null) => {
 export const videoService = {
 
   // Fetch video list from backend REST API or fallback to mock data
-  async getVideos(filter = null, tag = null, page = 1, limit = 10) {
+  async getVideos(filter = null, tag = null, page = 1, limit = 10, search = null) {
     try {
       const params = new URLSearchParams()
       if (filter) params.append('filter', filter)
       if (tag) params.append('tag', tag)
+      if (search && search.trim()) params.append('search', search.trim())
       params.append('page', page)
       params.append('limit', limit)
       // i18n：按当前语言拉取动态内容（标题/描述/作者译文，无译文回退中文）

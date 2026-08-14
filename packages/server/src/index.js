@@ -681,9 +681,11 @@ app.all('/api/v1/admin/loglevel', (req, res) => {
 
 app.get('/api/v1/videos', (req, res) => {
   const { filter, tag } = req.query
+  // search：关键词搜索（标题/描述/创作者），兼容 q 别名
+  const search = req.query.search || req.query.q || null
   const page = req.query.page ? parseInt(req.query.page) : 1
   const limit = req.query.limit ? parseInt(req.query.limit) : 10
-  const result = db.getVideos({ filter, tag, page, limit, lang: req.query.lang })
+  const result = db.getVideos({ filter, tag, search, page, limit, lang: req.query.lang })
   sendResponse(res, result)
 })
 
