@@ -8,7 +8,8 @@ const app = createApp(App)
 app.use(router)
 app.use(i18n)
 
-// 初始化语言（顺序：localStorage > navigator.language > 默认 en）
-loadInitialLocale()
-
-app.mount('#app')
+// 先加载语言包再挂载：避免首帧渲染时消息为空（vue-i18n 找不到 key 的告警/闪现 raw key）
+// 语言包加载失败时 setAppLocale 内部已 catch，仍会正常挂载（回退英文）
+loadInitialLocale().then(() => {
+  app.mount('#app')
+})
