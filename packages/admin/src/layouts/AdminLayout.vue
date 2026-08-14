@@ -123,6 +123,7 @@ const menuItems = [
   { path: '/orders', label: '营收与订单明细', icon: 'ShoppingCart' },
   { path: '/ads', label: '广告管理', icon: 'Promotion' },
   { path: '/menus', label: '菜单管理', icon: 'Menu' },
+  { path: '/site-i18n', label: '文案定制', icon: 'EditPen' },
   { path: '/settings', label: '系统设置', icon: 'Setting' }
 ]
 

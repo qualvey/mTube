@@ -2,10 +2,10 @@
   "app": {
     "openVip": "开通 VIP",
     "vipMember": "VIP 会员",
-    "wantMoreTitle": "想看更多无删减高清视频？",
+    "wantMoreTitle": "想看更多独家版权视频？",
     "wantMoreDesc": "解禁全部 100,000+ 专属超清音视频库，无广告，随心看。",
     "unlockNow": "立即解锁尊享 VIP 特权",
-    "defaultNoticeTitle": "📢 官方重要公告"
+    "defaultNoticeTitle": "📢 通知"
   },
   "lang": {
     "buttonLabel": "EN",
@@ -18,14 +18,14 @@
     "leave": "我未满 18 岁，离开"
   },
   "notice": {
-    "defaultTitle": "📢 官方重要公告",
+    "defaultTitle": "📢 通知",
     "doNotShowToday": "今日不再提醒",
     "acknowledge": "我知道了"
   },
   "hero": {
     "swipeUp": "上滑探索",
-    "defaultTitle": "极致诱惑",
-    "defaultSubtitle": "滑动探索更多独家无删减内容"
+    "defaultTitle": "精彩视频下滑",
+    "defaultSubtitle": "滑动探索更多优质内容"
   },
   "scrollTransition": {
     "title": "即将解锁...",
@@ -49,7 +49,7 @@
   "feed": {
     "title": "热门视频",
     "loadingMore": "加载更多...",
-    "endOfFeedCommon": "没有更多了，注意身体哦",
+    "endOfFeedCommon": "暂时没有更多了，刺激放松的同时也要注意身体哦",
     "endOfFeedVIP": "已加载全部免费体验视频",
     "unlockAll": "开通 VIP 解锁全部 5000+ 原画库",
     "searchPlaceholder": "搜索标题 / 创作者...",
@@ -92,7 +92,7 @@
     "copied": "已复制",
     "copiedTick": "✓ 已复制",
     "hotDeal": "限时特惠",
-    "defaultPlanDesc": "解锁全部超清内存流视频",
+    "defaultPlanDesc": "解锁全部视频",
     "cryptoAddressTitle": "TRC-20 (TRON) 收款地址",
     "orderNo": "单据号:",
     "scanWithWallet": "使用 欧易/币安/TronLink 钱包扫码",

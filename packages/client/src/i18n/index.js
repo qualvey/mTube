@@ -72,6 +72,30 @@ export const setAppLocale = async (locale, persist = true) => {
 export const loadInitialLocale = async () => {
   await setAppLocale(i18n.global.locale.value, false)
 }
+/** 拍平点路径 → 嵌套对象：{ 'a.b.c': 'v' } → { a: { b: { c: 'v' } } } */
+const dotToNested = (flat) => {
+  const out = {}
+  for (const [key, value] of Object.entries(flat)) {
+    const parts = key.split('.')
+    let node = out
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (typeof node[parts[i]] !== 'object' || node[parts[i]] === null) node[parts[i]] = {}
+      node = node[parts[i]]
+    }
+    node[parts[parts.length - 1]] = value
+  }
+  return out
+}
+
+/**
+ * 合并站点文案覆盖（白标定制）：deep merge 进指定语言 messages，
+ * 未覆盖的 key 保持语言包默认值。调用时机：语言包加载完成之后。
+ */
+export const applySiteOverrides = (overrides, locale) => {
+  if (!overrides || typeof overrides !== 'object' || Object.keys(overrides).length === 0) return
+  i18n.global.mergeLocaleMessage(locale, dotToNested(overrides))
+}
+
 
 /** 当前语言码（供 videoService 等非组件模块取用） */
 export const getCurrentLocale = () => i18n.global.locale.value

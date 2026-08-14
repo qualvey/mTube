@@ -9,6 +9,7 @@ import OrdersView from '../views/OrdersView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import AdsView from '../views/AdsView.vue'
 import MenusView from '../views/MenusView.vue'
+import SiteI18nView from '../views/SiteI18nView.vue'
 
 const routes = [
   {
@@ -64,6 +65,12 @@ const routes = [
         name: 'Menus',
         component: MenusView,
         meta: { title: '菜单管理', icon: 'Menu' }
+      },
+      {
+        path: 'site-i18n',
+        name: 'SiteI18n',
+        component: SiteI18nView,
+        meta: { title: '文案定制', icon: 'EditPen' }
       },
       {
         path: 'settings',

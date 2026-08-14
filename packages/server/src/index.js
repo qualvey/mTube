@@ -891,7 +891,9 @@ app.get('/api/v1/settings', (req, res) => {
     enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true,
     paywallNotice: settings.paywallNotice,
     userAgreement: settings.userAgreement,
-    customerServiceText: settings.customerServiceText
+    customerServiceText: settings.customerServiceText,
+    // i18n 文案覆盖（白标定制）：仅返回当前语言有覆盖的 key，前端 mergeLocaleMessage 合并
+    i18n: db.getSiteI18nOverrides(req.query.lang)
   })
 })
 
@@ -964,7 +966,9 @@ app.get(['/api/v1/site-config', '/api/v1/paywall/config', '/api/v1/settings'], (
     enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true,
     paywallNotice: settings.paywallNotice,
     userAgreement: settings.userAgreement,
-    customerServiceText: settings.customerServiceText
+    customerServiceText: settings.customerServiceText,
+    // i18n 文案覆盖（白标定制）：仅返回当前语言有覆盖的 key，前端 mergeLocaleMessage 合并
+    i18n: db.getSiteI18nOverrides(req.query.lang)
   })
 })
 
@@ -1610,6 +1614,34 @@ app.get('/api/v1/admin/translations/overview', (req, res) => {
   const overview = db.getTranslationOverview(entityType)
   sendResponse(res, overview, 200, 'Translation overview retrieved')
 })
+// GET /api/v1/admin/site-i18n - 全量文案覆盖（{ zh: {...}, en: {...} }）
+app.get('/api/v1/admin/site-i18n', (req, res) => {
+  sendResponse(res, db.getAllSiteI18nOverrides(), 200, 'Site i18n overrides retrieved')
+})
+
+// POST /api/v1/admin/site-i18n - 保存/更新一条覆盖（key + locale + value）
+app.post('/api/v1/admin/site-i18n', (req, res) => {
+  const key = String(req.body?.key || '').trim()
+  const locale = String(req.body?.locale || '').trim()
+  const value = String(req.body?.value ?? '').trim()
+  if (!key || !/^[a-zA-Z0-9_.-]{1,100}$/.test(key)) {
+    return sendResponse(res, null, 400, 'key 格式不正确（字母/数字/点/下划线/中划线）')
+  }
+  if (!locale) return sendResponse(res, null, 400, '缺少 locale')
+  db.saveSiteI18nOverride({ key, locale, value })
+  sendResponse(res, { key, locale, value }, 200, '文案覆盖已保存')
+})
+
+// DELETE /api/v1/admin/site-i18n - 删除覆盖（恢复默认文案）
+app.delete('/api/v1/admin/site-i18n', (req, res) => {
+  const key = String(req.query.key || '').trim()
+  const locale = String(req.query.locale || '').trim()
+  if (!key || !locale) return sendResponse(res, null, 400, '缺少 key / locale')
+  const ok = db.deleteSiteI18nOverride({ key, locale })
+  if (!ok) return sendResponse(res, null, 404, '覆盖不存在')
+  sendResponse(res, { success: true }, 200, '已恢复默认文案')
+})
+
 
 // POST /api/v1/admin/login - Admin authentication login endpoint
 app.post('/api/v1/admin/login', (req, res) => {

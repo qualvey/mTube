@@ -996,6 +996,40 @@ export const db = {
     return database.prepare('DELETE FROM user_sessions WHERE userId = ?').run(userId).changes
   },
 
+  // ── 站点 i18n 文案覆盖（白标定制）────────────────────────
+  /** 指定语言的覆盖（拍平 { key: value }），无覆盖返回 {} */
+  getSiteI18nOverrides(locale) {
+    const rows = database.prepare(
+      "SELECT field, value FROM translations WHERE entityType = 'site_i18n' AND entityId = 'site' AND locale = ?"
+    ).all(locale)
+    const out = {}
+    for (const r of rows) out[r.field] = r.value
+    return out
+  },
+
+  /** 全量覆盖（管理端用）：{ zh: {...}, en: {...} } */
+  getAllSiteI18nOverrides() {
+    const rows = database.prepare(
+      "SELECT locale, field, value FROM translations WHERE entityType = 'site_i18n' AND entityId = 'site' ORDER BY locale, field"
+    ).all()
+    const out = {}
+    for (const r of rows) {
+      if (!out[r.locale]) out[r.locale] = {}
+      out[r.locale][r.field] = r.value
+    }
+    return out
+  },
+
+  saveSiteI18nOverride({ key, locale, value }) {
+    return this.upsertTranslation({ entityType: 'site_i18n', entityId: 'site', locale, field: key, value })
+  },
+
+  deleteSiteI18nOverride({ key, locale }) {
+    return database.prepare(
+      "DELETE FROM translations WHERE entityType = 'site_i18n' AND entityId = 'site' AND locale = ? AND field = ?"
+    ).run(locale, key).changes > 0
+  },
+
   // ── 邮箱验证码（注册两步验证）────────────────────────────
   upsertEmailVerification({ email, code, passwordHash, nickname, expiresAt }) {
     const createdAt = new Date().toISOString()

@@ -632,3 +632,29 @@ GET/POST /api/v1/admin/loglevel?level=debug
 - 本文件由 `scripts/check-api-docs.mjs` 自动校验：扫描 `packages/server/src` 全部路由，未写入文档的接口会导致检查失败（pre-commit 拦截）。
 - **任何接口变更必须同步更新本文档与 `doc/api_specification.md`,与代码同一 commit 提交。**
 - 校验命令：`node scripts/check-api-docs.mjs`（增量，配合 git staged）/ `node scripts/check-api-docs.mjs --full`（全量）。
+
+### 文案定制（site-i18n，白标）
+
+C 端任意 i18n 文案覆盖（key 为语言包点路径，如 `feed.loadingMore`；覆盖后 C 端刷新即生效，留空语言保持默认）。
+
+```
+GET /api/v1/admin/site-i18n
+```
+
+返回全量覆盖：`data` = `{ "zh": { "feed.loadingMore": "..." }, "en": { ... } }`（无覆盖返回空对象）。
+
+```
+POST /api/v1/admin/site-i18n
+```
+
+Body: `{ "key": "feed.loadingMore", "locale": "zh", "value": "加载更多..." }`
+- key 校验：字母/数字/点/下划线/中划线，≤100 字符
+- 返回 `200`；保存/更新同一条（upsert）
+
+```
+DELETE /api/v1/admin/site-i18n?key=feed.loadingMore&locale=zh
+```
+
+删除覆盖恢复默认文案；返回 `200`；不存在返回 `404`。
+
+C 端消费：`GET /api/v1/site-config?lang=zh` 返回 `data.i18n`（当前语言覆盖），前端 `mergeLocaleMessage` 深合并（未覆盖 key 保持语言包默认）。

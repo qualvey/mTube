@@ -187,7 +187,7 @@ import { trackAnalytics, videoService } from './services/videoService'
 import { authService } from './services/authService'
 import AuthModal from './components/AuthModal.vue'
 import { initAnalytics, shutdownAnalytics } from './services/analyticsService'
-import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT } from './i18n'
+import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT, applySiteOverrides } from './i18n'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -467,8 +467,10 @@ const fetchSiteConfig = async () => {
     const res = await fetch(`/api/v1/site-config?lang=${lang}`)
     if (res.ok) {
       const json = await res.json()
-      if (json && json.data && json.data.siteTitle) {
-        document.title = json.data.siteTitle
+      if (json && json.data) {
+        if (json.data.siteTitle) document.title = json.data.siteTitle
+        // 白标文案覆盖：merge 进当前语言 messages（未覆盖 key 保持默认）
+        if (json.data.i18n) applySiteOverrides(json.data.i18n, lang)
       }
     }
   } catch (e) {}
