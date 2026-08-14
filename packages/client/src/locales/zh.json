@@ -76,7 +76,8 @@
     "invalidUrl": "视频 URL 无效",
     "initFailed": "播放器初始化失败",
     "loadFailed": "视频加载失败，请重试",
-    "retry": "重新拉取"
+    "retry": "重新拉取",
+    "volume": "音量"
   },
   "paywall": {
     "swipeDown": "下滑收起，返回视频流",

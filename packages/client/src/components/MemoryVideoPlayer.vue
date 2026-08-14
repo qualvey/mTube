@@ -90,6 +90,42 @@
       @loadedmetadata="handleLoadedMetadata"
       class="plyr-video-element w-full h-full object-contain"
     ></video>
+
+    <!-- 自定义竖向音量控件：横向仅一个按钮，bar 竖向展示（让进度条最大化） -->
+    <div
+      class="absolute right-2 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2"
+      @mouseenter="volOpen = true"
+      @mouseleave="volOpen = false"
+    >
+      <div
+        v-show="volOpen"
+        class="flex flex-col items-center gap-1.5 bg-black/80 backdrop-blur-md border border-white/10 rounded-full py-2.5 px-1 shadow-xl"
+      >
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          :value="volume"
+          @input="onVolumeInput"
+          class="vol-range"
+          :aria-label="t('player.volume')"
+        />
+      </div>
+      <button
+        @click="toggleVolumePanel"
+        class="w-8 h-8 rounded-full bg-black/60 hover:bg-black/85 border border-white/10 text-white flex items-center justify-center transition-all active:scale-95"
+        :title="t('player.volume')"
+        :aria-label="t('player.volume')"
+      >
+        <svg v-if="currentMuted || volume === 0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+          <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM17.78 9.22a.75.75 0 10-1.06 1.06L18.44 12l-1.72 1.72a.75.75 0 001.06 1.06l1.72-1.72 1.72 1.72a.75.75 0 101.06-1.06L20.56 12l1.72-1.72a.75.75 0 10-1.06-1.06l-1.72 1.72-1.72-1.72z" />
+        </svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+          <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM18.584 5.106a.75.75 0 011.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 01-1.06-1.06 8.25 8.25 0 000-11.668.75.75 0 010-1.06z" />
+        </svg>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -156,6 +192,15 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const loading = ref<boolean>(false)   // 初始 false，idle 状态下不显示 spinner
 const progress = ref<number>(0)
 const errorMessage = ref<string | null>(null)
+
+// ── 音量（自定义竖向控件）与播放暂停状态 ────────────────────
+const volume = ref(1)
+const currentMuted = ref(props.muted)
+const volOpen = ref(false)
+/** 用户手动暂停标记：true 后不再自动播放，直到用户主动点击播放 */
+const userPaused = ref(false)
+/** 程序性暂停标记：区分用户主动 pause 与代码 pause（active 切换/清理/试看结束） */
+let programmaticPause = false
 
 /** 是否已开始拉流（false = idle 状态，展示封面+播放按钮） */
 const hasStarted = ref<boolean>(false)
@@ -474,6 +519,8 @@ const cleanupPlayerInstances = () => {
  */
 const loadVideoToMemory = async () => {
   cleanupPlayerInstances()
+  // 新视频/重新加载：重置手动暂停标记，允许本次自动播放
+  userPaused.value = false
 
   // 标记已开始，切换到 loading UI
   hasStarted.value = true
@@ -609,8 +656,6 @@ const initializePlyr = () => {
       'progress',
       'current-time',
       'duration',
-      'mute',
-      'volume',
       'fullscreen'
     ],
     tooltips: { controls: true, seek: true }
@@ -618,14 +663,21 @@ const initializePlyr = () => {
 
   plyrInstance.on('ready', () => {
     handleLoadedMetadata()
+    // 同步初始音量状态到自定义控件
+    volume.value = plyrInstance ? plyrInstance.volume : 1
+    currentMuted.value = plyrInstance ? plyrInstance.muted : props.muted
   })
 
   plyrInstance.on('play', () => {
+    userPaused.value = false // 用户主动播放（或自动恢复）→ 解除手动暂停标记
     startPlaybackAnalytics()
     emit('request-activate')
     emit('play')
   })
   plyrInstance.on('pause', () => {
+    // 非程序性暂停 = 用户手动点击暂停 → 标记，禁止后续自动播放
+    if (!programmaticPause) userPaused.value = true
+    programmaticPause = false
     tickWatchTime()
     flushWatchTime()
     emit('pause')
@@ -641,6 +693,7 @@ const initializePlyr = () => {
     if (props.video && props.video.isVip && !props.isVipUnlocked) {
       const limit = props.previewDuration || props.video.previewDuration || 120
       if (plyrInstance && plyrInstance.currentTime >= limit) {
+        programmaticPause = true // 试看结束的强制暂停不计为用户手动暂停
         plyrInstance.pause()
         plyrInstance.currentTime = limit
         if (!trialTriggered) {
@@ -661,10 +714,33 @@ const onManualPlay = () => {
   emit('request-activate')
   // 如果已经是 active 状态（自己就是激活的），直接开始加载
   if (props.active) {
+    userPaused.value = false // 用户主动播放
     hasStarted.value = true
     loadVideoToMemory()
   }
   // 否则等 watch(active) 监听到 true 后再开始
+}
+
+// ── 自定义竖向音量控件 ──────────────────────────────────────
+const toggleVolumePanel = () => {
+  volOpen.value = !volOpen.value
+}
+
+const toggleMute = () => {
+  if (!plyrInstance) return
+  plyrInstance.muted = !plyrInstance.muted
+  currentMuted.value = plyrInstance.muted
+}
+
+const onVolumeInput = (e) => {
+  if (!plyrInstance) return
+  const v = Number(e.target.value)
+  plyrInstance.volume = v
+  volume.value = v
+  if (v > 0 && plyrInstance.muted) {
+    plyrInstance.muted = false
+    currentMuted.value = false
+  }
 }
 
 // 当 active 变化时协调加载/暂停
@@ -775,6 +851,16 @@ onUnmounted(() => {
 .plyr__poster {
   background-size: cover !important;
   background-position: center !important;
+}
+
+/* 竖向音量条 */
+.vol-range {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 4px;
+  height: 72px;
+  accent-color: #eab308;
+  cursor: pointer;
 }
 
 .plyr__control--overlaid {

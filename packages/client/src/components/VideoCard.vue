@@ -84,7 +84,7 @@
       </div>
 
       <div class="flex items-center justify-between pt-2 border-t border-zinc-800/80">
-        <div class="flex items-center gap-2.5">
+        <div v-if="showCreatorInfo" class="flex items-center gap-2.5">
           <img 
             :src="video.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop'" 
             class="w-6 h-6 rounded-full object-cover border border-zinc-700 shadow-sm"
@@ -149,6 +149,11 @@ const props = defineProps({
   active: {
     type: Boolean,
     default: true
+  },
+  /** 创作者信息开关（默认隐藏；后期 UGC 创作者体系上线后开启） */
+  showCreatorInfo: {
+    type: Boolean,
+    default: false
   }
 })
 

@@ -76,7 +76,8 @@
     "invalidUrl": "Invalid video URL",
     "initFailed": "Player initialization failed",
     "loadFailed": "Video failed to load, please retry",
-    "retry": "Reload"
+    "retry": "Reload",
+    "volume": "Volume"
   },
   "paywall": {
     "swipeDown": "Swipe down to collapse",

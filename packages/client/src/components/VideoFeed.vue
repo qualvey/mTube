@@ -47,6 +47,7 @@
           :is-vip-unlocked="isVip"
           :paywall-enabled="paywallEnabled"
           :active="activeVideoId === item.id"
+          :show-creator-info="showCreatorInfo"
           @trigger-paywall="$emit('trigger-paywall', $event)"
           @request-activate="onRequestActivate"
           @request-pause="onRequestPause"
@@ -132,6 +133,8 @@ let requestSeq = 0
 const ads = ref([])
 const adsEnabled = ref(false)
 const adsFeedInterval = ref(6)
+/** 创作者信息开关：settings.showCreatorInfo（默认隐藏，UGC 上线后开启） */
+const showCreatorInfo = ref(false)
 
 /**
  * 拉取广告配置（总开关 + 间隔）与当前广告列表。
@@ -145,6 +148,7 @@ const fetchAdConfig = async () => {
       if (json && json.data) {
         adsEnabled.value = json.data.adsEnabled === true || json.data.adsEnabled === 'true'
         adsFeedInterval.value = Math.max(2, Number(json.data.adsFeedInterval) || 6)
+        showCreatorInfo.value = json.data.showCreatorInfo === true || json.data.showCreatorInfo === 'true'
       }
     }
   } catch (e) {
