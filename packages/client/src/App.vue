@@ -74,24 +74,26 @@
       </div>
       </div>
 
-      <!-- 第二行：热门 tag 快捷入口（仅移动端，横向滚动） -->
-      <div v-if="isHome" class="lg:hidden flex items-center gap-2 overflow-x-auto px-3 pb-2.5 pt-0.5" style="scrollbar-width: none">
-        <button
-          @click="selectTag(null)"
-          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
-          :class="!category.activeTag ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
-        >
-          {{ t('feed.allCategories') }}
-        </button>
-        <button
-          v-for="tag in hotTags"
-          :key="tag.name"
-          @click="selectTag(tag.name)"
-          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
-          :class="category.activeTag === tag.name ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
-        >
-          {{ tag.name }}
-        </button>
+      <!-- 第二行：热门 tag 快捷入口（仅移动端，横向滚动，内容不足时居中） -->
+      <div v-if="isHome" class="lg:hidden overflow-x-auto px-3 pb-2.5 pt-0.5" style="scrollbar-width: none">
+        <div class="flex w-max mx-auto items-center gap-2">
+          <button
+            @click="selectTag(null)"
+            class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
+            :class="!category.activeTag ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
+          >
+            {{ t('feed.allCategories') }}
+          </button>
+          <button
+            v-for="tag in hotTags"
+            :key="tag.name"
+            @click="selectTag(tag.name)"
+            class="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all border"
+            :class="category.activeTag === tag.name ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black border-transparent shadow' : 'bg-white/10 text-zinc-300 border-white/10 hover:bg-white/20'"
+          >
+            {{ tag.name }}
+          </button>
+        </div>
       </div>
     </header>
 

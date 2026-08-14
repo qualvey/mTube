@@ -1,14 +1,14 @@
 <template>
   <div class="w-full max-w-lg mx-auto px-4 py-8 flex flex-col gap-6">
     <!-- Stream Header -->
-    <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+    <!-- <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
       <div class="flex items-center gap-2">
         <div class="w-3 h-3 rounded-full bg-red-500 animate-ping"></div>
         <h3 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
           {{ t('feed.title') }}
         </h3>
       </div>
-    </div>
+    </div> -->
 
     <!-- Empty Search Result State -->
     <div v-if="!loading && !loadingMore && videos.length === 0 && searchTerm" class="flex flex-col items-center py-14 text-zinc-500 gap-3">

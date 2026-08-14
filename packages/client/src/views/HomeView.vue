@@ -1,6 +1,6 @@
 <template>
   <div
-    class="w-full h-full overflow-y-auto scroll-smooth pt-28 lg:pt-14"
+    class="w-full h-full overflow-y-auto scroll-smooth pt-[104px] lg:pt-14"
     ref="scrollContainer"
     @scroll="handleScroll"
   >

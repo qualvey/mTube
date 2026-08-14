@@ -121,6 +121,8 @@ const menuItems = [
   { path: '/videos', label: '视频资源管理', icon: 'VideoCamera' },
   { path: '/storage-nodes', label: '存储节点管理', icon: 'Server' },
   { path: '/orders', label: '营收与订单明细', icon: 'ShoppingCart' },
+  { path: '/ads', label: '广告管理', icon: 'Promotion' },
+  { path: '/menus', label: '菜单管理', icon: 'Menu' },
   { path: '/settings', label: '系统设置', icon: 'Setting' }
 ]
 
