@@ -290,7 +290,7 @@
 - **说明**：`action` 缺省为 `PV`；`videoId` 可选。兼容旧版采集，新采集统一走 `POST /api/v1/events/batch`（见 2.14）。
 - **响应**：`200`，`data` 为采集结果
 
-### 2.15 事件批量上报（新版埋点）
+### 2.20 事件批量上报（新版埋点）
 - **请求方式**：`POST /api/v1/events/batch`
 - **请求 Body**：
 ```json
@@ -305,38 +305,45 @@
 - **说明**：带限流（429）；分析系统设计详见 `docs/analytics-system-v1.md`。
 - **响应**：`200`，`data` 为写入统计结果
 
-### 2.15 用户注册
-- **请求**:`POST /api/v1/auth/register`
+### 2.15 用户注册（邮箱验证，两步）
+- **开关**:`EMAIL_VERIFICATION_ENABLED`（默认 `true`）；`false` = 关闭邮箱验证，注册即登录（一步）
+- **第一步 发送验证码**:`POST /api/v1/auth/register`
 - **请求体**（JSON）:
   - `email` (string, 必填) - 邮箱（唯一，自动小写）
   - `password` (string, 必填) - 密码，至少 8 位
   - `nickname` (string, 可选, ≤24 字符) - 昵称；缺省用邮箱前缀
-- **响应**:注册即登录，返回用户信息 + 会话 token
+- **响应**（验证开启）:
 ```json
 {
-  "code": 201,
-  "message": "注册成功",
-  "data": {
-    "user": { "id": "usr_xxx", "email": "a@b.com", "nickname": "abc", "avatar": "", "createdAt": "..." },
-    "token": "usr_xxxxx",
-    "expiresAt": "2026-08-21T12:00:00.000Z"
-  }
+  "code": 200,
+  "message": "验证码已发送，请查收邮箱",
+  "data": { "requiresVerification": true, "email": "a@b.com" }
 }
 ```
-- **限流**:同 IP 5 次/分钟；密码 scrypt 哈希存储，不存明文
+- **说明**:
+  - 验证码 6 位数字，5 分钟有效；同 IP 限流 5 次/分钟
+  - 未配置 `RESEND_API_KEY` 时进入开发模式，`data.devCode` 直接返回验证码（仅开发环境）
+  - 邮件服务:Resend（`RESEND_API_KEY` / `RESEND_FROM`，默认 `onboarding@resend.dev`）
+  - 关闭开关时响应为 `201` + `{ user, token, expiresAt }`（同登录）
 
-### 2.16 用户登录
+### 2.16 验证码确认（创建用户并登录）
+- **请求**:`POST /api/v1/auth/verify`
+- **请求体**（JSON）: `{ "email": "...", "code": "123456" }`
+- **响应**:`201`，`{ user, token, expiresAt }`（注册成功即登录）
+- **错误**:验证码错误 `400`（错误 5 次后需重新获取）；过期 `400`；限流同 IP+邮箱 10 次/分钟
+
+### 2.17 用户登录
 - **请求**:`POST /api/v1/auth/login`
 - **请求体**（JSON）: `email` + `password`
 - **响应**:`200`，结构同注册（token 有效期默认 7 天，可 `AUTH_TOKEN_TTL_DAYS` 覆盖）
 - **说明**:邮箱或密码错误统一返回 `401 邮箱或密码错误`（防账号枚举）；限流同 IP+邮箱 10 次/分钟
 
-### 2.17 登出 / 当前用户
+### 2.18 登出 / 当前用户
 - **登出**:`POST /api/v1/auth/logout`（Bearer token，吊销当前会话）
 - **当前用户**:`GET /api/v1/auth/me`（Bearer token，返回 `data` 为用户信息）
 - **认证方式**:所有需登录接口带 `Authorization: Bearer <token>`
 
-### 2.18 评论
+### 2.19 评论
 - **列表（公开）**:`GET /api/v1/videos/:id/comments?page=&limit=`（limit ≤50，默认 20；按时间倒序，分页结构与视频列表一致）
 - **发表（需登录）**:`POST /api/v1/videos/:id/comments`，请求体 `{ "content": "..." }`（1~500 字）
   - 限流：每用户 10 条/分钟（防滥评）

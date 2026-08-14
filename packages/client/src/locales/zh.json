@@ -129,7 +129,14 @@
     "submitting": "请稍候...",
     "switchToRegister": "没有账号？去注册",
     "switchToLogin": "已有账号？去登录",
-    "close": "关闭"
+    "close": "关闭",
+    "verifyTitle": "邮箱验证",
+    "verifyHint": "验证码已发送至",
+    "code": "验证码",
+    "codePlaceholder": "6 位验证码",
+    "confirmCode": "确认验证",
+    "resendCode": "重新发送验证码",
+    "devCodeHint": "开发模式验证码（未配置邮件服务）："
   },
   "comment": {
     "title": "评论",

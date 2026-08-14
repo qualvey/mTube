@@ -29,6 +29,15 @@ export const config = {
 
   // Alipay (existing mock/real) settings are read from db settings
 
+  // 注册邮箱验证（开关）：默认开启；关闭 = 注册即登录（不验证邮箱）
+  emailVerificationEnabled: process.env.EMAIL_VERIFICATION_ENABLED !== 'false',
+
+  // Resend 邮件服务（注册验证码）；未配 key 时进入开发模式（验证码随响应返回 devCode）
+  resend: {
+    apiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.RESEND_FROM || 'onboarding@resend.dev',
+  },
+
   // Analytics (统计/地域分析) — all overridable via env
   analytics: {
     // 分析采集总开关。false = 拒绝所有 events/batch 上报（默认开）

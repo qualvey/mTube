@@ -330,6 +330,17 @@ database.exec(`
   CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(videoId, createdAt DESC);
   CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(userId);
 
+  CREATE TABLE IF NOT EXISTS email_verifications (
+    email TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    nickname TEXT DEFAULT '',
+    attempts INTEGER DEFAULT 0,
+    expiresAt TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    verifiedAt TEXT DEFAULT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS storage_nodes (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -983,6 +994,38 @@ export const db = {
 
   deleteUserSessions(userId) {
     return database.prepare('DELETE FROM user_sessions WHERE userId = ?').run(userId).changes
+  },
+
+  // ── 邮箱验证码（注册两步验证）────────────────────────────
+  upsertEmailVerification({ email, code, passwordHash, nickname, expiresAt }) {
+    const createdAt = new Date().toISOString()
+    database.prepare(`
+      INSERT INTO email_verifications (email, code, password_hash, nickname, attempts, expiresAt, createdAt)
+      VALUES (?, ?, ?, ?, 0, ?, ?)
+      ON CONFLICT(email) DO UPDATE SET
+        code = excluded.code,
+        password_hash = excluded.password_hash,
+        nickname = excluded.nickname,
+        attempts = 0,
+        expiresAt = excluded.expiresAt,
+        createdAt = excluded.createdAt,
+        verifiedAt = NULL
+    `).run(String(email).trim().toLowerCase(), code, passwordHash, nickname, expiresAt, createdAt)
+  },
+
+  getEmailVerification(email) {
+    return database.prepare('SELECT * FROM email_verifications WHERE email = ?')
+      .get(String(email || '').trim().toLowerCase())
+  },
+
+  incrementVerificationAttempts(email) {
+    database.prepare('UPDATE email_verifications SET attempts = attempts + 1 WHERE email = ?')
+      .run(String(email).trim().toLowerCase())
+  },
+
+  clearEmailVerification(email) {
+    database.prepare('DELETE FROM email_verifications WHERE email = ?')
+      .run(String(email).trim().toLowerCase())
   },
 
   // ── 评论 ──────────────────────────────────────────────────

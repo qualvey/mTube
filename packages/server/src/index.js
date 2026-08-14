@@ -14,6 +14,7 @@ import { sendResponse } from './utils/response.js'
 import { issueAdminToken, requireAdminAuth, adminAuthMiddleware } from './middleware/adminAuth.js'
 import { hashPassword, verifyPassword, createUserToken, publicUser, requireUserAuth } from './middleware/userAuth.js'
 import { rateLimit, ipKey } from './utils/rateLimit.js'
+import { sendVerificationEmail } from './utils/mailer.js'
 import { getCountryCode } from './geoip.js'
 import paywallRouter from './routes/paywall.js'
 
@@ -720,10 +721,12 @@ app.get('/api/v1/videos/suggest', (req, res) => {
 })
 
 // ── 用户认证（评论身份体系）────────────────────────────────
-// 注册：邮箱 + 密码（≥8 位），注册即登录
+// 注册：邮箱 + 密码（≥8 位）
+// - EMAIL_VERIFICATION_ENABLED=false：一步注册即登录
+// - 默认开启：两步（发验证码 → /auth/verify 激活）；未配 RESEND_API_KEY 时响应带 devCode 便于本机联调
 app.post('/api/v1/auth/register',
   rateLimit({ windowMs: 60000, max: 5, keyFn: ipKey, message: '注册过于频繁，请稍后再试' }),
-  (req, res) => {
+  async (req, res) => {
     const email = String(req.body?.email || '').trim().toLowerCase()
     const password = String(req.body?.password || '')
     const nickname = String(req.body?.nickname || '').trim().slice(0, 24)
@@ -732,11 +735,59 @@ app.post('/api/v1/auth/register',
     }
     if (password.length < 8) return sendResponse(res, null, 400, '密码至少 8 位')
     if (db.findUserByEmail(email)) return sendResponse(res, null, 409, '该邮箱已注册')
-    const user = db.createUser({
-      email,
-      passwordHash: hashPassword(password),
-      nickname: nickname || email.split('@')[0]
-    })
+
+    // 开关关闭：一步注册即登录（原逻辑）
+    if (!config.emailVerificationEnabled) {
+      const user = db.createUser({
+        email,
+        passwordHash: hashPassword(password),
+        nickname: nickname || email.split('@')[0]
+      })
+      const { token, expiresAt } = createUserToken(user.id)
+      return sendResponse(res, { user: publicUser(user), token, expiresAt }, 201, '注册成功')
+    }
+
+    // 开启验证：生成 6 位验证码 → 暂存注册信息 → 发邮件
+    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0')
+    const expiresAt = new Date(Date.now() + 5 * 60000).toISOString()
+    db.upsertEmailVerification({ email, code, passwordHash: hashPassword(password), nickname: nickname || email.split('@')[0], expiresAt })
+    let sent = null
+    try {
+      sent = await sendVerificationEmail({ to: email, code })
+    } catch (e) {
+      console.warn('[Mailer] 验证码发送失败:', e.message)
+    }
+    const data = { requiresVerification: true, email }
+    if (sent?.devMode) data.devCode = code // 仅开发模式（未配 key）暴露，便于本机测试
+    sendResponse(res, data, 200, sent ? '验证码已发送，请查收邮箱' : '验证码发送失败，请稍后再试')
+  }
+)
+
+// 验证码确认 → 创建用户并登录
+app.post('/api/v1/auth/verify',
+  rateLimit({
+    windowMs: 60000, max: 10,
+    keyFn: (req) => `${ipKey(req)}|${String(req.body?.email || '').trim().toLowerCase()}`,
+    message: '尝试过于频繁，请稍后再试'
+  }),
+  (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const code = String(req.body?.code || '').trim()
+    if (!/^\d{6}$/.test(code)) return sendResponse(res, null, 400, '验证码格式不正确')
+    const pending = db.getEmailVerification(email)
+    if (!pending || pending.verifiedAt) return sendResponse(res, null, 400, '请先获取验证码')
+    if (new Date(pending.expiresAt).getTime() < Date.now()) {
+      return sendResponse(res, null, 400, '验证码已过期，请重新获取')
+    }
+    if (pending.attempts >= 5) return sendResponse(res, null, 429, '尝试次数过多，请重新获取验证码')
+    if (pending.code !== code) {
+      db.incrementVerificationAttempts(email)
+      return sendResponse(res, null, 400, '验证码错误')
+    }
+
+    // 激活：创建用户 + 签发 token + 清理验证码记录
+    const user = db.createUser({ email, passwordHash: pending.password_hash, nickname: pending.nickname })
+    db.clearEmailVerification(email)
     const { token, expiresAt } = createUserToken(user.id)
     sendResponse(res, { user: publicUser(user), token, expiresAt }, 201, '注册成功')
   }

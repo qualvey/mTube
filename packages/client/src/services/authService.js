@@ -27,11 +27,30 @@ export const authService = {
       method: 'POST',
       body: JSON.stringify({ email, password, nickname })
     })
-    if (r.ok && r.data?.data?.token) {
-      this.setToken(r.data.data.token)
-      return { ok: true, user: r.data.data.user, message: r.data.message }
+    const d = r.data?.data
+    if (r.ok && d?.requiresVerification) {
+      // 邮箱验证开启：等待验证码确认
+      return { ok: true, requiresVerification: true, devCode: d.devCode, message: r.data?.message || '验证码已发送' }
+    }
+    if (r.ok && d?.token) {
+      this.setToken(d.token)
+      return { ok: true, user: d.user, message: r.data?.message }
     }
     return { ok: false, message: r.data?.message || '注册失败' }
+  },
+
+  /** 验证码确认：通过后创建用户并登录 */
+  async verify({ email, code }) {
+    const r = await api('/api/v1/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, code })
+    })
+    const d = r.data?.data
+    if (r.ok && d?.token) {
+      this.setToken(d.token)
+      return { ok: true, user: d.user, message: r.data?.message }
+    }
+    return { ok: false, message: r.data?.message || '验证失败' }
   },
 
   async login({ email, password }) {

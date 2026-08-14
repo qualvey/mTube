@@ -129,7 +129,14 @@
     "submitting": "Please wait...",
     "switchToRegister": "Don't have an account? Sign up",
     "switchToLogin": "Already have an account? Sign in",
-    "close": "Close"
+    "close": "Close",
+    "verifyTitle": "Email Verification",
+    "verifyHint": "A verification code was sent to",
+    "code": "Code",
+    "codePlaceholder": "6-digit code",
+    "confirmCode": "Verify & Sign up",
+    "resendCode": "Resend code",
+    "devCodeHint": "Dev mode code (email service not configured):"
   },
   "comment": {
     "title": "Comments",
