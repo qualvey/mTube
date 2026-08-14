@@ -149,7 +149,7 @@ const category = reactive({
   tags: [],          // 全量标签 [{ name, count }]
   menus: [],         // 导航菜单树（管理侧配置 / 默认菜单）
   drawerOpen: false, // 移动端分类抽屉显隐
-  sidebarCollapsed: false, // PC 侧边栏收纳态（展开/收纳）
+  sidebarCollapsed: true, // PC 侧边栏默认收纳（展开/收纳）
 })
 provide('category', category)
 
