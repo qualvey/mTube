@@ -8,7 +8,7 @@
     <!-- <HeroSection :blur="paywall.showPaywall" /> -->
 
     <!-- Desktop Sidebar + Feed Two-Column Layout -->
-    <div class="max-w-6xl mx-auto w-full flex items-start lg:gap-6">
+    <div class="max-w-[1600px] mx-auto w-full flex items-start lg:gap-6">
       <CategorySidebar
         :menus="category.menus"
         :active-tag="category.activeTag"

@@ -1,7 +1,7 @@
 <template>
   <div 
     class="relative w-full h-full bg-black rounded-xl overflow-hidden group shadow-2xl transition-all duration-300 flex items-center justify-center max-h-[75vh]"
-    :style="{ aspectRatio: videoAspectRatio }"
+    :style="{ aspectRatio: displayAspect }"
     @mousemove="handleContainerMouseMove"
     @mouseleave="hoveringProgress = false"
   >
@@ -125,6 +125,8 @@ export interface ComponentProps {
   previewDuration?: number
   /** 控制此播放器是否为当前激活（加载+播放）状态，默认 true 保持向后兼容 */
   active?: boolean
+  /** 强制固定宽高比（如 "16 / 9"），用于 grid 多列布局下统一卡片封面；不传则按 poster/视频动态自适应 */
+  forceAspectRatio?: string
 }
 
 const props = withDefaults(defineProps<ComponentProps>(), {
@@ -133,7 +135,8 @@ const props = withDefaults(defineProps<ComponentProps>(), {
   muted: true,
   enableSeekPreview: true,
   isVipUnlocked: false,
-  active: true
+  active: true,
+  forceAspectRatio: undefined
 })
 
 const { t } = useI18n()
@@ -160,6 +163,11 @@ const hasStarted = ref<boolean>(false)
 // Aspect Ratio State for Landscape / Portrait Auto Adaptation
 const videoAspectRatio = ref<string>('16 / 9')
 const isPortrait = ref<boolean>(false)
+
+/** 展示宽高比：传了 forceAspectRatio（grid 场景）用固定值，否则动态自适应 */
+const displayAspect = computed(() => props.forceAspectRatio || videoAspectRatio.value)
+
+/** 展示宽高比：传了 forceAspectRatio（grid 场景）用固定值，否则动态自适应 */
 
 /**
  * 封面图加载完成 → 检测实际尺寸 → 更新容器比例

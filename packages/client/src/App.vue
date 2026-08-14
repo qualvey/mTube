@@ -75,7 +75,7 @@
       </div>
 
       <!-- 第二行：热门 tag 快捷入口（仅移动端，横向滚动，内容不足时居中） -->
-      <div v-if="isHome" class="lg:hidden overflow-x-auto px-3 pb-2.5 pt-0.5" style="scrollbar-width: none">
+      <div v-if="isHome" class=" overflow-x-auto px-3 pb-2.5 pt-0.5" style="scrollbar-width: none">
         <div class="flex w-max mx-auto items-center gap-2">
           <button
             @click="selectTag(null)"

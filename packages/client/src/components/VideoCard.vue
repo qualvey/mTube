@@ -2,9 +2,11 @@
   <div 
     ref="cardRef"
     class="relative w-full rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 shadow-2xl transition-all duration-300 hover:border-zinc-700/80"
+    @mouseenter="handleMouseEnter"
+    @mouseleave="handleMouseLeave"
   >
     <!-- Video Player Area -->
-    <div class="relative w-full bg-black group overflow-hidden flex items-center justify-center min-h-[220px]">
+    <div class="relative w-full bg-black group overflow-hidden flex items-center justify-center aspect-video">
       <!-- Memory Stream Video Player (Fetch with custom headers -> Blob Object URL -> Plyr) -->
       <MemoryVideoPlayer
         v-if="!video.isVip || isVipUnlocked || !isTrialEnded"
@@ -12,6 +14,7 @@
         :muted="isMuted"
         :is-vip-unlocked="isVipUnlocked"
         :active="active"
+        force-aspect-ratio="16 / 9"
         @trial-ended="handleTrialEnded"
         @request-activate="$emit('request-activate', video.id)"
       />
@@ -60,7 +63,7 @@
     </div>
 
     <!-- Video Info & Meta Area -->
-    <div class="p-4 flex flex-col gap-3">
+    <div class="p-3 flex flex-col gap-2">
       <div>
         <div class="flex items-center gap-2 mb-1.5 flex-wrap">
           <span 
@@ -73,7 +76,7 @@
         </div>
         <h4 
           @click="goToDetail"
-          class="text-base font-bold text-white leading-snug line-clamp-2 cursor-pointer hover:text-yellow-400 transition-colors"
+          class="text-sm font-bold text-white leading-snug line-clamp-2 cursor-pointer hover:text-yellow-400 transition-colors"
           :title="t('card.openDetail')"
         >
           {{ video.title }}
@@ -84,7 +87,7 @@
         <div class="flex items-center gap-2.5">
           <img 
             :src="video.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop'" 
-            class="w-8 h-8 rounded-full object-cover border border-zinc-700 shadow-sm"
+            class="w-6 h-6 rounded-full object-cover border border-zinc-700 shadow-sm"
           />
           <div class="flex flex-col">
             <span class="text-xs font-bold text-zinc-200">{{ video.author }}</span>
@@ -94,7 +97,7 @@
 
         <div class="flex items-center gap-3">
           <div class="flex items-center gap-1 text-xs text-zinc-400" :title="t('card.validViews')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12 18 18.75 12 18.75 2.25 12 2.25 12z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
@@ -105,7 +108,7 @@
             class="flex items-center gap-1 text-xs text-zinc-400 hover:text-red-400 transition-colors"
             :class="{ 'text-red-500': isLiked }"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" :fill="isLiked ? 'currentColor' : 'none'" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <svg xmlns="http://www.w3.org/2000/svg" :fill="isLiked ? 'currentColor' : 'none'" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
               <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
             </svg>
             <span>{{ formatCount(likesCount) }}</span>
@@ -189,10 +192,23 @@ const formatCount = (count) => {
 
 // ── IntersectionObserver — YouTube 式自动激活逻辑 ────────────────────────────
 // 当卡片进入视口中心区域时，自动 emit request-activate 让 VideoFeed 切换活跃视频
+// PC（支持 hover）用鼠标悬停激活预览播放；触摸设备退回 IntersectionObserver 视口激活
+// 同一时间仅一个播放：由 VideoFeed 的 activeVideoId 互斥保证
+const supportsHover = window.matchMedia('(hover: hover)').matches
+
+const handleMouseEnter = () => {
+  if (supportsHover) emit('request-activate', props.video.id)
+}
+
+const handleMouseLeave = () => {
+  if (supportsHover) emit('request-pause', props.video.id)
+}
+
 const cardRef = ref(null)
 let intersectionObserver = null
 
 onMounted(() => {
+  if (supportsHover) return // PC: 仅 hover 驱动，不启用视口激活
   intersectionObserver = new IntersectionObserver(
     (entries) => {
       const entry = entries[0]
