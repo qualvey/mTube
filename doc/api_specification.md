@@ -53,6 +53,8 @@
 - **请求参数**：
   - `tag` (string, 可选): 按分类标签过滤（如 `新增`, `VIP独家`）
   - `search` (string, 可选): 按关键词搜索标题或创作者
+  - `page` / `limit` (number, 可选): 分页（默认 page=1, limit=10），响应为 `{ items, total, page, limit, totalPages }`
+- **可见性规则**：只返回已发布视频（`status=PUBLISHED`，或 `status=SCHEDULED` 且已到 `publishAt` 的自动转已发布）。未到发布时间的定时队列对 C 端不可见。
 - **响应示例**：
 ```json
 {

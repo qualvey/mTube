@@ -1094,7 +1094,8 @@ app.delete('/api/v1/admin/analytics/logs', (req, res) => {
 })
 
 app.get('/api/v1/admin/videos', (req, res) => {
-  const videos = db.getVideos()
+  // includeScheduled：管理端可见全部（含待发布的 SCHEDULED 队列），C 端接口默认隐藏
+  const videos = db.getVideos({ includeScheduled: true })
   sendResponse(res, videos)
 })
 
@@ -1554,3 +1555,13 @@ app.listen(PORT, () => {
   logger.info(`🚀 Paywall Backend API Server listening on http://localhost:${PORT}`)
   logger.info(`📝 Current Log Level: [${logger.getLevel().toUpperCase()}]`)
 })
+// ── 定时发布清扫任务 ──────────────────────────────────────────────────
+// 每 30s 将已到时间的 SCHEDULED 视频刷为 PUBLISHED（C 端读取时也有懒晋升兜底）
+const publishScheduler = setInterval(() => {
+  try {
+    db.publishDueVideos()
+  } catch (e) {
+    logger.warn('[Scheduler] publishDueVideos error:', e.message)
+  }
+}, 30 * 1000)
+publishScheduler.unref?.()

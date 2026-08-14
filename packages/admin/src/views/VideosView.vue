@@ -82,6 +82,15 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="发布状态" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.status === 'SCHEDULED'" type="warning" size="small" effect="light" class="font-bold">
+              ⏰ 定时 {{ formatPublishTime(row.publishAt) }}
+            </el-tag>
+            <el-tag v-else type="success" size="small" effect="light" class="font-bold">已发布</el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column label="VIP 试看限制" width="140">
           <template #default="{ row }">
             <el-switch
@@ -105,6 +114,7 @@
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <div class="flex items-center gap-2">
+              <el-button v-if="row.status === 'SCHEDULED'" size="small" type="success" plain @click="publishNow(row)">立即发布</el-button>
               <el-button size="small" type="primary" plain icon="Edit" @click="openEditModal(row)">编辑</el-button>
               <el-button size="small" type="danger" plain icon="Delete" @click="handleDeleteVideo(row.id)">删除</el-button>
             </div>
@@ -158,7 +168,10 @@ const videoForm = ref({
   poster: '',
   isVip: true,
   previewDuration: 120,
-  tags: ['新增']
+  tags: ['新增'],
+  // 定时发布：publishAtMs(时间戳) 非空 = SCHEDULED，留空 = 立即发布
+  status: 'PUBLISHED',
+  publishAtMs: null
 })
 
 const availableTagOptions = ref(['独家', '高能', '超清', '无删减', '热门', '推荐'])
@@ -240,7 +253,9 @@ const openAddModal = () => {
     poster: '',
     isVip: true,
     previewDuration: 120,
-    tags: ['新增']
+    tags: ['新增'],
+    status: 'PUBLISHED',
+    publishAtMs: null
   }
   modalVisible.value = true
 }
@@ -273,7 +288,9 @@ const openEditModal = (video) => {
     poster: video.poster || '',
     isVip: !!video.isVip,
     previewDuration: video.previewDuration !== undefined ? Number(video.previewDuration) : 120,
-    tags: Array.isArray(video.tags) ? [...video.tags] : []
+    tags: Array.isArray(video.tags) ? [...video.tags] : [],
+    status: video.status || 'PUBLISHED',
+    publishAtMs: video.publishAt ? new Date(video.publishAt).getTime() : null
   }
   modalVisible.value = true
 }
@@ -281,37 +298,40 @@ const openEditModal = (video) => {
 const handleModalSubmit = async () => {
   const headersJson = buildHeadersJson(videoForm.value.referer, videoForm.value.userAgent)
 
+  // 定时发布：publishAtMs 非空 → SCHEDULED + ISO 时间；留空 → 立即发布
+  const { publishAtMs, ...formFields } = videoForm.value
+  const payload = {
+    ...formFields,
+    publishAt: publishAtMs ? new Date(publishAtMs).toISOString() : null,
+    status: publishAtMs ? 'SCHEDULED' : 'PUBLISHED',
+    headers: headersJson
+  }
+
   try {
     if (isEdit.value) {
       const res = await apiFetch(`/api/v1/admin/videos/${videoForm.value.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...videoForm.value,
-          headers: headersJson
-        })
+        body: JSON.stringify(payload)
       })
       const json = await res.json()
       if (json.code === 200 && json.data) {
         const index = videoList.value.findIndex(v => v.id === videoForm.value.id)
         if (index !== -1) videoList.value[index] = { ...videoList.value[index], ...json.data }
         modalVisible.value = false
-        ElMessage.success('视频信息更新成功！')
+        ElMessage.success(payload.status === 'SCHEDULED' ? '已加入定时发布队列！' : '视频信息更新成功！')
       }
     } else {
       const res = await apiFetch('/api/v1/admin/videos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...videoForm.value,
-          headers: headersJson
-        })
+        body: JSON.stringify(payload)
       })
       const json = await res.json()
       if (json.data) {
         videoList.value.unshift(json.data)
         modalVisible.value = false
-        ElMessage.success('新视频发布成功！')
+        ElMessage.success(payload.status === 'SCHEDULED' ? '已加入定时发布队列，到点自动上线！' : '新视频发布成功！')
       }
     }
   } catch (e) {
@@ -329,6 +349,34 @@ const toggleVipStatus = async (video) => {
     ElMessage.success(`视频 [${video.title}] 权限修改为: ${video.isVip ? 'VIP专属' : '免费'}`)
   } catch (e) {
     ElMessage.error('更新 VIP 权限失败')
+  }
+}
+
+const formatPublishTime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 立即发布：把 SCHEDULED 队列项直接转为 PUBLISHED */
+const publishNow = async (video) => {
+  try {
+    const res = await apiFetch(`/api/v1/admin/videos/${video.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'PUBLISHED', publishAt: null })
+    })
+    const json = await res.json()
+    if (json.code === 200 && json.data) {
+      const index = videoList.value.findIndex(v => v.id === video.id)
+      if (index !== -1) videoList.value[index] = { ...videoList.value[index], ...json.data }
+      ElMessage.success(`视频 [${video.title}] 已立即发布上线`)
+    } else {
+      ElMessage.error(json.message || '发布失败')
+    }
+  } catch (e) {
+    ElMessage.error('发布失败')
   }
 }
 

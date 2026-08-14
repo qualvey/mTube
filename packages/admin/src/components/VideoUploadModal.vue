@@ -172,6 +172,24 @@
           </span>
         </div>
       </el-form-item>
+
+      <el-form-item label="定时发布（可选，留空 = 立即发布上线）">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+          <el-date-picker
+            v-model="form.publishAtMs"
+            type="datetime"
+            placeholder="选择发布时间，到点自动在主站上线"
+            :disabled-date="disabledPublishDate"
+            style="width: 100%"
+          />
+          <span v-if="form.publishAtMs" class="text-xs text-amber-600 font-bold">
+            ⏰ 将加入定时发布队列：{{ formatPublishTime(form.publishAtMs) }} 后主站可见
+          </span>
+          <span v-else class="text-xs text-slate-400">
+            文件上传后即存入存储节点，主站展示时间由此处控制
+          </span>
+        </div>
+      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -357,6 +375,19 @@ const handleFileUpload = async (event, fieldName) => {
     uploadLoading.value = false
     event.target.value = ''
   }
+}
+
+/** 定时发布：禁止选择过去时间 */
+const disabledPublishDate = (date) => {
+  return date.getTime() < Date.now() - 60 * 1000
+}
+
+/** 本地时间戳 → 可读时间 */
+const formatPublishTime = (ts) => {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 const handleSubmit = () => {

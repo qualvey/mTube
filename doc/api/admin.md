@@ -226,7 +226,7 @@ POST /api/v1/admin/devices/:deviceId/grant-vip
 GET /api/v1/admin/videos
 ```
 
-响应 `data` 为视频数组（含 id、title、poster、videoUrl、isVip、status、tags 等）。
+响应 `data` 为视频数组（含 id、title、poster、videoUrl、isVip、status、tags 等）。管理端返回**全部视频**（含 `status=SCHEDULED` 的定时发布队列，带 `publishAt` 字段），与 C 端只返回已发布不同。
 
 ### 创建视频
 
@@ -235,6 +235,8 @@ POST /api/v1/admin/videos
 ```
 
 请求 Body：视频对象（title、description、author、videoUrl、poster、isVip、previewDuration、tags 等）。
+
+**定时发布字段**：`status` (`PUBLISHED`/`SCHEDULED`，可选，默认 `PUBLISHED`)；`publishAt` (ISO 8601 字符串，可选)。`status=SCHEDULED` 时必须带 `publishAt`（否则回退为 `PUBLISHED`），到点后服务端自动转为 `PUBLISHED` 并在 C 端可见。
 成功响应：`201`，`data` 为新建视频对象。
 
 ### 更新视频
@@ -244,6 +246,8 @@ PUT /api/v1/admin/videos/:id
 ```
 
 成功：`200` `data` 为更新后的视频；视频不存在：`404`。
+
+**定时发布字段**：支持 `status` (`PUBLISHED`/`SCHEDULED`) 与 `publishAt` (ISO 8601，可传 `null` 清除)。传 `{ status: 'PUBLISHED', publishAt: null }` 即立即发布。
 
 ### 删除视频
 

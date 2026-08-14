@@ -52,6 +52,12 @@ try {
   // Column already exists
 }
 
+try {
+  database.exec("ALTER TABLE videos ADD COLUMN publishAt TEXT DEFAULT NULL;")
+} catch (e) {
+  // Column already exists
+}
+
 database.exec(`
   CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY,
@@ -763,9 +769,20 @@ export const db = {
     const pageParam = options.page !== undefined ? parseInt(options.page) : null
     const limitParam = options.limit !== undefined ? parseInt(options.limit) : null
 
+    // 定时发布懒晋升：已到时间的 SCHEDULED 自动转为 PUBLISHED（C 端可见）
+    this.publishDueVideos()
+
     let where = ''
-    if (filter === 'vip') where = 'WHERE videos.isVip = 1'
-    else if (filter === 'free') where = 'WHERE videos.isVip = 0'
+    // 非管理端（includeScheduled 未设置）：只暴露已发布视频，隐藏未到时间的待发布队列
+    if (!options.includeScheduled) {
+      where = "WHERE videos.status = 'PUBLISHED'"
+      if (filter === 'vip') where += ' AND videos.isVip = 1'
+      else if (filter === 'free') where += ' AND videos.isVip = 0'
+    } else if (filter === 'vip') {
+      where = 'WHERE videos.isVip = 1'
+    } else if (filter === 'free') {
+      where = 'WHERE videos.isVip = 0'
+    }
 
     const allRows = database.prepare(`
       SELECT videos.*,
@@ -819,6 +836,18 @@ export const db = {
     stmt.run(posterUrl, id)
   },
 
+  publishDueVideos() {
+    const now = new Date().toISOString()
+    const result = database.prepare(`
+      UPDATE videos SET status = 'PUBLISHED'
+      WHERE status = 'SCHEDULED' AND publishAt IS NOT NULL AND publishAt <= ?
+    `).run(now)
+    if (result.changes > 0) {
+      logger.info(`[Scheduler] 定时发布: ${result.changes} 个视频已到时间自动发布`)
+    }
+    return result.changes
+  },
+
   addVideo(data) {
     const newId = `vid-${Date.now()}`
     const headersStr = data.headers
@@ -832,9 +861,14 @@ export const db = {
 
     const storageNodeId = data.storageNodeId || 'node-01'
 
+    // 定时发布：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 必须带 publishAt
+    let status = data.status === 'SCHEDULED' ? 'SCHEDULED' : 'PUBLISHED'
+    const publishAt = data.publishAt ? String(data.publishAt) : null
+    if (status === 'SCHEDULED' && !publishAt) status = 'PUBLISHED'
+
     const stmt = database.prepare(`
-      INSERT INTO videos (id, title, description, author, authorAvatar, videoUrl, poster, duration, likes, shares, isVip, status, tags, headers, previewDuration, storageNodeId, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 'PUBLISHED', ?, ?, ?, ?, ?)
+      INSERT INTO videos (id, title, description, author, authorAvatar, videoUrl, poster, duration, likes, shares, isVip, status, tags, headers, previewDuration, storageNodeId, publishAt, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const tagsStr = Array.isArray(data.tags)
@@ -851,10 +885,12 @@ export const db = {
       data.poster || '',
       data.duration || '05:00',
       data.isVip ? 1 : 0,
+      status,
       tagsStr,
       headersStr,
       previewDuration,
       storageNodeId,
+      publishAt,
       createdAt
     )
 
@@ -880,9 +916,16 @@ export const db = {
 
     const storageNodeId = updated.storageNodeId || 'node-01'
 
+    // 定时发布字段：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 无 publishAt 时回退 PUBLISHED
+    let status = updated.status === 'SCHEDULED' ? 'SCHEDULED' : 'PUBLISHED'
+    const publishAt = updated.publishAt !== undefined && updated.publishAt !== null
+      ? String(updated.publishAt)
+      : null
+    if (status === 'SCHEDULED' && !publishAt) status = 'PUBLISHED'
+
     const stmt = database.prepare(`
       UPDATE videos
-      SET title = ?, description = ?, author = ?, authorAvatar = ?, videoUrl = ?, poster = ?, duration = ?, isVip = ?, tags = ?, headers = ?, previewDuration = ?, storageNodeId = ?
+      SET title = ?, description = ?, author = ?, authorAvatar = ?, videoUrl = ?, poster = ?, duration = ?, isVip = ?, tags = ?, headers = ?, previewDuration = ?, storageNodeId = ?, status = ?, publishAt = ?
       WHERE id = ?
     `)
 
@@ -899,6 +942,8 @@ export const db = {
       headersStr,
       previewDuration,
       storageNodeId,
+      status,
+      publishAt,
       id
     )
 
