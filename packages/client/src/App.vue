@@ -87,6 +87,25 @@
         >
           {{ langToggleLabel }}
         </button>
+
+        <!-- 用户区（评论身份） -->
+        <template v-if="currentUser">
+          <span class="hidden sm:inline text-xs font-bold text-zinc-200 max-w-[80px] truncate">{{ currentUser.nickname }}</span>
+          <button
+            @click="handleLogout"
+            class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-black rounded-full transition-all active:scale-95"
+            :title="t('auth.logout')"
+          >
+            {{ t('auth.logout') }}
+          </button>
+        </template>
+        <button
+          v-else
+          @click="openAuth"
+          class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-black rounded-full transition-all active:scale-95"
+        >
+          {{ t('auth.login') }}
+        </button>
         <button 
           v-if="paywall.enabled && !paywall.isVip"
           @click="paywall.showPaywall = true" 
@@ -152,6 +171,8 @@
     <!-- <Transition name="slide-up">
       <PaywallModal v-if="paywall.showPaywall" @close="paywall.showPaywall = false" @vip-unlocked="onVipUnlocked" />
     </Transition> -->
+
+    <AuthModal v-if="authModalOpen" @close="authModalOpen = false" @success="onAuthSuccess" />
   </div>
 </template>
 
@@ -163,6 +184,8 @@ import AgeGateModal from './components/AgeGateModal.vue'
 import NoticeModal from './components/NoticeModal.vue'
 import PaywallModal from './components/PaywallModal.vue'
 import { trackAnalytics, videoService } from './services/videoService'
+import { authService } from './services/authService'
+import AuthModal from './components/AuthModal.vue'
 import { initAnalytics, shutdownAnalytics } from './services/analyticsService'
 import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT } from './i18n'
 
@@ -353,6 +376,29 @@ const paywall = reactive({
   showPaywall: false
 })
 provide('paywall', paywall)
+
+// ── 用户（评论身份）────────────────────────────────────────
+const currentUser = ref(null)
+const authModalOpen = ref(false)
+
+const loadMe = async () => {
+  currentUser.value = await authService.getMe()
+}
+
+const openAuth = () => {
+  authModalOpen.value = true
+}
+
+const handleLogout = async () => {
+  await authService.logout()
+  currentUser.value = null
+}
+
+const onAuthSuccess = (user) => {
+  currentUser.value = user
+}
+
+provide('user', { currentUser, openAuth, refreshUser: loadMe })
 
 const getOrCreateDeviceId = () => {
   let id = localStorage.getItem('mp_device_id')
