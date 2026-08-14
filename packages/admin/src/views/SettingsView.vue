@@ -160,6 +160,34 @@
       </el-form>
     </el-card>
 
+    <!-- Log Level Card -->
+    <el-card class="rounded-2xl shadow-sm border-slate-200">
+      <template #header>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span class="font-bold text-slate-800">日志级别 (Log Level)</span>
+          <el-tag :type="logLevel === 'debug' ? 'warning' : 'info'" size="small">当前: {{ logLevel }}</el-tag>
+        </div>
+      </template>
+
+      <el-form label-position="top">
+        <el-form-item label="服务端日志级别（立即生效，无需重启）">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+            <el-select
+              v-model="logLevel"
+              :loading="logLevelLoading"
+              style="width: 180px"
+              @change="changeLogLevel"
+            >
+              <el-option v-for="lv in ['debug', 'info', 'warn', 'error']" :key="lv" :label="lv" :value="lv" />
+            </el-select>
+            <span class="text-xs text-slate-500">
+              debug: 请求/响应全量追踪（本地排查用）；info: 一行式摘要（生产推荐）；warn/error: 仅告警与错误
+            </span>
+          </div>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <!-- Submit Save Button -->
     <div class="flex justify-stretch sm:justify-end">
       <el-button
@@ -181,6 +209,8 @@ import { ElMessage } from 'element-plus'
 import { apiFetch } from '../utils/api.js'
 
 const saveLoading = ref(false)
+const logLevel = ref('info')
+const logLevelLoading = ref(false)
 const settings = ref({
   paywallEnabled: false,
   alipayAppId: '',
@@ -216,7 +246,45 @@ const fetchSettings = async () => {
 
 onMounted(() => {
   fetchSettings()
+  fetchLogLevel()
 })
+
+/** 拉取当前日志级别 */
+const fetchLogLevel = async () => {
+  try {
+    const res = await apiFetch('/api/v1/admin/loglevel')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && json.data && json.data.level) {
+        logLevel.value = json.data.level
+      }
+    }
+  } catch (e) {}
+}
+
+/** 切换日志级别（立即生效） */
+const changeLogLevel = async (level) => {
+  logLevelLoading.value = true
+  try {
+    const res = await apiFetch('/api/v1/admin/loglevel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level })
+    })
+    const json = await res.json().catch(() => null)
+    if (res.ok && json && json.data && json.data.level) {
+      logLevel.value = json.data.level
+      ElMessage.success('日志级别已切换: ' + json.data.level)
+    } else {
+      ElMessage.error(json?.message || '日志级别切换失败')
+      fetchLogLevel()
+    }
+  } catch (e) {
+    ElMessage.error('日志级别切换失败')
+  } finally {
+    logLevelLoading.value = false
+  }
+}
 
 const saveSettings = async () => {
   saveLoading.value = true

@@ -7,11 +7,11 @@ const LOG_LEVELS = {
   error: 3
 }
 
-// Check DEBUG=true / DEBUG=1 or LOG_LEVEL env
+// Check DEBUG=true / DEBUG=1 or LOG_LEVEL env（默认 info，生产安全；本地排查用 DEBUG=true 或 LOG_LEVEL=debug）
 const isDebugEnv = process.env.DEBUG === 'true' || process.env.DEBUG === '1'
 let currentLevel = isDebugEnv
   ? LOG_LEVELS.debug
-  : (LOG_LEVELS[(process.env.LOG_LEVEL || 'debug').toLowerCase()] ?? LOG_LEVELS.debug)
+  : (LOG_LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? LOG_LEVELS.info)
 
 export const logger = {
   /**
