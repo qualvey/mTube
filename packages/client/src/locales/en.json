@@ -121,7 +121,7 @@
     "register": "Sign up",
     "logout": "Sign out",
     "email": "Email",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "you{'@'}example.com",
     "password": "Password (min 8 chars)",
     "passwordPlaceholder": "Enter your password",
     "nickname": "Nickname",

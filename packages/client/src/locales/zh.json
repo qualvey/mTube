@@ -121,7 +121,7 @@
     "register": "注册",
     "logout": "退出登录",
     "email": "邮箱",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "you{'@'}example.com",
     "password": "密码（至少 8 位）",
     "passwordPlaceholder": "请输入密码",
     "nickname": "昵称",
