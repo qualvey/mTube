@@ -34,7 +34,8 @@
   "sidebar": {
     "title": "Categories",
     "collapse": "Collapse",
-    "expand": "Expand"
+    "expand": "Expand",
+    "darkMode": "Dark mode"
   },
   "detail": {
     "pageTitle": "Video Details",

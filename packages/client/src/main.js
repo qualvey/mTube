@@ -3,15 +3,10 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 import { i18n, loadInitialLocale } from './i18n'
+import { initTheme } from './services/themeService'
 
-// 明暗主题：跟随系统（mount 前设置，避免闪烁）
-const applySystemTheme = () => {
-  const light = window.matchMedia('(prefers-color-scheme: light)').matches
-  document.documentElement.dataset.theme = light ? 'light' : 'dark'
-  document.documentElement.style.colorScheme = light ? 'light' : 'dark'
-}
-applySystemTheme()
-window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', applySystemTheme)
+// 明暗主题：跟随系统（手动选择优先），mount 前初始化避免闪烁
+initTheme()
 
 const app = createApp(App)
 app.use(router)

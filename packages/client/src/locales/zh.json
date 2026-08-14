@@ -34,7 +34,8 @@
   "sidebar": {
     "title": "视频分类",
     "collapse": "收纳菜单",
-    "expand": "展开菜单"
+    "expand": "展开菜单",
+    "darkMode": "深色模式"
   },
   "detail": {
     "pageTitle": "视频详情",
