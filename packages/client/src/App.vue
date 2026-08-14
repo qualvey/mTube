@@ -4,11 +4,11 @@
     <header class="fixed top-0 inset-x-0 z-30 bg-gradient-to-b from-black/90 via-black/50 to-transparent backdrop-blur-md border-b border-white/5 flex flex-col">
       <!-- 第一行：菜单按钮 / logo / 搜索 / 右侧按钮 -->
       <div class="px-3 sm:px-4 py-2.5 flex items-center gap-2 w-full">
-      <!-- 分类菜单按钮（移动端，仅首页） -->
+      <!-- 菜单按钮：移动端开抽屉 / PC 切换侧边栏 -->
       <button
         v-if="isHome"
-        class="lg:hidden w-9 h-9 shrink-0 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all active:scale-95"
-        @click="category.drawerOpen = true"
+        class="w-9 h-9 shrink-0 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all active:scale-95"
+        @click="onToggleMenu"
         :aria-label="t('feed.openCategories')"
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
@@ -148,7 +148,8 @@ const category = reactive({
   activeTag: null,   // 当前选中 tag（null = 全部），feed 按此过滤
   tags: [],          // 全量标签 [{ name, count }]
   menus: [],         // 导航菜单树（管理侧配置 / 默认菜单）
-  drawerOpen: false  // 移动端分类抽屉显隐
+  drawerOpen: false, // 移动端分类抽屉显隐
+  sidebarCollapsed: false, // PC 侧边栏收纳态（展开/收纳）
 })
 provide('category', category)
 
@@ -156,6 +157,15 @@ provide('category', category)
 const selectTag = (tag) => {
   category.activeTag = tag === category.activeTag ? null : tag
   category.drawerOpen = false
+}
+
+/** 菜单按钮：PC 切换侧边栏展开/收纳；移动端打开分类抽屉 */
+const onToggleMenu = () => {
+  if (window.matchMedia('(min-width: 1024px)').matches) {
+    category.sidebarCollapsed = !category.sidebarCollapsed
+  } else {
+    category.drawerOpen = true
+  }
 }
 
 /** 点击菜单项：category → 过滤 feed；link → 路由跳转 */

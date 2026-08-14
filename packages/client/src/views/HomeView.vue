@@ -1,6 +1,6 @@
 <template>
   <div
-    class="w-full h-full overflow-y-auto scroll-smooth pt-[104px] lg:pt-14"
+    class="w-full h-full overflow-y-auto scroll-smooth pt-[104px] lg:pt-24"
     ref="scrollContainer"
     @scroll="handleScroll"
   >
@@ -8,13 +8,18 @@
     <!-- <HeroSection :blur="paywall.showPaywall" /> -->
 
     <!-- Desktop Sidebar + Feed Two-Column Layout -->
-    <div class="max-w-[1600px] mx-auto w-full flex items-start lg:gap-6">
+    <div class="w-full min-h-full">
       <CategorySidebar
         :menus="category.menus"
         :active-tag="category.activeTag"
+        :collapsed="category.sidebarCollapsed"
         @select="onMenuSelect"
+        @toggle="category.sidebarCollapsed = !category.sidebarCollapsed"
       />
-      <div class="flex-1 min-w-0">
+      <div
+        class="min-w-0 transition-[padding] duration-300"
+        :class="category.sidebarCollapsed ? 'lg:pl-11' : 'lg:pl-60'"
+      >
         <!-- Video Feed Stream (Backend Controlled) -->
         <VideoFeed
           :class="{ 'blur-sm brightness-75 transition-all duration-500': paywall.showPaywall }"

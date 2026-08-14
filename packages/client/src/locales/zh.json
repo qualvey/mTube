@@ -32,7 +32,9 @@
     "desc": "正在为您准备高清画集与独家视频"
   },
   "sidebar": {
-    "title": "视频分类"
+    "title": "视频分类",
+    "collapse": "收纳菜单",
+    "expand": "展开菜单"
   },
   "detail": {
     "pageTitle": "视频详情",

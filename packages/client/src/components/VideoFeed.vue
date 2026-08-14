@@ -1,5 +1,5 @@
 <template>
-  <div class="w-full px-3 sm:px-6 py-6 sm:py-8">
+  <div class="w-full px-[4vw] py-6 sm:py-8">
     <!-- Stream Header -->
     <!-- <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
       <div class="flex items-center gap-2">
@@ -22,7 +22,7 @@
     </div>
 
     <!-- Skeleton Loaders (first page) -->
-    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-5">
+    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
       <div v-for="n in 8" :key="n" class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-3 animate-pulse">
         <div class="w-full aspect-video bg-zinc-800 rounded-xl"></div>
         <div class="h-4 bg-zinc-800 rounded w-3/4"></div>
@@ -38,7 +38,7 @@
     </div>
 
     <!-- Video Feed List -->
-    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-5">
+    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
       <template v-for="item in displayItems" :key="item.__isAd ? 'ad-' + item.id : item.id">
         <AdCard v-if="item.__isAd" :ad="item" />
         <VideoCard
