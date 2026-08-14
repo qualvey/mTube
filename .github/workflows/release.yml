@@ -198,9 +198,11 @@ jobs:
               fi
             }
             ensure_env "RUIZIF_SECRET"     "${{ secrets.RUIZIF_SECRET }}"
-            ensure_env "RUIZIF_NOTIFY_URL" "${{ secrets.RUIZIF_NOTIFY_URL || 'https://91cso.com/api/v1/paywall/notify' }}"
+            ensure_env "RUIZIF_MCH"        "${{ secrets.RUIZIF_MCH }}"
+            ensure_env "RUIZIF_CLIENT_IP"  "${{ secrets.RUIZIF_CLIENT_IP }}"
+            ensure_env "RUIZIF_NOTIFY_URL" "${{ secrets.RUIZIF_NOTIFY_URL || 'https://your-domain.com/api/v1/paywall/notify' }}"
             ensure_env "RUIZIF_CHANNEL"    "${{ secrets.RUIZIF_CHANNEL || '4444' }}"
-            ensure_env "RUIZIF_NOTIFY_IPS" "${{ secrets.RUIZIF_NOTIFY_IPS || '***REMOVED***' }}"
+            ensure_env "RUIZIF_NOTIFY_IPS" "${{ secrets.RUIZIF_NOTIFY_IPS || '' }}"
 
             # Pin exact image versions (rollback = change VERSION, re-run)
             export VERSION="${{ github.ref_name }}"

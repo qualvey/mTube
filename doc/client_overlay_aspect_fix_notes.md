@@ -109,11 +109,11 @@ overlay 本身都是 `inset-0`（跟随容器），**「overlay 横屏」的本�
   ```
   ssh vultr 'sudo bash -c "cd /opt/storage_node && docker compose pull && docker compose up -d"'
   ```
-- SSH 别名（`~/.ssh/config`）：`91` = ***REMOVED*** (root) 主站；`vultr` = ***REMOVED*** (linuxuser) 存储节点
+- SSH 别名（`~/.ssh/config`）：`91` = 203.0.113.1 (root) 主站；`vultr` = 203.0.113.2 (linuxuser) 存储节点
 - 环境坑（都踩过）：
   - **91 SSH 不稳定**（banner exchange 超时/被 kill）→ 重试或稍等；命令复杂时用「本地写脚本 → scp → ssh 执行」方式，避免 PowerShell→ssh→zsh 多层引号地狱
   - **vultr 默认 shell 是 zsh**、目录 `/opt/storage_node` 权限 0711（`ls` 看不到内容但可 cd）、`sudo` 会重置 cwd → 一律 `sudo bash -c "cd /opt/storage_node && ..."` 或脚本文件
-  - 生产 CLUSTER_SECRET 未配置（两端都用默认值 `streamvip-cluster-secret`）——**建议尽快配置强密钥**（主站 .env 与节点 .env 同步，两端同时重启）
+  - 生产 CLUSTER_SECRET 未配置（两端都用默认值 `<CLUSTER_SECRET>`）——**建议尽快配置强密钥**（主站 .env 与节点 .env 同步，两端同时重启）
   - 域名：`91cso.com` / `www.91cso.com` 走 Cloudflare；`node01.91cso.com` 直连 vultr
   - admin 生产登录账号：`heiha`（密码在 91 的 `/root/mobile-paywall/.env`）
 

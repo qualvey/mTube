@@ -8,7 +8,7 @@
 
 | Secret | 用途 | 示例 |
 |---|---|---|
-| `VPS_HOST` | 主服务器 IP/域名 | `***REMOVED***` |
+| `VPS_HOST` | 主服务器 IP/域名 | `203.0.113.10` |
 | `VPS_USER` | 主服务器 SSH 用户 | `root` |
 | `VPS_SSH_KEY` | 主服务器 SSH 私钥（完整内容） | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
 | `STORAGE_VPS_HOST` | 存储节点服务器 IP/域名 | `192.168.1.10` |
@@ -22,11 +22,11 @@
 |---|---|---|---|
 | `ADMIN_USERNAME` | 管理后台用户名 | `admin` | `ops` |
 | `ADMIN_PASSWORD` | 管理后台密码 | `admin123`（**务必覆盖**） | 强随机串 |
-| `RUIZIF_MCH` | 如艺支付商户号 | 代码默认（开源后为空） | `***REMOVED***` |
+| `RUIZIF_MCH` | 如艺支付商户号 | 代码默认（开源后为空） | `M<你的商户号>` |
 | `RUIZIF_SECRET` | 如艺支付密钥 | 空（禁用支付） | 商户后台获取 |
 | `RUIZIF_CHANNEL` | 如艺支付渠道码 | `4444` | `4444` |
 | `RUIZIF_NOTIFY_URL` | 支付回调 URL | `https://<域名>/api/v1/paywall/notify` | 你的正式域名 |
-| `RUIZIF_NOTIFY_IPS` | 回调来源 IP 白名单 | `***REMOVED***` | 逗号分隔 |
+| `RUIZIF_NOTIFY_IPS` | 回调来源 IP 白名单 | `203.0.113.20` | 逗号分隔 |
 | `RESEND_API_KEY` | 注册验证码邮件（Resend） | 空 = 开发模式（验证码随响应返回，**生产必须配置**） | `re_xxx` |
 | `RESEND_FROM` | 发件人地址 | `onboarding@resend.dev` | `noreply@你的域名` |
 

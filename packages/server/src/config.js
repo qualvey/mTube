@@ -17,14 +17,14 @@ export const config = {
   // Ruyizf (如意支付) merchant config — all overridable via env
   ruyizf: {
     apiUrl: process.env.RUIZIF_API_URL || 'https://api.TCXCY.ruyizf.xyz',
-    mch: process.env.RUIZIF_MCH || '***REMOVED***',
+    mch: process.env.RUIZIF_MCH || '',                    // 商户号（必须配置；空 = ruyizf 支付不可用）
     secret: process.env.RUIZIF_SECRET || '',          // empty = ruyizf disabled
     channel: process.env.RUIZIF_CHANNEL || '4444',    // 数字人民币通道
     notifyUrl: process.env.RUIZIF_NOTIFY_URL || '',   // e.g. https://91sco.com/api/v1/paywall/notify
-    notifyIps: (process.env.RUIZIF_NOTIFY_IPS || '***REMOVED***')
+    notifyIps: (process.env.RUIZIF_NOTIFY_IPS || '')
       .split(',').map(s => s.trim()).filter(Boolean), // callback source IP allowlist
     // 下单 clientIP 参数：必须用服务器公网 IP（平台校验，反代的 req.ip 不可靠）
-    clientIp: process.env.RUIZIF_CLIENT_IP || '***REMOVED***',
+    clientIp: process.env.RUIZIF_CLIENT_IP || '',
   },
 
   // Alipay (existing mock/real) settings are read from db settings
