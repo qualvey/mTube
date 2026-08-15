@@ -61,7 +61,12 @@
   },
   "ad": {
     "sponsored": "广告",
-    "cta": "了解详情"
+    "cta": "了解详情",
+    "badge": "广告",
+    "preroll": "前贴片",
+    "midroll": "中插",
+    "skip": "跳过广告",
+    "skipIn": "广告 {n}s 后可跳过"
   },
   "card": {
     "vipPreview": "VIP 试看 {minutes}分钟",

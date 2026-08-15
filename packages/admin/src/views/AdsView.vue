@@ -141,9 +141,9 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <el-form-item label="广告位类型">
             <el-select v-model="form.type" style="width: 100%">
-              <el-option label="信息流原生 (feed) - 已接入" value="feed" />
-              <el-option label="前贴片 (preroll) - 预留" value="preroll" />
-              <el-option label="中插 (midroll) - 预留" value="midroll" />
+              <el-option label="信息流原生 (feed) - 图片卡" value="feed" />
+              <el-option label="前贴片 (preroll) - 视频广告" value="preroll" />
+              <el-option label="中插 (midroll) - 视频广告" value="midroll" />
             </el-select>
           </el-form-item>
 
@@ -177,8 +177,8 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="视频素材 URL（前贴片/中插预留）">
-          <el-input v-model="form.videoUrl" placeholder="https://.../ad.mp4（当前未接入播放器，可留空）" />
+        <el-form-item label="视频素材 URL（前贴片/中插必填，feed 可留空）">
+          <el-input v-model="form.videoUrl" placeholder="https://.../ad.mp4 或 /uploads/..." />
         </el-form-item>
 
         <el-form-item label="落地页 URL（点击跳转）">
@@ -370,6 +370,11 @@ const handleSave = async () => {
   // 拒绝 base64 粘贴入库（应走上传按钮）
   if (form.value.imageUrl && form.value.imageUrl.startsWith('data:')) {
     ElMessage.warning('图片素材不能直接粘贴 base64，请使用「上传本地图片」按钮')
+    return
+  }
+  // 前贴片/中插为视频广告：必须有视频素材
+  if (form.value.type !== 'feed' && !form.value.videoUrl) {
+    ElMessage.warning('前贴片/中插广告需要填写视频素材 URL')
     return
   }
   saving.value = true

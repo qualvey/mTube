@@ -91,6 +91,45 @@
       class="plyr-video-element w-full h-full object-contain"
     ></video>
 
+    <!-- 视频广告 Overlay（preroll 正片前 / midroll 中插；开关控制，默认关闭） -->
+    <div
+      v-if="adPhase === 'playing' && currentAd"
+      class="absolute inset-0 z-50 bg-black flex items-center justify-center cursor-pointer"
+      @click="onAdClick"
+    >
+      <video
+        ref="adVideoRef"
+        playsinline
+        class="w-full h-full object-contain"
+        @ended="onAdEnded"
+        @error="onAdError"
+        @loadedmetadata="onAdMetaLoaded"
+      ></video>
+      <!-- 广告角标 -->
+      <div class="absolute top-3 left-3 z-10 px-2 py-0.5 rounded bg-black/70 backdrop-blur-md border border-white/10 text-white text-[10px] font-black tracking-widest">
+        {{ t('ad.badge') }} · {{ adType === 'preroll' ? t('ad.preroll') : t('ad.midroll') }}
+      </div>
+      <!-- 落地页 CTA（点击广告本身也跳转） -->
+      <div
+        v-if="currentAd.linkUrl"
+        class="absolute bottom-4 left-4 z-10 px-4 py-1.5 rounded-full bg-gradient-to-r from-yellow-400 to-amber-500 text-black text-xs font-black shadow-lg"
+        @click.stop="onAdClick"
+      >
+        {{ t('ad.cta') }}
+      </div>
+      <!-- 跳过按钮 / 倒计时 -->
+      <div
+        v-if="adCanSkip"
+        class="absolute bottom-4 right-4 z-10 px-4 py-1.5 rounded-full bg-black/70 hover:bg-black/90 border border-white/20 text-white text-xs font-bold transition-all active:scale-95"
+        @click.stop="skipAd"
+      >
+        {{ t('ad.skip') }}
+      </div>
+      <div v-else class="absolute bottom-4 right-4 z-10 px-3 py-1.5 rounded-full bg-black/50 text-white/90 text-xs font-mono">
+        {{ t('ad.skipIn', { n: Math.max(0, AD_SKIP_AFTER - Math.floor(adElapsed)) }) }}
+      </div>
+    </div>
+
     <!-- 自定义竖向音量控件：横向仅一个按钮，bar 竖向展示（让进度条最大化） -->
     <div
       class="absolute right-2 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2"
@@ -136,6 +175,7 @@ import { logger } from '../services/logger'
 import Plyr from 'plyr'
 import Hls from 'hls.js'
 import { createPlaybackId, trackEvent } from '../services/analyticsService'
+import { videoService } from '../services/videoService'
 import 'plyr/dist/plyr.css'
 
 export interface CustomHeaders {
@@ -205,6 +245,114 @@ let programmaticPause = false
 
 /** 是否已开始拉流（false = idle 状态，展示封面+播放按钮） */
 const hasStarted = ref<boolean>(false)
+
+// ── 视频广告（preroll 前贴片 / midroll 中插；开关控制，默认关闭，VIP 免广告）──
+const AD_SKIP_AFTER = 5 // 广告播放 5s 后可跳过
+const adPrerollEnabled = ref(false)
+const adMidrollEnabled = ref(false)
+let prerollAds: any[] = []
+let midrollAds: any[] = []
+let adRotate: Record<string, number> = { preroll: 0, midroll: 0 }
+const adPhase = ref<'none' | 'playing'>('none')
+const adType = ref<'preroll' | 'midroll'>('preroll')
+const currentAd = ref<any>(null)
+const adVideoRef = ref<HTMLVideoElement | null>(null)
+const adElapsed = ref(0)
+const adCanSkip = ref(false)
+let adTimer: number | null = null
+let adFetchStarted = false
+/** 中插广告触发后置位：正片 resume 时跳过本段播放器播放事件 → 防止与广告叠加 */
+let midrollPendingResume = false
+/** 中插广告仅触发一次（拖动进度条重复经过 50% 不重复插播） */
+let midrollTriggered = false
+
+const nextAd = (type: 'preroll' | 'midroll') => {
+  const pool = type === 'preroll' ? prerollAds : midrollAds
+  if (!pool.length) return null
+  const ad = pool[adRotate[type] % pool.length]
+  adRotate[type] += 1
+  return ad
+}
+
+/** 拉取广告配置（settings 开关 + 对应广告池），仅一次 */
+const fetchAdConfig = async () => {
+  if (adFetchStarted) return
+  adFetchStarted = true
+  try {
+    const res = await fetch('/api/v1/settings')
+    if (res.ok) {
+      const json = await res.json()
+      const d = json?.data || {}
+      adPrerollEnabled.value = d.adsPrerollEnabled === true || d.adsPrerollEnabled === 'true'
+      adMidrollEnabled.value = d.adsMidrollEnabled === true || d.adsMidrollEnabled === 'true'
+    }
+  } catch (e) { /* 默认关闭 */ }
+  // VIP 用户免广告，不拉广告池
+  if (props.isVipUnlocked) return
+  const tasks: Promise<any>[] = []
+  if (adPrerollEnabled.value) tasks.push(videoService.getAds('preroll', props.isVipUnlocked).then(list => { prerollAds = Array.isArray(list) ? list.filter(a => a.videoUrl) : [] }))
+  if (adMidrollEnabled.value) tasks.push(videoService.getAds('midroll', props.isVipUnlocked).then(list => { midrollAds = Array.isArray(list) ? list.filter(a => a.videoUrl) : [] }))
+  await Promise.all(tasks)
+}
+
+/** 是否有可播的前贴片广告 */
+const hasPrerollAd = () => adPrerollEnabled.value && !props.isVipUnlocked && prerollAds.length > 0 && adPhase.value === 'none'
+
+/** 播放广告：设置 src + 倒计时 + 埋点 */
+const playAd = (type: 'preroll' | 'midroll', ad: any) => {
+  adType.value = type
+  currentAd.value = ad
+  adElapsed.value = 0
+  adCanSkip.value = false
+  adPhase.value = 'playing'
+  trackEvent('AD_IMPRESSION', { adId: ad.id, adType: type, placement: type })
+  nextTick(() => {
+    const el = adVideoRef.value
+    if (!el) return
+    el.src = ad.videoUrl
+    el.play().catch(() => finishAd()) // 自动播放被拦截 → 放行正片（fail-open）
+  })
+  if (adTimer) window.clearInterval(adTimer)
+  adTimer = window.setInterval(() => {
+    adElapsed.value += 1
+    if (adElapsed.value >= AD_SKIP_AFTER) adCanSkip.value = true
+    const el = adVideoRef.value
+    if (el && Number.isFinite(el.duration) && adElapsed.value >= el.duration) {
+      finishAd()
+    }
+  }, 1000)
+}
+
+/** 广告结束（自然播完/跳过/错误）：preroll → 进正片；midroll → 恢复正片 */
+const finishAd = () => {
+  if (adTimer) { window.clearInterval(adTimer); adTimer = null }
+  const wasMidroll = adType.value === 'midroll'
+  adPhase.value = 'none'
+  currentAd.value = null
+  adElapsed.value = 0
+  adCanSkip.value = false
+  const el = adVideoRef.value
+  if (el) { el.pause(); el.removeAttribute('src'); el.load() }
+  if (wasMidroll) {
+    midrollPendingResume = false
+    if (plyrInstance) { try { plyrInstance.play() } catch {} }
+  } else {
+    loadVideoToMemory()
+  }
+}
+
+const onAdEnded = () => finishAd()
+const onAdError = () => finishAd() // 广告源不可播 → 放行正片（fail-open）
+const onAdMetaLoaded = () => { /* 可选：按广告元数据校正时长 */ }
+const skipAd = () => { if (adCanSkip.value) finishAd() }
+
+/** 点击广告：埋点 + 新标签打开落地页（广告继续播放） */
+const onAdClick = () => {
+  const ad = currentAd.value
+  if (!ad) return
+  trackEvent('AD_CLICK', { adId: ad.id, adType: adType.value, placement: adType.value, linkUrl: ad.linkUrl })
+  if (ad.linkUrl) window.open(ad.linkUrl, '_blank', 'noopener')
+}
 
 // Aspect Ratio State for Landscape / Portrait Auto Adaptation
 const videoAspectRatio = ref<string>('16 / 9')
@@ -691,6 +839,23 @@ const initializePlyr = () => {
   let trialTriggered = false
   plyrInstance.on('timeupdate', () => {
     trackPlaybackProgress()
+    // 中插广告：进度过半触发一次（仅免费用户、有广告池、非广告播放中）
+    if (
+      adMidrollEnabled.value && !props.isVipUnlocked && midrollAds.length > 0 &&
+      adPhase.value === 'none' && !midrollTriggered && !midrollPendingResume
+    ) {
+      const dur = getPlaybackDuration()
+      if (dur > 30 && plyrInstance.currentTime >= dur * 0.5) {
+        midrollTriggered = true
+        midrollPendingResume = true
+        programmaticPause = true // 中插暂停不计为用户手动暂停
+        plyrInstance.pause()
+        setTimeout(() => { programmaticPause = false }, 0)
+        const midroll = nextAd('midroll')
+        if (midroll) playAd('midroll', midroll)
+        else midrollPendingResume = false
+      }
+    }
     if (props.video && props.video.isVip && !props.isVipUnlocked) {
       const limit = props.previewDuration || props.video.previewDuration || 120
       if (plyrInstance && plyrInstance.currentTime >= limit) {
@@ -718,6 +883,12 @@ const onManualPlay = () => {
   if (props.active) {
     userPaused.value = false // 用户主动播放
     hasStarted.value = true
+    // 前贴片广告：先播广告，结束再进正片
+    const preroll = nextAd('preroll')
+    if (hasPrerollAd() && preroll) {
+      playAd('preroll', preroll)
+      return
+    }
     loadVideoToMemory()
   }
   // 否则等 watch(active) 监听到 true 后再开始
@@ -751,8 +922,13 @@ watch(
   (isActive) => {
     if (isActive) {
       if (!hasStarted.value) {
-        // 首次激活 → 开始加载
+        // 首次激活 → 开始加载（有前贴片广告则先播广告）
         hasStarted.value = true
+        const preroll = nextAd('preroll')
+        if (hasPrerollAd() && preroll) {
+          playAd('preroll', preroll)
+          return
+        }
         nextTick(() => loadVideoToMemory())
       } else if (!loading.value && plyrInstance) {
         // 已加载就绪，从暂停恢复
@@ -805,17 +981,26 @@ const fetchGlobalSettings = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchGlobalSettings()
+  // 先等广告配置就绪，再决定首帧是否插前贴片（避免竞态漏播）
+  await fetchAdConfig()
   // 第一个视频（active=true）立即激活
   if (props.active) {
     hasStarted.value = true
+    // 前贴片广告：先播广告，结束再进正片
+    const preroll = nextAd('preroll')
+    if (hasPrerollAd() && preroll) {
+      playAd('preroll', preroll)
+      return
+    }
     loadVideoToMemory()
   }
   // 其他视频保持 idle 状态，等待 IntersectionObserver 或手动点击激活
 })
 
 onUnmounted(() => {
+  if (adTimer) window.clearInterval(adTimer)
   cleanupPlayerInstances()
 })
 </script>

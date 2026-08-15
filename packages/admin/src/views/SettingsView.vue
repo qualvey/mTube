@@ -128,8 +128,17 @@
             <span class="text-xs text-slate-500">(默认 6，即每 6 条视频插入 1 条广告卡)</span>
           </div>
         </el-form-item>
+
+        <el-form-item label="前贴片广告（preroll，正片播放前插播视频广告）">
+          <el-switch v-model="settings.adsPrerollEnabled" active-text="开启" inactive-text="关闭（默认）" />
+        </el-form-item>
+
+        <el-form-item label="中插广告（midroll，正片进度过半插播一次视频广告）">
+          <el-switch v-model="settings.adsMidrollEnabled" active-text="开启" inactive-text="关闭（默认）" />
+        </el-form-item>
+
         <div class="text-xs text-slate-400">
-          广告素材与投放窗口在「广告管理」页面维护。前贴片 / 中插类型已预留数据结构，播放器接入后自动生效。
+          前贴片/中插为视频广告（需配置视频素材 URL），播放 5 秒后可跳过，VIP 用户自动免广告；广告位类型在「广告管理」中选择
         </div>
       </el-form>
     </el-card>
@@ -237,7 +246,9 @@ const settings = ref({
   uploadChunkConcurrency: 4,
   activeStorageNodeUrl: 'https://storage02.91cso.com',
   adsEnabled: false,
-  adsFeedInterval: 6
+  adsFeedInterval: 6,
+  adsPrerollEnabled: false,
+  adsMidrollEnabled: false
 })
 
 const fetchSettings = async () => {

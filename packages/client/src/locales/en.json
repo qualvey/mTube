@@ -61,7 +61,12 @@
   },
   "ad": {
     "sponsored": "Ad",
-    "cta": "Learn More"
+    "cta": "Learn More",
+    "badge": "Ad",
+    "preroll": "Pre-roll",
+    "midroll": "Mid-roll",
+    "skip": "Skip Ad",
+    "skipIn": "Ad ends in {n}s"
   },
   "card": {
     "vipPreview": "VIP Preview {minutes}min",
