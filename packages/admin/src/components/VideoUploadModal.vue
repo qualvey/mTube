@@ -191,7 +191,7 @@
               ⏰ 将加入定时发布队列：{{ formatPublishTime(form.publishAtMs) }} 后主站可见
             </span>
             <span v-else class="text-xs text-slate-400">
-              未指定时间，提交后默认下个 UTC+8 00:00（北京时间零点）自动发布上线
+              未指定时间，提交后默认下个 当前时间之后任意时刻（北京时间零点）自动发布上线
             </span>
           </template>
           <span v-else class="text-xs text-slate-400">
@@ -222,7 +222,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DEFAULT_UA, formatBytes } from '../utils/formatters.js'
-import { savePublishPref, nextUtc8MidnightTs } from '../utils/publishPref.js'
+import { savePublishPref, nextPublishDefaultTs } from '../utils/publishPref.js'
 import { apiFetch } from '../utils/api.js'
 import { uploadFileWithProgress, uploadFileParallelChunks } from '../utils/uploader.js'
 
@@ -389,7 +389,10 @@ const handleFileUpload = async (event, fieldName) => {
 
 /** 定时发布：禁止选择过去时间 */
 const disabledPublishDate = (date) => {
-  return date.getTime() < Date.now() - 60 * 1000
+  // datetime 面板回调为当天 00:00，不能按 Date.now() 判断（会把当天一起禁掉）
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  return date.getTime() < todayStart.getTime()
 }
 
 // 切换发布策略：即时记忆偏好；定时且未指定时间 → 自动预填默认零点；切回立即发布 → 清空时间
@@ -398,7 +401,7 @@ watch(
   (scheduled) => {
     savePublishPref(scheduled)
     if (scheduled && !props.form.publishAtMs) {
-      props.form.publishAtMs = nextUtc8MidnightTs()
+      props.form.publishAtMs = nextPublishDefaultTs()
     } else if (!scheduled) {
       props.form.publishAtMs = null
     }

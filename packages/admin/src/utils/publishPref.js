@@ -30,6 +30,9 @@ export const savePublishPref = (scheduled) => {
  * 时间戳与时区无关（UTC 基准），picker 按浏览器时区显示，语义始终是「北京时间零点」。
  * @returns {number} 毫秒时间戳
  */
+/** 定时发布默认时间：当前时间 + 15 分钟（当天即可选，不再强制次日 0 点） */
+export const nextPublishDefaultTs = () => Date.now() + 15 * 60 * 1000
+
 export const nextUtc8MidnightTs = () => {
   const UTC8_OFFSET_MS = 8 * 60 * 60 * 1000
   const DAY_MS = 24 * 60 * 60 * 1000

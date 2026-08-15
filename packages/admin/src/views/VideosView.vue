@@ -29,6 +29,18 @@
           📦 主控中转模式
         </el-tag>
 
+        <el-tag
+          v-if="scheduledCount > 0"
+          type="warning"
+          size="large"
+          effect="light"
+          class="font-bold cursor-pointer justify-center select-none"
+          :class="statusFilter === 'SCHEDULED' ? '!border-amber-500 !text-amber-700' : ''"
+          @click="toggleScheduledFilter"
+        >
+          ⏱ 待发布 {{ scheduledCount }}
+        </el-tag>
+
         <el-button type="warning" size="large" icon="Plus" class="font-bold mobile-full-button" @click="openAddModal">
           发布新视频
         </el-button>
@@ -146,7 +158,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import VideoUploadModal from '../components/VideoUploadModal.vue'
 import { DEFAULT_UA, buildHeadersJson } from '../utils/formatters.js'
-import { getPublishPref, nextUtc8MidnightTs } from '../utils/publishPref.js'
+import { getPublishPref, nextUtc8MidnightTs, nextPublishDefaultTs } from '../utils/publishPref.js'
 import { apiFetch } from '../utils/api.js'
 
 const videoList = ref([])
@@ -222,6 +234,14 @@ onMounted(() => {
   fetchVideos()
 })
 
+/** 状态筛选：'' = 全部 / SCHEDULED = 待发布队列 */
+const statusFilter = ref('')
+const scheduledCount = computed(() => videoList.value.filter(v => v.status === 'SCHEDULED').length)
+
+const toggleScheduledFilter = () => {
+  statusFilter.value = statusFilter.value === 'SCHEDULED' ? '' : 'SCHEDULED'
+}
+
 const filteredVideos = computed(() => {
   return videoList.value.filter(v => {
     const matchKeyword = !searchKeyword.value ||
@@ -230,8 +250,9 @@ const filteredVideos = computed(() => {
       (v.id && String(v.id).includes(searchKeyword.value))
 
     const matchNode = !selectedNodeFilter.value || v.storageNodeId === selectedNodeFilter.value
+    const matchStatus = !statusFilter.value || v.status === statusFilter.value
 
-    return matchKeyword && matchNode
+    return matchKeyword && matchNode && matchStatus
   })
 })
 
@@ -263,6 +284,28 @@ const openAddModal = () => {
     publishAtMs: scheduled ? nextUtc8MidnightTs() : null
   }
   modalVisible.value = true
+}
+
+/** 任务队列：添加成功后重置表单（保留定时偏好），供连续添加 */
+const resetFormForQueue = () => {
+  const defaultNode = storageNodes.value.find(n => n.isDefault) || storageNodes.value[0]
+  videoForm.value = {
+    id: '',
+    title: '',
+    description: '',
+    author: '?????',
+    storageNodeId: defaultNode ? defaultNode.id : 'node-01',
+    videoUrl: '',
+    referer: '',
+    userAgent: DEFAULT_UA,
+    poster: '',
+    isVip: true,
+    previewDuration: 120,
+    tags: ['??'],
+    status: 'SCHEDULED',
+    scheduled: true,
+    publishAtMs: nextPublishDefaultTs()
+  }
 }
 
 const openEditModal = (video) => {
@@ -316,6 +359,12 @@ const handleModalSubmit = async () => {
     headers: headersJson
   }
 
+  // 计划时间必须晚于当前时间（过去时间 = 立即发布，容易误操作）
+  if (payload.status === 'SCHEDULED' && payload.publishAt && new Date(payload.publishAt).getTime() <= Date.now()) {
+    ElMessage.warning('计划发布时间必须晚于当前时间')
+    return
+  }
+
   try {
     if (isEdit.value) {
       const res = await apiFetch(`/api/v1/admin/videos/${videoForm.value.id}`, {
@@ -339,8 +388,14 @@ const handleModalSubmit = async () => {
       const json = await res.json()
       if (json.data) {
         videoList.value.unshift(json.data)
-        modalVisible.value = false
-        ElMessage.success(payload.status === 'SCHEDULED' ? '已加入定时发布队列，到点自动上线！' : '新视频发布成功！')
+        if (payload.status === 'SCHEDULED') {
+          // 任务队列：保持弹窗打开，可继续添加下一个
+          resetFormForQueue()
+          ElMessage.success('已加入发布队列，可继续添加下一个任务')
+        } else {
+          modalVisible.value = false
+          ElMessage.success('视频发布成功！')
+        }
       }
     }
   } catch (e) {
