@@ -283,6 +283,7 @@
       :storage-nodes="storageNodes"
       :available-tags="availableTagOptions"
       :enable-direct-upload="enableDirectUpload"
+      :submitting="submitLoading"
       @submit="handleModalSubmit"
     />
   </div>
@@ -648,6 +649,7 @@ const handleModalSubmit = async (stagedFile) => {
 
   // 本地文件 → 流程反转：先以 UPLOADING 入库（C 端不可见），后台传输完成自动上线
   if (stagedFile && !isEdit.value) {
+    submitLoading.value = true
     try {
       const res = await apiFetch('/api/v1/admin/videos', {
         method: 'POST',
@@ -703,6 +705,8 @@ const handleModalSubmit = async (stagedFile) => {
     } catch (e) {
       ElMessage.error('发布失败: ' + e.message)
       return
+    } finally {
+      submitLoading.value = false
     }
   }
 

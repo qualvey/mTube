@@ -223,6 +223,8 @@
         <el-button
           type="warning"
           class="font-bold mobile-full-button"
+          :loading="submitting"
+          :disabled="submitting"
           @click="handleSubmit"
         >
           {{ isEdit ? '保存更新' : (stagedFile ? '直接发布（后台传输）' : '立即提交发布') }}
@@ -245,7 +247,9 @@ const props = defineProps({
   form: { type: Object, required: true },
   storageNodes: { type: Array, default: () => [] },
   availableTags: { type: Array, default: () => [] },
-  enableDirectUpload: { type: Boolean, default: true }
+  enableDirectUpload: { type: Boolean, default: true },
+  /** 父组件提交处理中标记：提交期间禁用按钮，防重复创建视频/任务 */
+  submitting: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:visible', 'submit'])
@@ -364,6 +368,7 @@ const formatPublishTime = (ts) => {
 }
 
 const handleSubmit = () => {
+  if (props.submitting) return // 防重复提交（父组件处理中）
   if (!props.form.title) {
     ElMessage.warning('请填写视频标题')
     return
