@@ -2,24 +2,28 @@ import crypto from 'node:crypto'
 
 /**
  * HMAC-SHA256 cluster ticket signing + verification.
- * Shared contract with main server's createClusterSignedHeaders():
- *   payloadStr = JSON.stringify({ nodeId, timestamp })
- *   signature   = HMAC-SHA256( secret, `${payloadStr}.${timestamp}.${nonce}` )
+ *
+ * 两套契约，方向不同：
+ * 1) 节点入站（主控 → 节点）：verifyClusterTicketSignature 校验，签名串 = JSON.stringify({ nodeId, timestamp })
+ *    —— 主控 createClusterSignedHeaders 生成（含 scope 化直传凭证分支）
+ * 2) 节点出站（节点 → 主控）：主控 verifyClusterHmacSignature 校验，签名串 = JSON.stringify(完整请求体)
+ *    —— 本文件 createHmacSignedHeaders 生成（register / heartbeat 等）
+ * 注意：两套契约的 payloadStr 不同，切勿混用（曾因统一成 {nodeId,timestamp} 导致心跳/注册 401 静默失败）。
  */
 
 /**
- * Build auth headers signed with the cluster secret.
- * @param {object|string} payload - request body payload (stringified inside)
+ * Build auth headers signed with the cluster secret（节点 → 主控方向）。
+ * 签名串 = 完整请求体（与主控 verifyClusterHmacSignature 的 JSON.stringify(req.body) 一致）。
+ * @param {object|string} payload - 完整请求体（stringified inside）
  * @param {string} secret
  * @returns {{'Content-Type':string, 'X-Cluster-Timestamp':string, 'X-Cluster-Nonce':string, 'X-Cluster-Signature':string}}
  */
 export const createHmacSignedHeaders = (payload, secret) => {
   const timestamp = Date.now().toString()
   const nonce = crypto.randomBytes(16).toString('hex')
-  // 契约与 verifyClusterTicketSignature 一致：payloadStr = JSON.stringify({ nodeId, timestamp })
-  // （timestamp 统一取 header 时间，忽略调用方 payload 里的 timestamp，避免 sign/verify 不一致）
-  const nodeId = (typeof payload === 'object' && payload && payload.nodeId) || ''
-  const bodyString = JSON.stringify({ nodeId, timestamp })
+  // 契约与主控 verifyClusterHmacSignature 一致：bodyString = JSON.stringify(完整请求体)，
+  // timestamp 取 header 时间（sign/verify 都用请求头里的值）
+  const bodyString = typeof payload === 'string' ? payload : JSON.stringify(payload)
   const signature = crypto
     .createHmac('sha256', secret)
     .update(`${bodyString}.${timestamp}.${nonce}`)
