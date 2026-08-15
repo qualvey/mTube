@@ -695,6 +695,7 @@ const initializePlyr = () => {
       if (plyrInstance && plyrInstance.currentTime >= limit) {
         programmaticPause = true // 试看结束的强制暂停不计为用户手动暂停
         plyrInstance.pause()
+        setTimeout(() => { programmaticPause = false }, 0)
         plyrInstance.currentTime = limit
         if (!trialTriggered) {
           trialTriggered = true
@@ -770,7 +771,9 @@ watch(
         cleanupPlayerInstances()
       } else if (plyrInstance) {
         // 已就绪 → 仅暂停，保留 hasStarted（滚回来可继续）
+        programmaticPause = true // 停用导致的暂停不计为用户手动暂停（防误标 userPaused 卡封面）
         try { plyrInstance.pause() } catch {}
+        setTimeout(() => { programmaticPause = false }, 0) // 延迟复位：覆盖异步 pause 事件窗口
       }
     }
   }
