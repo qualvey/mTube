@@ -16,7 +16,10 @@ import crypto from 'node:crypto'
 export const createHmacSignedHeaders = (payload, secret) => {
   const timestamp = Date.now().toString()
   const nonce = crypto.randomBytes(16).toString('hex')
-  const bodyString = typeof payload === 'string' ? payload : JSON.stringify(payload)
+  // 契约与 verifyClusterTicketSignature 一致：payloadStr = JSON.stringify({ nodeId, timestamp })
+  // （timestamp 统一取 header 时间，忽略调用方 payload 里的 timestamp，避免 sign/verify 不一致）
+  const nodeId = (typeof payload === 'object' && payload && payload.nodeId) || ''
+  const bodyString = JSON.stringify({ nodeId, timestamp })
   const signature = crypto
     .createHmac('sha256', secret)
     .update(`${bodyString}.${timestamp}.${nonce}`)
