@@ -10,7 +10,7 @@
       ]"
     >
       <span class="flex items-center gap-2 min-w-0">
-        <span v-if="item.icon" class="shrink-0 text-sm">{{ item.icon }}</span>
+        <MenuIcon v-if="item.icon" :name="item.icon" class="text-current opacity-80" />
         <span class="truncate">{{ item.name }}</span>
       </span>
       <svg
@@ -43,6 +43,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import MenuIcon from './MenuIcon.vue'
 
 const props = defineProps({
   /** 菜单节点（含 children） */
@@ -65,7 +66,8 @@ const props = defineProps({
 const emit = defineEmits(['select'])
 
 /** 子菜单展开/收起（默认展开一级菜单，深层默认收起） */
-const expanded = ref(props.depth < 1)
+// const expanded = ref(props.depth < 1)
+const expanded = ref(False) // 默认全部收起，避免首次渲染时菜单过长
 
 /** 选中态：category 类型且绑定的 tag 与当前选中一致（tags 空数组 = 全部） */
 const isActive = computed(() => {

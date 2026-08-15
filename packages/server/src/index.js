@@ -717,7 +717,7 @@ app.get('/api/v1/ads', (req, res) => {
 
 // GET /api/v1/menus - 全站导航菜单树（管理侧配置；未配置时返回默认菜单：全部视频 + 最热 tag）
 app.get('/api/v1/menus', (req, res) => {
-  sendResponse(res, db.getMenuTree())
+  sendResponse(res, db.getMenuTree(req.query.lang || null))
 })
 
 app.get('/api/v1/videos/suggest', (req, res) => {
@@ -1306,14 +1306,46 @@ app.get('/api/v1/admin/menus', (req, res) => {
 })
 
 app.post('/api/v1/admin/menus', (req, res) => {
-  const menu = db.addMenu(req.body)
+  const body = req.body || {}
+  if (body.type === 'link') {
+    const url = String(body.target?.url || '').trim()
+    if (!/^\/|^https?:\/\//.test(url)) {
+      return sendResponse(res, null, 400, '链接格式不正确：站内路由以 / 开头，外链需 http(s)://')
+    }
+  }
+  if (body.type === 'page' && !String(body.target?.pageKey || '').trim()) {
+    return sendResponse(res, null, 400, 'page 类型需要 pageKey')
+  }
+  const menu = db.addMenu(body)
+  const nameEn = String(body.nameEn || '').trim()
+  if (nameEn) {
+    db.saveTranslations({ entityType: 'menu', entityId: menu.id, locale: 'en', fields: { name: nameEn } })
+  }
   sendResponse(res, menu, 201, '菜单已创建')
 })
 
 app.put('/api/v1/admin/menus/:id', (req, res) => {
-  const updated = db.updateMenu(req.params.id, req.body)
+  const body = req.body || {}
+  if (body.type === 'link') {
+    const url = String(body.target?.url || '').trim()
+    if (!/^\/|^https?:\/\//.test(url)) {
+      return sendResponse(res, null, 400, '链接格式不正确：站内路由以 / 开头，外链需 http(s)://')
+    }
+  }
+  if (body.type === 'page' && !String(body.target?.pageKey || '').trim()) {
+    return sendResponse(res, null, 400, 'page 类型需要 pageKey')
+  }
+  const updated = db.updateMenu(req.params.id, body)
   if (!updated) {
     return sendResponse(res, null, 404, '菜单不存在')
+  }
+  if (body.nameEn !== undefined) {
+    const nameEn = String(body.nameEn || '').trim()
+    if (nameEn) {
+      db.saveTranslations({ entityType: 'menu', entityId: updated.id, locale: 'en', fields: { name: nameEn } })
+    } else {
+      db.deleteTranslation({ entityType: 'menu', entityId: updated.id, locale: 'en', field: 'name' })
+    }
   }
   sendResponse(res, updated, 200, '菜单已更新')
 })

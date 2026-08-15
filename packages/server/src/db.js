@@ -86,9 +86,16 @@ database.exec(`
     icon TEXT DEFAULT '',
     sortOrder INTEGER DEFAULT 0,
     enabled INTEGER DEFAULT 1,
+    visibility TEXT DEFAULT 'all',
     createdAt TEXT NOT NULL
   );
 `)
+
+try {
+  database.exec("ALTER TABLE menus ADD COLUMN visibility TEXT DEFAULT 'all';")
+} catch (e) {
+  // Column already exists
+}
 
 database.exec(`
   CREATE TABLE IF NOT EXISTS plans (
@@ -757,7 +764,8 @@ export const db = {
   TRANSLATABLE_FIELDS: {
     video: ['title', 'description', 'author'],
     plan: ['name', 'description', 'badgeText'],
-    site: ['heroTitle', 'heroSubtitle', 'noticeTitle', 'noticeContent', 'paywallNotice', 'userAgreement', 'customerServiceText']
+    site: ['heroTitle', 'heroSubtitle', 'noticeTitle', 'noticeContent', 'paywallNotice', 'userAgreement', 'customerServiceText'],
+    menu: ['name']
   },
 
   getTranslations(options = {}) {
@@ -784,6 +792,13 @@ export const db = {
   },
 
   // 批量保存一个实体的多个字段译文（fields: { title: '...', description: '...' }）
+  deleteTranslation({ entityType, entityId, locale, field }) {
+    if (!entityType || entityId === undefined || entityId === null || !locale || !field) return false
+    return database.prepare(
+      'DELETE FROM translations WHERE entityType = ? AND entityId = ? AND locale = ? AND field = ?'
+    ).run(entityType, String(entityId), locale, field).changes > 0
+  },
+
   saveTranslations({ entityType, entityId, locale, fields }) {
     if (!entityType || entityId === undefined || entityId === null || !locale || !fields || typeof fields !== 'object') return null
     for (const [field, value] of Object.entries(fields)) {
@@ -1482,14 +1497,22 @@ export const db = {
     return {
       ...row,
       target,
-      enabled: Boolean(row.enabled)
+      enabled: Boolean(row.enabled),
+      visibility: row.visibility || 'all'
     }
   },
 
   /** 管理端：全部菜单（含停用，扁平列表） */
   getAllMenus() {
-    return database.prepare('SELECT * FROM menus ORDER BY sortOrder ASC, createdAt ASC').all()
+    const rows = database.prepare('SELECT * FROM menus ORDER BY sortOrder ASC, createdAt ASC').all()
       .map(r => this.formatMenuRow(r))
+    // 附英文名（管理端编辑回显；entityType=menu, locale=en, field=name）
+    const tRows = database.prepare(
+      "SELECT entityId, value FROM translations WHERE entityType = 'menu' AND locale = 'en' AND field = 'name'"
+    ).all()
+    const enMap = {}
+    for (const t of tRows) enMap[t.entityId] = t.value
+    return rows.map(r => ({ ...r, nameEn: enMap[r.id] || '' }))
   },
 
   getMenuById(id) {
@@ -1501,11 +1524,15 @@ export const db = {
    * C 端：启用中的菜单树。
    * 未配置任何菜单时，自动生成默认菜单（全部视频 + 最热 8 个 tag），保证上线即可用。
    */
-  getMenuTree() {
+  getMenuTree(lang = null) {
     const rows = database.prepare('SELECT * FROM menus WHERE enabled = 1 ORDER BY sortOrder ASC, createdAt ASC').all()
       .map(r => this.formatMenuRow(r))
 
-    const source = rows.length ? rows : this.buildDefaultMenu()
+    let source = rows.length ? rows : this.buildDefaultMenu()
+    // 菜单名多语言（translations entityType='menu'）
+    if (lang && lang !== 'zh') {
+      source = this.applyLangToEntities('menu', source, lang)
+    }
 
     const nodeMap = new Map()
     source.forEach(m => nodeMap.set(m.id, { ...m, children: [] }))
@@ -1541,7 +1568,7 @@ export const db = {
         name: t.name,
         type: 'category',
         target: { tags: [t.name] },
-        icon: '',
+        icon: 'tag',
         sortOrder: i + 1,
         enabled: true,
         createdAt: ''
@@ -1552,8 +1579,8 @@ export const db = {
   addMenu(data) {
     const newId = data.id ? String(data.id).trim() : `menu-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const stmt = database.prepare(`
-      INSERT INTO menus (id, parentId, name, type, target, icon, sortOrder, enabled, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO menus (id, parentId, name, type, target, icon, sortOrder, enabled, visibility, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     stmt.run(
       newId,
@@ -1564,6 +1591,7 @@ export const db = {
       data.icon || '',
       Number(data.sortOrder) || 0,
       data.enabled === false ? 0 : 1,
+      ['all', 'guest', 'logged_in', 'vip'].includes(data.visibility) ? data.visibility : 'all',
       new Date().toISOString()
     )
     return this.getMenuById(newId)
@@ -1574,7 +1602,7 @@ export const db = {
     if (!existing) return null
     const stmt = database.prepare(`
       UPDATE menus
-      SET parentId = ?, name = ?, type = ?, target = ?, icon = ?, sortOrder = ?, enabled = ?
+      SET parentId = ?, name = ?, type = ?, target = ?, icon = ?, sortOrder = ?, enabled = ?, visibility = ?
       WHERE id = ?
     `)
     stmt.run(
@@ -1585,6 +1613,7 @@ export const db = {
       data.icon !== undefined ? (data.icon || '') : existing.icon,
       data.sortOrder !== undefined ? Number(data.sortOrder) || 0 : existing.sortOrder,
       data.enabled !== undefined ? (data.enabled === false ? 0 : 1) : (existing.enabled ? 1 : 0),
+      data.visibility !== undefined && ['all', 'guest', 'logged_in', 'vip'].includes(data.visibility) ? data.visibility : (existing.visibility || 'all'),
       id
     )
     return this.getMenuById(id)

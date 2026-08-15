@@ -10,7 +10,7 @@
     <!-- Desktop Sidebar + Feed Two-Column Layout -->
     <div class="w-full min-h-full">
       <CategorySidebar
-        :menus="category.menus"
+        :menus="visibleMenus"
         :active-tag="category.activeTag"
         :collapsed="category.sidebarCollapsed"
         @select="onMenuSelect"
@@ -33,7 +33,7 @@
     <!-- 移动端分类抽屉（左侧滑出） -->
     <CategoryDrawer
       :open="category.drawerOpen"
-      :menus="category.menus"
+      :menus="visibleMenus"
       :active-tag="category.activeTag"
       @select="onMenuSelect"
       @close="category.drawerOpen = false"
@@ -69,6 +69,22 @@ const { t } = useI18n()
 
 // 全局付费墙状态（App 提供）：{ enabled, isVip, showPaywall }
 const paywall = inject('paywall')
+const { currentUser } = inject('user') || { currentUser: null }
+
+/**
+ * 按可见性过滤菜单树：all 全可见 / guest 仅游客 / logged_in 仅登录 / vip 仅 VIP
+ * 子项跟随父项（父不可见则整支隐藏）
+ */
+const visibleMenus = computed(() => {
+  const filter = (items) => (items || []).filter((m) => {
+    if (m.visibility === 'guest' && (currentUser.value || paywall.isVip)) return false
+    if (m.visibility === 'logged_in' && !currentUser.value) return false
+    if (m.visibility === 'vip' && !paywall.isVip) return false
+    m.children = filter(m.children)
+    return true
+  })
+  return filter(category.menus)
+})
 
 // 分类/菜单全局状态（App 提供）：{ activeTag, tags, menus, drawerOpen }
 const category = inject('category')
