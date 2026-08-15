@@ -402,6 +402,10 @@ const onAuthSuccess = (user) => {
 
 provide('user', { currentUser, openAuth, refreshUser: loadMe })
 
+// 站点名（site-config 下发，白标定制；sidebar 品牌区使用）
+const siteTitleRef = ref('StreamVIP')
+provide('siteTitle', siteTitleRef)
+
 const getOrCreateDeviceId = () => {
   let id = localStorage.getItem('mp_device_id')
   if (!id) {
@@ -470,7 +474,10 @@ const fetchSiteConfig = async () => {
     if (res.ok) {
       const json = await res.json()
       if (json && json.data) {
-        if (json.data.siteTitle) document.title = json.data.siteTitle
+        if (json.data.siteTitle) {
+          document.title = json.data.siteTitle
+          siteTitleRef.value = json.data.siteTitle
+        }
         // 服务端调试开关（管理端控制）：enableClientDebug=true 时生产也输出 debug 日志
         setServerDebug(json.data.enableClientDebug === true)
         // 白标文案覆盖：merge 进当前语言 messages（未覆盖 key 保持默认）

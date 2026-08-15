@@ -21,9 +21,16 @@
         class="hidden lg:flex fixed left-0 top-0 bottom-0 z-50 w-72 flex-col bg-(--bg-page)/95 backdrop-blur-md border-r border-(--border-subtle)/80 shadow-2xl"
       >
         <div class="flex items-center justify-between px-4 py-3.5 border-b border-(--border-subtle)/60 shrink-0">
-          <span class="text-[11px] font-black text-(--text-faint) tracking-widest uppercase select-none">
-            {{ t('sidebar.title') }}
-          </span>
+          <!-- 品牌区：logo + 站点名 + 副标题 -->
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-tr from-red-600 to-yellow-500 flex items-center justify-center font-black text-black text-sm shadow-md">
+              ▶
+            </div>
+            <div class="flex flex-col leading-tight min-w-0">
+              <span class="font-extrabold text-sm text-(--text-primary) tracking-tight truncate select-none">{{ siteTitle }}</span>
+              <span class="text-[10px] text-(--text-faint) uppercase tracking-widest select-none">{{ t('sidebar.title') }}</span>
+            </div>
+          </div>
           <button
             @click="$emit('toggle')"
             class="w-7 h-7 rounded-lg bg-(--bg-input) hover:bg-(--bg-input) border border-white/10 text-(--text-secondary) flex items-center justify-center transition-all active:scale-95"
@@ -97,6 +104,7 @@
 import { useI18n } from 'vue-i18n'
 import CategoryMenuItem from './CategoryMenuItem.vue'
 import { useTheme } from '../services/themeService'
+import { inject } from 'vue'
 
 defineProps({
   /** 菜单树（分类 / 链接） */
@@ -120,6 +128,8 @@ defineEmits(['select', 'toggle'])
 
 const { t } = useI18n()
 const { isDark, toggleTheme } = useTheme()
+// 站点名（App 从 site-config 拉取后 provide）
+const siteTitle = inject('siteTitle', 'StreamVIP')
 </script>
 
 <style scoped>
