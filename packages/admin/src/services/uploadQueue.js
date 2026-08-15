@@ -24,27 +24,34 @@ const state = {
 let seq = 0
 let cachedConcurrency = null
 
+// 进度类更新频率高（引擎每 ~400ms report 一次），notify 节流到 250ms，避免过度重渲染
+let notifyPending = false
 const notify = () => {
-  for (const fn of state.listeners) fn()
+  if (notifyPending) return
+  notifyPending = true
+  setTimeout(() => {
+    notifyPending = false
+    for (const fn of state.listeners) fn()
+  }, 250)
 }
 
-/** 给上传引擎用的 ref 形状对象（引擎内部是 uploadProgress.value = x） */
+/** 给上传引擎用的 ref 形状对象（引擎内部是 uploadProgress.value = x）——setter 变更必须 notify 刷新 UI */
 const makeRefs = (item) => ({
   uploadProgress: {
     get value() { return item.progress },
-    set value(v) { item.progress = v },
+    set value(v) { item.progress = v; notify() },
   },
   uploadSpeed: {
     get value() { return item.speed },
-    set value(v) { item.speed = v },
+    set value(v) { item.speed = v; notify() },
   },
   uploadDetailText: {
     get value() { return item.detail },
-    set value(v) { item.detail = v },
+    set value(v) { item.detail = v; notify() },
   },
   uploadStatusLabel: {
     get value() { return item.label },
-    set value(v) { item.label = v },
+    set value(v) { item.label = v; notify() },
   },
 })
 
@@ -70,6 +77,8 @@ const runUpload = async (item) => {
   const signal = item.abort.signal
 
   item.label = '⚡ 获取直传凭证...'
+  // 20s 超时兜底：主控探活/网络异常时不无限 pending，明确报错可重试
+  const ticketSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000)
   const ticketRes = await apiFetch('/api/v1/admin/videos/upload-ticket', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -80,7 +89,7 @@ const runUpload = async (item) => {
       size: item.file.size,
       lastModified: item.file.lastModified,
     }),
-    signal,
+    signal: ticketSignal,
   })
   const ticketJson = await ticketRes.json()
   if (!ticketRes.ok || !ticketJson.data || !ticketJson.data.uploadUrl) {

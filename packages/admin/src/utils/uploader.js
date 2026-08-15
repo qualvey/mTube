@@ -44,7 +44,11 @@ const buildMultipartBody = async (fields, fileBlob, filename) => {
 const warmConnections = async (baseUrl, count, headers = {}, signal) => {
   const cleanBase = baseUrl.replace(/\/$/, '')
   const probes = Array.from({ length: count }, () =>
-    fetch(`${cleanBase}/api/v1/storage/status`, { headers, signal }).catch(() => null)
+    // 每路探测 5s 超时：连接挂起不阻塞主流程（失败静默，预热只是优化）
+    fetch(`${cleanBase}/api/v1/storage/status`, {
+      headers,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
+    }).catch(() => null)
   )
   await Promise.all(probes)
 }
@@ -189,7 +193,8 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
     // (0-byte or partial chunks from a crashed session are discarded → self-healing resume)
     const checkRes = await fetch(`${cleanBase}/api/v1/storage/check-chunks?uploadId=${uploadId}&fileSize=${file.size}&totalChunks=${totalChunks}`, {
       headers: ticket.headers || {},
-      signal
+      // 10s 超时：断点检测失败不阻塞（视为无历史分片）
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     })
     if (checkRes.ok) {
       const cj = await checkRes.json()
@@ -338,7 +343,8 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
               method: 'POST',
               headers: { 'Content-Type': contentType, ...(ticket.headers || {}) },
               body, // ArrayBuffer → browser sends Content-Length, TCP window grows freely
-              signal
+              // 单分片 120s 超时：TCP 停滞不再无限挂起，走重试→明确失败
+              signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000),
             })
 
             if (aborted) {
