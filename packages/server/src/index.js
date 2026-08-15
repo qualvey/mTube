@@ -1425,6 +1425,38 @@ app.put('/api/v1/admin/videos/:id', (req, res) => {
   sendResponse(res, updated, 200, '视频更新成功')
 })
 
+// ── 异步后台上传（流程反转）：上传完成回填 + 状态流转 ────────────────────
+// UPLOADING → (publishAt 未来 ? SCHEDULED : PUBLISHED)；关联 upload_task 自动置 completed
+app.post('/api/v1/admin/videos/:id/upload-complete', (req, res) => {
+  const { videoUrl, posterUrl, storageNodeId } = req.body || {}
+  if (!videoUrl) {
+    return sendResponse(res, null, 400, '缺少 videoUrl')
+  }
+  const updated = db.completeVideoUpload(req.params.id, { videoUrl, posterUrl, storageNodeId })
+  if (!updated) {
+    return sendResponse(res, null, 404, '视频不存在')
+  }
+  sendResponse(res, updated, 200, '上传完成，视频已上线')
+})
+
+// UPLOADING → FAILED（浏览器端上传中断/失败时上报）
+app.post('/api/v1/admin/videos/:id/upload-failed', (req, res) => {
+  const updated = db.failVideoUpload(req.params.id)
+  if (!updated) {
+    return sendResponse(res, null, 404, '视频不存在')
+  }
+  sendResponse(res, updated, 200, '已标记上传失败')
+})
+
+// FAILED → UPLOADING（重选文件重试）
+app.post('/api/v1/admin/videos/:id/upload-retry', (req, res) => {
+  const updated = db.retryVideoUpload(req.params.id)
+  if (!updated) {
+    return sendResponse(res, null, 404, '视频不存在')
+  }
+  sendResponse(res, updated, 200, '已重置为上传中')
+})
+
 app.delete('/api/v1/admin/videos/:id', (req, res) => {
   const success = db.deleteVideo(req.params.id)
   if (success) {
@@ -1495,7 +1527,7 @@ app.all(['/api/v1/admin/devices/:deviceId/revoke-vip', '/api/v1/admin/devices/re
   return sendResponse(res, { success: true, deviceId: cleanId }, 200, '手动取消设备 VIP 成功')
 })
 
-const uploadMemory = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 * 1024 } })
+const uploadMemory = null // 中转上传已改为流式透传（req.pipe），不再使用 multer 内存缓冲
 
 // GET /api/v1/admin/storage/status - Get Active Storage Node Health Status
 app.get('/api/v1/admin/storage/status', async (req, res) => {
@@ -1842,53 +1874,49 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
   }, 200, '直传凭证生成成功')
 })
 
-// POST /api/v1/admin/videos/upload - Upload video file directly to specified Storage Node
-app.post('/api/v1/admin/videos/upload', uploadMemory.single('video'), async (req, res) => {
-  if (!req.file) {
-    return sendResponse(res, null, 400, '未检测到上传视频文件（表单字段名应为 video）')
-  }
-
-  const targetNodeId = req.body.nodeId || req.query.nodeId
+// POST /api/v1/admin/videos/upload - 流式中转：浏览器 multipart 原样透传至存储节点（主控零落盘、零内存缓冲）
+// 说明：不做 multer 解析，req 直接 pipe 到存储节点 /api/v1/storage/upload；
+//       因此 nodeId 只能走 query 或自定义头（multipart body 无法在此读取）。
+app.post('/api/v1/admin/videos/upload', (req, res) => {
+  const targetNodeId = req.query.nodeId || req.headers['x-target-node']
   let targetNode = targetNodeId ? db.getStorageNodeById(targetNodeId) : db.getDefaultStorageNode()
   if (!targetNode) {
     targetNode = db.getDefaultStorageNode()
   }
-
-  const storageNodeUrl = (targetNode.baseUrl || 'http://localhost:3001').replace(/\/$/, '')
-
-  try {
-    logger.info(`[Admin Upload] Proxying video file (${(req.file.size / 1024 / 1024).toFixed(2)} MB) to Storage Node [${targetNode.name}] (${targetNode.id}): ${storageNodeUrl}`)
-
-    const formData = new FormData()
-    const blob = new Blob([req.file.buffer], { type: req.file.mimetype || 'video/mp4' })
-    formData.append('video', blob, req.file.originalname)
-
-    const response = await fetch(`${storageNodeUrl}/api/v1/storage/upload`, {
-      method: 'POST',
-      headers: createClusterSignedHeaders(targetNode.id),
-      body: formData
-    })
-
-    if (!response.ok) {
-      throw new Error(`Storage Node HTTP ${response.status} ${response.statusText}`)
-    }
-
-    const result = await response.json()
-    logger.info(`[Admin Upload] Storage Node response:`, result)
-
-    if (result && result.data) {
-      const dataWithNode = {
-        ...result.data,
-        storageNodeId: targetNode.id,
-        storageNodeName: targetNode.name
-      }
-      return sendResponse(res, dataWithNode, 200, `视频已成功透传上传至存储节点 [${targetNode.name}]，第50帧封面已生成！`)
-    }
-    sendResponse(res, result, 200, '视频上传成功')
-  } catch (err) {
-    logger.error(`[Admin Upload] Proxy upload to storage node failed:`, err.message)
-    sendResponse(res, null, 500, `上传至存储节点失败: ${err.message}`)
+  if (!targetNode || !targetNode.baseUrl) {
+    return sendResponse(res, null, 503, '无可用存储节点')
   }
+
+  const cleanBase = targetNode.baseUrl.replace(/\/$/, '')
+  const targetUrl = new URL(`${cleanBase}/api/v1/storage/upload`)
+  logger.info(`[Admin Upload] Streaming proxy video upload -> [${targetNode.name}] (${targetNode.id}): ${targetUrl.href}`)
+
+  const headers = { ...createClusterSignedHeaders(targetNode.id) }
+  // 透传浏览器原始 multipart Content-Type（含 boundary）与 Content-Length
+  if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type']
+  if (req.headers['content-length']) headers['Content-Length'] = req.headers['content-length']
+
+  const lib = targetUrl.protocol === 'https:' ? https : http
+  const proxyReq = lib.request(targetUrl, { method: 'POST', headers }, (proxyRes) => {
+    res.status(proxyRes.statusCode)
+    for (const [k, v] of Object.entries(proxyRes.headers)) {
+      if (k === 'transfer-encoding' || k === 'connection') continue
+      res.setHeader(k, v)
+    }
+    proxyRes.pipe(res)
+  })
+
+  proxyReq.setTimeout(30 * 60 * 1000, () => proxyReq.destroy(new Error('proxy timeout')))
+  proxyReq.on('error', (err) => {
+    logger.error(`[Admin Upload] Streaming proxy failed:`, err.message)
+    if (!res.headersSent) {
+      return sendResponse(res, null, 502, `存储节点转发失败: ${err.message}`)
+    }
+    res.destroy()
+  })
+
+  req.on('aborted', () => proxyReq.destroy())
+  req.pipe(proxyReq)
 })
 
 
@@ -1910,7 +1938,9 @@ const collectReferencedUploads = () => {
     if (m) refs.add(m[1])
   }
   try {
-    for (const v of db.getVideos()) {
+    // includeScheduled: 定时发布(SCHEDULED)/后台上传(UPLOADING/FAILED) 的视频文件同样受引用保护，
+    // 否则 24h 孤儿清理会把它们的已上传文件误删
+    for (const v of db.getVideos({ includeScheduled: true })) {
       extract(v.videoUrl)
       extract(v.poster)
     }
@@ -1986,6 +2016,18 @@ const publishScheduler = setInterval(() => {
   }
 }, 30 * 1000)
 publishScheduler.unref?.()
+
+// 异步后台上传超时清扫：UPLOADING 超过 6h → FAILED（页面刷新/关闭导致上传中断后不永久悬挂）
+const UPLOADING_STALE_MS = 6 * 3600 * 1000
+const staleUploadScheduler = setInterval(() => {
+  try {
+    const n = db.failStaleUploads(UPLOADING_STALE_MS)
+    if (n > 0) logger.warn(`[Scheduler] 标记 ${n} 个超时未完成的上传任务为 FAILED`)
+  } catch (e) {
+    logger.warn('[Scheduler] failStaleUploads error:', e.message)
+  }
+}, 60 * 1000)
+staleUploadScheduler.unref?.()
 
 // 孤儿文件清理：启动时跑一次，之后每 24 小时
 const cleanupScheduler = setInterval(() => {

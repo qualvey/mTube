@@ -59,6 +59,12 @@ try {
   // Column already exists
 }
 
+try {
+  database.exec("ALTER TABLE videos ADD COLUMN updatedAt TEXT DEFAULT NULL;")
+} catch (e) {
+  // Column already exists
+}
+
 database.exec(`
   CREATE TABLE IF NOT EXISTS ads (
     id TEXT PRIMARY KEY,
@@ -1175,8 +1181,11 @@ export const db = {
 
     const storageNodeId = data.storageNodeId || 'node-01'
 
-    // 定时发布：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 未带 publishAt 时默认下个 UTC+8 00:00 自动发布
-    let status = data.status === 'SCHEDULED' ? 'SCHEDULED' : 'PUBLISHED'
+    // 上传状态扩展：status 允许 PUBLISHED / SCHEDULED / UPLOADING / FAILED
+    // UPLOADING/FAILED：后台异步上传流程的中间态（C 端不可见），videoUrl 允许为空
+    let status = ['SCHEDULED', 'UPLOADING', 'FAILED'].includes(data.status)
+      ? data.status
+      : 'PUBLISHED'
     let publishAt = data.publishAt ? String(data.publishAt) : null
     if (status === 'SCHEDULED' && !publishAt) publishAt = nextUtc8Midnight()
 
@@ -1195,7 +1204,8 @@ export const db = {
       data.description || '',
       data.author || '官方创作者',
       data.authorAvatar || '',
-      data.videoUrl || 'https://vjs.zencdn.net/v/oceans.mp4',
+      // 不再用占位视频 URL 兑底：UPLOADING/FAILED 状态允许空，C 端查询已按 status 过滤，空 URL 不会泄漏
+      data.videoUrl || '',
       data.poster || '',
       data.duration || '05:00',
       data.isVip ? 1 : 0,
@@ -1230,8 +1240,10 @@ export const db = {
 
     const storageNodeId = updated.storageNodeId || 'node-01'
 
-    // 定时发布字段：status 仅允许 PUBLISHED / SCHEDULED；SCHEDULED 未带 publishAt 时默认下个 UTC+8 00:00
-    let status = updated.status === 'SCHEDULED' ? 'SCHEDULED' : 'PUBLISHED'
+    // 上传状态扩展：status 允许 PUBLISHED / SCHEDULED / UPLOADING / FAILED
+    let status = ['SCHEDULED', 'UPLOADING', 'FAILED'].includes(updated.status)
+      ? updated.status
+      : 'PUBLISHED'
     let publishAt = updated.publishAt !== undefined && updated.publishAt !== null
       ? String(updated.publishAt)
       : null
@@ -1262,6 +1274,60 @@ export const db = {
     )
 
     return this.getVideoById(id)
+  },
+
+  // ── 异步后台上传（流程反转）状态流转 ──────────────────────────────
+  /** 上传完成回填：videoUrl/posterUrl/storageNodeId，并按 publishAt 流转 PUBLISHED / SCHEDULED；关联任务置 completed */
+  completeVideoUpload(id, { videoUrl, posterUrl, storageNodeId }) {
+    const existing = this.getVideoById(id)
+    if (!existing) return null
+    const now = new Date().toISOString()
+    const isScheduled = existing.publishAt && new Date(existing.publishAt).getTime() > Date.now()
+    database.prepare(
+      'UPDATE videos SET videoUrl = ?, poster = ?, storageNodeId = ?, status = ?, updatedAt = ? WHERE id = ?'
+    ).run(
+      String(videoUrl || existing.videoUrl || ''),
+      String(posterUrl || existing.poster || ''),
+      String(storageNodeId || existing.storageNodeId || 'node-01'),
+      isScheduled ? 'SCHEDULED' : 'PUBLISHED',
+      now,
+      id
+    )
+    // 关联上传任务置完成（任务可能不存在，忽略）
+    database.prepare(
+      "UPDATE upload_tasks SET status = 'completed', updatedAt = ? WHERE videoId = ? AND status != 'completed'"
+    ).run(now, id)
+    return this.getVideoById(id)
+  },
+
+  /** 上传失败：status → FAILED（可重试/取消），并同步任务状态 */
+  failVideoUpload(id) {
+    const existing = this.getVideoById(id)
+    if (!existing) return null
+    const now = new Date().toISOString()
+    database.prepare("UPDATE videos SET status = 'FAILED', updatedAt = ? WHERE id = ?").run(now, id)
+    database.prepare(
+      "UPDATE upload_tasks SET status = 'failed', updatedAt = ? WHERE videoId = ? AND status = 'uploaded'"
+    ).run(now, id)
+    return this.getVideoById(id)
+  },
+
+  /** 重试上传：FAILED → UPLOADING */
+  retryVideoUpload(id) {
+    const existing = this.getVideoById(id)
+    if (!existing) return null
+    database.prepare("UPDATE videos SET status = 'UPLOADING', updatedAt = ? WHERE id = ?")
+      .run(new Date().toISOString(), id)
+    return this.getVideoById(id)
+  },
+
+  /** 超时清扫：UPLOADING 超过 maxAgeMs → FAILED（防刷新/中断后永久悬挂） */
+  failStaleUploads(maxAgeMs) {
+    const cutoff = new Date(Date.now() - maxAgeMs).toISOString()
+    const info = database.prepare(
+      "UPDATE videos SET status = 'FAILED', updatedAt = ? WHERE status = 'UPLOADING' AND createdAt <= ?"
+    ).run(new Date().toISOString(), cutoff)
+    return info.changes
   },
 
   getStorageNodes() {

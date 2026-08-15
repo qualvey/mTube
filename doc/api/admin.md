@@ -290,7 +290,12 @@ POST /api/v1/admin/videos
 
 请求 Body：视频对象（title、description、author、videoUrl、poster、isVip、previewDuration、tags 等）。
 
-**定时发布字段**：`status` (`PUBLISHED`/`SCHEDULED`，可选，默认 `PUBLISHED`)；`publishAt` (ISO 8601 字符串，可选)。`status=SCHEDULED` 未带 `publishAt` 时，默认取**下个 UTC+8 00:00** 作为发布时间（不立即发布），到点后服务端自动转为 `PUBLISHED` 并在 C 端可见。
+**发布状态字段**：`status` 枚举 `PUBLISHED` / `SCHEDULED` / `UPLOADING` / `FAILED`（可选，默认 `PUBLISHED`）；`publishAt` (ISO 8601 字符串，可选)。
+
+- `SCHEDULED`：定时发布，未带 `publishAt` 时默认取**下个 UTC+8 00:00**，到点后服务端自动转为 `PUBLISHED` 并在 C 端可见。
+- `UPLOADING`：**异步后台上传中间态**（流程反转）。配合本地文件发布：先创建 `UPLOADING` 记录（`videoUrl` 可传空字符串），浏览器端上传队列后台传输，完成后调 `POST /videos/:id/upload-complete` 回填并自动流转 `PUBLISHED`/`SCHEDULED`。C 端查询只返回 `PUBLISHED`，`UPLOADING`/`FAILED` 天然不可见。
+- `FAILED`：上传失败/取消后的终态，可调 `upload-retry` 重置为 `UPLOADING` 重传，或直接删除。
+
 成功响应：`201`，`data` 为新建视频对象。
 
 ### 更新视频
@@ -301,7 +306,7 @@ PUT /api/v1/admin/videos/:id
 
 成功：`200` `data` 为更新后的视频；视频不存在：`404`。
 
-**定时发布字段**：支持 `status` (`PUBLISHED`/`SCHEDULED`) 与 `publishAt` (ISO 8601，可传 `null` 清除)。`status=SCHEDULED` 未带 `publishAt` 时，默认取**下个 UTC+8 00:00** 作为发布时间。传 `{ status: 'PUBLISHED', publishAt: null }` 即立即发布。
+**定时发布字段**：支持 `status` (`PUBLISHED`/`SCHEDULED`/`UPLOADING`/`FAILED`) 与 `publishAt` (ISO 8601，可传 `null` 清除)。`status=SCHEDULED` 未带 `publishAt` 时，默认取**下个 UTC+8 00:00** 作为发布时间。传 `{ status: 'PUBLISHED', publishAt: null }` 即立即发布。
 
 ### 删除视频
 
@@ -311,14 +316,39 @@ DELETE /api/v1/admin/videos/:id
 
 成功：`200` `{ "code": 200, "message": "视频已删除", "data": { "success": true } }`；不存在：`404`。
 
+### 异步后台上传状态流转（流程反转）
+
+> 流程：本地文件发布 = 先 `POST /admin/videos` 建 `UPLOADING` 记录（videoUrl 空）→ 浏览器后台上传 → 完成/失败回调。
+
+```
+POST /api/v1/admin/videos/:id/upload-complete
+```
+
+Body：`{ videoUrl (必填), posterUrl (可选), storageNodeId (可选) }`。回填视频地址并自动流转：`publishAt` 在未来 → `SCHEDULED`，否则 → `PUBLISHED`；同时将关联的 upload_task（按 videoId）置为 `completed`。成功：`200` `data` 为更新后的视频；不存在：`404`；缺 videoUrl：`400`。
+
+```
+POST /api/v1/admin/videos/:id/upload-failed
+```
+
+Body：`{ message (可选) }`。`UPLOADING` → `FAILED`（关联 upload_task 置 `failed`）。成功：`200`。
+
+```
+POST /api/v1/admin/videos/:id/upload-retry
+```
+
+`FAILED` → `UPLOADING`（重选文件后重试）。成功：`200`。
+
+**超时保护**：服务端每分钟清扫，`UPLOADING` 超过 6 小时自动转 `FAILED`（防页面刷新/关闭后永久悬挂；重选同一文件走存储节点断点续传）。
+
 ### 代理上传视频至存储节点
 
 ```
 POST /api/v1/admin/videos/upload
 ```
 
-`multipart/form-data`：`video` (File, 必填)，`nodeId` (string, 可选，缺省用默认节点)。
-成功：`200`，`data` 含 `{ storageNodeId, storageNodeName, videoUrl, posterUrl }`（第 50 帧封面已生成）。
+`multipart/form-data`：`video` (File, 必填)；`nodeId` 通过 **query 参数**（`?nodeId=xxx`）或自定义头 `X-Target-Node` 传递（流式透传模式下无法读取 multipart body 内的字段）。
+
+**实现**：主控**流式透传**（`req.pipe` 直通存储节点 `/api/v1/storage/upload`），主控零落盘、零内存缓冲。受网络层限制（如 Cloudflare 免费版 100MB POST 上限）约束，大文件应走直传凭证 + 切片模式。成功：`200`，`data` 含 `{ storageNodeId, storageNodeName, videoUrl, posterUrl }`（第 50 帧封面已生成）；节点不可达：`502`；无可用节点：`503`。
 
 ### 生成直传凭证（Direct Upload Ticket）
 
@@ -678,10 +708,11 @@ Body: `{ "fileName": "xxx.mp4", "fileUrl": "/uploads/xxx.mp4" }`（fileUrl 必�
 PUT /api/v1/admin/upload-tasks/:id
 ```
 Body（部分更新）: `{ "fileName"?, "fileUrl"?, "posterUrl"?, "videoId"?, "status"? }`
-- 创建视频成功后传 `{ "status": "completed", "videoId": "vid_xxx" }` 完成任务（出队）
+- 状态枚举：`uploaded`（待完善/待上传，默认）/ `completed`（已转正式视频）/ `failed`（上传失败）
+- 创建视频成功后传 `{ "videoId": "vid_xxx" }` 关联；异步上传流程中 `upload-complete`/`upload-failed` 会自动置 `completed`/`failed`
 - 返回 `200`；任务不存在 `404`
 
 ```
 DELETE /api/v1/admin/upload-tasks/:id
 ```
-取消任务：删除任务记录 + 删除已上传文件（本地 uploads 直删 / 存储节点调 `POST /api/v1/storage/delete`），不浪费空间。返回 `200`。
+取消任务：删除任务记录 + 删除已上传文件（本地 uploads 直删 / 存储节点调 `POST /api/v1/storage/delete`），不浪费空间。若任务关联的视频处于 `UPLOADING`/`FAILED`（未发布成功），建议一并删除视频记录（前端已实现）。返回 `200`。

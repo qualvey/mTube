@@ -32,10 +32,11 @@
         </el-form-item>
       </div>
 
+      <!-- 视频来源：本地文件（发布后后台传输）或 手动播放地址，二选一 -->
       <el-form-item required>
         <template #label>
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full">
-            <span>视频 MP4 / M3U8 播放地址</span>
+            <span>视频文件（后台上传）或 MP4 / M3U8 播放地址</span>
             <el-tag v-if="enableDirectUpload" type="success" size="small" effect="light" class="font-bold">
               ⚡ 浏览器直传模式 (零主控带宽开销)
             </el-tag>
@@ -44,48 +45,46 @@
             </el-tag>
           </div>
         </template>
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
-          <el-input v-model="form.videoUrl" placeholder="https://.../video.mp4 或 /uploads/... 或 YouTube 链接" />
-          <input
-            type="file"
-            ref="videoFileInput"
-            accept="video/*,.m3u8,.mp4,.mov,.webm"
-            class="hidden"
-            @change="handleFileUpload($event, 'videoUrl')"
-          />
-          <el-button
-            type="primary"
-            plain
-            icon="Upload"
-            :loading="uploadLoading"
-            class="mobile-full-button"
-            @click="$refs.videoFileInput.click()"
-          >
-            上传本地视频
-          </el-button>
-        </div>
 
-        <!-- Real-time Video Upload Progress & Transfer Speed Indicator -->
-        <div v-if="uploadLoading || uploadProgress > 0" class="mt-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2 shadow-inner w-full">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs font-bold text-slate-700">
-            <span class="flex items-center gap-1.5">
-              <span class="text-amber-500 animate-pulse">🚀</span>
-              <span>{{ uploadStatusLabel || '视频传输处理中...' }}</span>
-            </span>
-            <span class="font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-xs">
-              ⚡ {{ uploadSpeed }}
-            </span>
+        <!-- 本地文件：选择后先入发布队列，点发布后在后台传输 -->
+        <div class="flex flex-col gap-2 w-full">
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
+            <el-input v-model="form.videoUrl" placeholder="https://.../video.mp4 或 /uploads/... 或 YouTube 链接" />
+            <input
+              type="file"
+              ref="videoFileInput"
+              accept="video/*,.mp4,.mov,.webm,.mkv,.avi,.flv,.wmv,.m4v"
+              class="hidden"
+              @change="handleVideoFileSelect($event)"
+            />
+            <el-button
+              type="primary"
+              plain
+              icon="Upload"
+              class="mobile-full-button"
+              @click="$refs.videoFileInput.click()"
+            >
+              {{ stagedFile ? '重新选择文件' : '选择本地视频' }}
+            </el-button>
           </div>
-          <el-progress
-            :percentage="uploadProgress"
-            :status="uploadProgress === 100 ? 'success' : ''"
-            :stroke-width="8"
-            striped
-            striped-flow
-          />
-          <div class="flex items-center justify-between text-[11px] font-mono text-slate-500">
-            <span>已传输: {{ uploadDetailText }}</span>
-            <span>进度: {{ uploadProgress }}%</span>
+
+          <!-- 已选文件卡片：发布后进入后台传输队列 -->
+          <div v-if="stagedFile" class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-bold text-emerald-800 truncate">🎬 {{ stagedFile.name }}</span>
+              <el-button size="small" text type="danger" @click="clearStagedFile">移除</el-button>
+            </div>
+            <div class="text-[11px] text-emerald-700 font-mono">{{ formatBytes(stagedFile.size) }}</div>
+            <div class="text-[11px] text-amber-700 font-bold">
+              ⏳ 点「直接发布」后立即入库（后台传输，不阻塞发布），上传完成自动上线
+            </div>
+            <div v-if="fileWarnings.length" class="text-[11px] text-amber-700 font-bold">
+              <div v-for="(w, i) in fileWarnings" :key="i">⚠️ {{ w }}</div>
+            </div>
+          </div>
+
+          <div v-else-if="form.videoUrl" class="text-[11px] text-slate-400">
+            已填写播放地址，将直接发布（不走后台传输）
           </div>
         </div>
       </el-form-item>
@@ -97,18 +96,18 @@
         </div>
 
         <el-form-item label="Referer (防盗链来源页)">
-          <el-input 
-            v-model="form.referer" 
-            placeholder="例如：https://missav.ws/dm48/cn/bf-720-uncensored-leak" 
+          <el-input
+            v-model="form.referer"
+            placeholder="例如：https://missav.ws/dm48/cn/bf-720-uncensored-leak"
           />
         </el-form-item>
 
         <el-form-item label="User-Agent (客户端签名)">
-          <el-input 
-            v-model="form.userAgent" 
+          <el-input
+            v-model="form.userAgent"
             type="textarea"
             :rows="2"
-            :placeholder="DEFAULT_UA" 
+            :placeholder="DEFAULT_UA"
           />
           <div class="text-[11px] text-slate-500 mt-1">
             提示：若为空则默认使用：<code class="text-amber-800 bg-amber-100/80 px-1 py-0.5 rounded font-mono">{{ DEFAULT_UA }}</code>
@@ -118,23 +117,23 @@
 
       <el-form-item label="封面图片地址">
         <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
-          <el-input v-model="form.poster" placeholder="https://.../poster.jpg 或 /uploads/..." />
+          <el-input v-model="form.poster" placeholder="https://.../poster.jpg 或 /uploads/...（留空则自动截取视频第50帧）" />
           <input
             type="file"
             ref="posterFileInput"
             accept="image/*"
             class="hidden"
-            @change="handleFileUpload($event, 'poster')"
+            @change="handlePosterUpload($event)"
           />
           <el-button
             type="primary"
             plain
             icon="Upload"
-            :loading="uploadLoading"
+            :loading="posterUploading"
             class="mobile-full-button"
             @click="$refs.posterFileInput.click()"
           >
-            上传本地封面
+            {{ posterUploading ? '上传中...' : '上传本地封面' }}
           </el-button>
         </div>
       </el-form-item>
@@ -195,7 +194,7 @@
             </span>
           </template>
           <span v-else class="text-xs text-slate-400">
-            关闭 = 提交后立即在主站上线
+            关闭 = 提交后立即在主站上线（本地文件则上传完成后立即上线）
           </span>
         </div>
       </el-form-item>
@@ -207,11 +206,9 @@
         <el-button
           type="warning"
           class="font-bold mobile-full-button"
-          :loading="uploadLoading || submitLoading"
-          :disabled="uploadLoading || submitLoading"
           @click="handleSubmit"
         >
-          {{ uploadLoading ? '视频传输中...' : isEdit ? '保存更新' : '立即提交发布' }}
+          {{ isEdit ? '保存更新' : (stagedFile ? '直接发布（后台传输）' : '立即提交发布') }}
         </el-button>
       </div>
     </template>
@@ -224,7 +221,6 @@ import { ElMessage } from 'element-plus'
 import { DEFAULT_UA, formatBytes } from '../utils/formatters.js'
 import { savePublishPref, nextPublishDefaultTs } from '../utils/publishPref.js'
 import { apiFetch } from '../utils/api.js'
-import { uploadFileWithProgress, uploadFileParallelChunks } from '../utils/uploader.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -240,180 +236,93 @@ const emit = defineEmits(['update:visible', 'submit'])
 const videoFileInput = ref(null)
 const posterFileInput = ref(null)
 
-const uploadLoading = ref(false)
-const submitLoading = ref(false)
-const uploadProgress = ref(0)
-const uploadSpeed = ref('0 KB/s')
-const uploadDetailText = ref('')
-const uploadStatusLabel = ref('')
+const posterUploading = ref(false)
+
+/** 已选待后台传输的本地文件（发布时随 submit 一起提交给父组件入队） */
+const stagedFile = ref(null)
+const fileWarnings = ref([])
+
+const VIDEO_EXT_WHITELIST = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'flv', 'wmv', 'm4v', 'ts']
+const MAX_SINGLE_UPLOAD = 2 * 1024 * 1024 * 1024 // 存储节点单文件上限 2GB（超过必须走切片直传）
 
 watch(() => props.visible, (newVal) => {
   if (newVal) {
-    uploadLoading.value = false
-    uploadProgress.value = 0
-    uploadSpeed.value = '0 KB/s'
-    uploadDetailText.value = ''
-    uploadStatusLabel.value = ''
+    stagedFile.value = null
+    fileWarnings.value = []
   }
 })
 
-/** 视频上传成功后登记到任务队列（同一次编辑内不重复登记） */
-const registerTaskIfVideo = (file, url) => {
-  if (fieldName === 'videoUrl' && url && !props.form.taskId) {
-    registerUploadTask(file?.name || '', url)
-  }
-}
-
-const registerUploadTask = async (fileName, fileUrl) => {
-  try {
-    const res = await apiFetch('/api/v1/admin/upload-tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName, fileUrl })
-    })
-    const json = await res.json()
-    if (res.ok && json.data) {
-      props.form.taskId = json.data.id
-    }
-  } catch (e) {
-    console.warn('任务登记失败:', e)
-  }
-}
-
-const handleFileUpload = async (event, fieldName) => {
+/** 选择本地视频：仅预检 + 暂存，不立即上传（发布后由上传队列后台传输） */
+const handleVideoFileSelect = (event) => {
   const file = event.target.files[0]
+  event.target.value = ''
   if (!file) return
 
-  uploadLoading.value = true
-  uploadProgress.value = 0
-  uploadSpeed.value = '0 KB/s'
-  uploadDetailText.value = `0 B / ${formatBytes(file.size)}`
-  uploadStatusLabel.value = '准备上传...'
+  const warnings = []
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
 
-  const stateRefs = { uploadProgress, uploadSpeed, uploadDetailText, uploadStatusLabel }
-
-  try {
-    const isVideo = file.type.startsWith('video/') || fieldName === 'videoUrl'
-
-    if (isVideo) {
-      let uploadSuccess = false
-
-      if (props.enableDirectUpload) {
-        try {
-          uploadStatusLabel.value = '⚡ [直传模式] 正在获取存储节点直传凭证...'
-          const ticketRes = await apiFetch('/api/v1/admin/videos/upload-ticket', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nodeId: props.form.storageNodeId })
-          })
-          const ticketJson = await ticketRes.json()
-
-          if (ticketRes.ok && ticketJson.data && ticketJson.data.uploadUrl) {
-            const ticket = ticketJson.data
-            if (ticket.chunkUploadUrl && ticket.mergeUrl && file.size >= 5 * 1024 * 1024) {
-              let concurrencyLimit = 4
-              try {
-                const settingsRes = await apiFetch('/api/v1/admin/settings')
-                if (settingsRes.ok) {
-                  const sJson = await settingsRes.json()
-                  if (sJson.data && sJson.data.uploadChunkConcurrency) {
-                    concurrencyLimit = Math.min(8, Math.max(2, Number(sJson.data.uploadChunkConcurrency) || 4))
-                  }
-                }
-              } catch (e) {}
-
-              uploadStatusLabel.value = `⚡ [${concurrencyLimit}并发直传] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
-              const result = await uploadFileParallelChunks(ticket, file, stateRefs, { concurrency: concurrencyLimit })
-              const directJson = result.data
-
-              if (result.ok && directJson.data && directJson.data.videoUrl) {
-                props.form[fieldName] = directJson.data.videoUrl
-              registerTaskIfVideo(file, directJson.data.videoUrl)
-              registerTaskIfVideo(file, directJson.data.videoUrl)
-                if (ticket.storageNodeId) props.form.storageNodeId = ticket.storageNodeId
-                if (directJson.data.posterUrl && !props.form.poster) props.form.poster = directJson.data.posterUrl
-                ElMessage.success(`⚡ [${concurrencyLimit}通道并发直传成功] 已自动关联播放地址：${directJson.data.videoUrl}`)
-                uploadSuccess = true
-              }
-            } else {
-              const directFormData = new FormData()
-              directFormData.append('video', file)
-              uploadStatusLabel.value = `⚡ [直传模式] 传输至 [${ticket.storageNodeName || ticket.storageNodeId}]`
-
-              const result = await uploadFileWithProgress(ticket.uploadUrl, directFormData, ticket.headers || {}, stateRefs)
-              const directJson = result.data
-
-              if (result.ok && directJson.data && directJson.data.videoUrl) {
-                props.form[fieldName] = directJson.data.videoUrl
-              registerTaskIfVideo(file, directJson.data.videoUrl)
-              registerTaskIfVideo(file, directJson.data.videoUrl)
-                if (ticket.storageNodeId) props.form.storageNodeId = ticket.storageNodeId
-                if (directJson.data.posterUrl && !props.form.poster) props.form.poster = directJson.data.posterUrl
-                ElMessage.success(`⚡ [直传成功] 已自动关联播放地址：${directJson.data.videoUrl}`)
-                uploadSuccess = true
-              }
-            }
-          }
-        } catch (directErr) {
-          console.warn('[Direct Upload] Direct upload failed, falling back to proxy upload:', directErr.message)
-          ElMessage.warning('直传失败，已降级为主控中转模式：' + directErr.message)
-        }
-      }
-
-      if (!uploadSuccess) {
-        uploadProgress.value = 0
-        uploadSpeed.value = '0 KB/s'
-        uploadStatusLabel.value = '📦 [中转模式] 上传至主控服务器中转...'
-
-        const formData = new FormData()
-        formData.append('video', file)
-        if (props.form.storageNodeId) formData.append('nodeId', props.form.storageNodeId)
-
-        try {
-          const result = await uploadFileWithProgress('/api/v1/admin/videos/upload', formData, {}, stateRefs)
-          const json = result.data
-
-          if (result.ok && json.data && json.data.videoUrl) {
-            props.form[fieldName] = json.data.videoUrl
-              registerTaskIfVideo(file, json.data.videoUrl)
-            if (json.data.storageNodeId) props.form.storageNodeId = json.data.storageNodeId
-            if (json.data.posterUrl && !props.form.poster) props.form.poster = json.data.posterUrl
-            ElMessage.success(`视频上传完成！已关联播放地址：${json.data.videoUrl}`)
-          } else {
-            ElMessage.error(json.message || '存储节点上传失败')
-          }
-        } catch (proxyErr) {
-          ElMessage.error('上传失败: ' + proxyErr.message)
-        }
-      }
-    } else {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        const base64Data = e.target.result
-        const res = await apiFetch('/api/v1/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name, fileData: base64Data })
-        })
-        const json = await res.json()
-        if (res.ok && json.data && json.data.url) {
-          props.form[fieldName] = json.data.url
-              registerTaskIfVideo(file, json.data.url)
-          ElMessage.success(`图片上传成功！路径: ${json.data.url}`)
-        } else {
-          ElMessage.error(json.message || '图片上传失败')
-        }
-        uploadLoading.value = false
-      }
-      reader.readAsDataURL(file)
-      return
-    }
-  } catch (err) {
-    ElMessage.error('上传读取异常: ' + err.message)
-  } finally {
-    uploadLoading.value = false
-    event.target.value = ''
+  if (!VIDEO_EXT_WHITELIST.includes(ext)) {
+    ElMessage.error(`不支持的视频格式 .${ext || '未知'}，支持: ${VIDEO_EXT_WHITELIST.join('/')}`)
+    return
   }
+  if (file.size <= 0) {
+    ElMessage.error('文件为空，请重新选择')
+    return
+  }
+  if (file.size >= MAX_SINGLE_UPLOAD) {
+    warnings.push(`文件超过 ${formatBytes(MAX_SINGLE_UPLOAD)}，将使用切片直传（自动分片，不受大小限制）`)
+  } else if (file.size >= 100 * 1024 * 1024) {
+    warnings.push('文件较大，请确保直传模式开启（可绕过 Cloudflare 100MB 限制）')
+  }
+
+  stagedFile.value = file
+  fileWarnings.value = warnings
+  ElMessage.success(`已选择文件：${file.name}（${formatBytes(file.size)}），发布后后台传输`)
+}
+
+const clearStagedFile = () => {
+  stagedFile.value = null
+  fileWarnings.value = []
+}
+
+/** 封面小图：仍走主控 base64 直传（图片小，无性能问题） */
+const handlePosterUpload = (event) => {
+  const file = event.target.files[0]
+  event.target.value = ''
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('请选择图片文件')
+    return
+  }
+
+  posterUploading.value = true
+  const reader = new FileReader()
+  reader.onload = async (e) => {
+    try {
+      const base64Data = e.target.result
+      const res = await apiFetch('/api/v1/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, fileData: base64Data })
+      })
+      const json = await res.json()
+      if (res.ok && json.data && json.data.url) {
+        props.form.poster = json.data.url
+        ElMessage.success(`图片上传成功！路径: ${json.data.url}`)
+      } else {
+        ElMessage.error(json.message || '图片上传失败')
+      }
+    } catch (err) {
+      ElMessage.error('图片上传失败: ' + err.message)
+    } finally {
+      posterUploading.value = false
+    }
+  }
+  reader.onerror = () => {
+    posterUploading.value = false
+    ElMessage.error('图片读取失败')
+  }
+  reader.readAsDataURL(file)
 }
 
 /** 定时发布：禁止选择过去时间 */
@@ -446,18 +355,17 @@ const formatPublishTime = (ts) => {
 }
 
 const handleSubmit = () => {
-  if (uploadLoading.value) {
-    ElMessage.warning('视频仍在传输或拼接处理中，请稍候再提交')
-    return
-  }
   if (!props.form.title) {
     ElMessage.warning('请填写视频标题')
     return
   }
-  if (!props.form.videoUrl) {
-    ElMessage.warning('请先成功上传本地视频或手动填写视频播放地址')
+  if (!props.form.videoUrl && !stagedFile.value) {
+    ElMessage.warning('请选择本地视频文件，或填写视频播放地址')
     return
   }
-  emit('submit')
+  if (!props.isEdit && stagedFile.value) {
+    props.form.videoUrl = '' // 本地文件走后台传输，清掉可能残留的旧 URL
+  }
+  emit('submit', !props.isEdit ? (stagedFile.value || null) : null)
 }
 </script>

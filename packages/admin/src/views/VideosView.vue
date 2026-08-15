@@ -47,6 +47,63 @@
       </div>
     </div>
 
+    <!-- 后台传输队列（流程反转：发布即入队，文件后台传输） -->
+    <el-card v-if="queueItems.length" class="rounded-2xl shadow-sm border-emerald-200">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-emerald-800">🚀 后台传输队列（{{ queueItems.length }}）</span>
+          <span class="text-xs text-slate-400">单飞模式：同一时刻只传一个，不阻塞其他操作</span>
+        </div>
+      </template>
+      <div class="flex flex-col gap-2">
+        <div
+          v-for="q in queueItems"
+          :key="q.id"
+          class="border border-slate-200 rounded-xl p-3 flex flex-col gap-2"
+          :class="{ 'bg-emerald-50/60': q.status === 'done', 'bg-red-50/60': q.status === 'failed' }"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-slate-700 truncate">🎬 {{ q.fileName }}</span>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <el-tag v-if="q.status === 'queued'" size="small" type="info" effect="light">排队中</el-tag>
+              <el-tag v-else-if="q.status === 'uploading'" size="small" type="warning" effect="light">
+                传输中 {{ q.progress }}%
+              </el-tag>
+              <el-tag v-else-if="q.status === 'done'" size="small" type="success" effect="light">✅ 已完成</el-tag>
+              <el-tag v-else-if="q.status === 'failed'" size="small" type="danger" effect="light">❌ 失败</el-tag>
+              <el-tag v-else size="small" type="info" effect="light">取消中</el-tag>
+              <el-button
+                v-if="q.status === 'uploading' || q.status === 'queued'"
+                size="small"
+                type="danger"
+                plain
+                @click="cancelQueueItem(q)"
+              >取消</el-button>
+              <el-button
+                v-if="q.status === 'failed'"
+                size="small"
+                type="warning"
+                plain
+                @click="retryQueueItem(q)"
+              >重选文件重试</el-button>
+            </div>
+          </div>
+          <el-progress
+            v-if="q.status === 'uploading' || q.status === 'queued'"
+            :percentage="q.progress"
+            :stroke-width="6"
+            striped
+            striped-flow
+          />
+          <div class="flex items-center justify-between text-[11px] font-mono text-slate-500">
+            <span class="truncate">{{ q.label }}</span>
+            <span v-if="q.speed" class="text-emerald-600 font-bold shrink-0">⚡ {{ q.speed }}</span>
+          </div>
+          <div v-if="q.error" class="text-[11px] text-red-600 font-bold">原因：{{ q.error }}</div>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 发布任务队列（常驻；新建任务可先占位后上传，可完善发布 / 取消） -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
@@ -136,9 +193,15 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="发布状态" width="150">
+        <el-table-column label="发布状态" width="170">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'SCHEDULED'" type="warning" size="small" effect="light" class="font-bold">
+            <el-tag v-if="row.status === 'UPLOADING'" type="warning" size="small" effect="light" class="font-bold">
+              🚀 上传中 {{ queueProgressOf(row.id) }}
+            </el-tag>
+            <el-tag v-else-if="row.status === 'FAILED'" type="danger" size="small" effect="light" class="font-bold">
+              ❌ 上传失败
+            </el-tag>
+            <el-tag v-else-if="row.status === 'SCHEDULED'" type="warning" size="small" effect="light" class="font-bold">
               ⏰ 定时 {{ formatPublishTime(row.publishAt) }}
             </el-tag>
             <el-tag v-else type="success" size="small" effect="light" class="font-bold">已发布</el-tag>
@@ -196,12 +259,53 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import VideoUploadModal from '../components/VideoUploadModal.vue'
 import { DEFAULT_UA, buildHeadersJson } from '../utils/formatters.js'
 import { getPublishPref, nextUtc8MidnightTs, nextPublishDefaultTs } from '../utils/publishPref.js'
 import { apiFetch } from '../utils/api.js'
+import { uploadQueue } from '../services/uploadQueue.js'
+
+// ── 后台传输队列（流程反转：发布即入队）──────────────
+const queueItems = ref([])
+const unsubscribeQueue = uploadQueue.subscribe(() => {
+  const prev = queueItems.value
+  const next = [...uploadQueue.items]
+  // 有任务从传输中/排队 → 完成/失败/取消：刷新视频列表让状态列同步
+  const finished = next.some(i =>
+    (i.status === 'done' || i.status === 'failed' || i.status === 'canceling') &&
+    prev.some(p => p.id === i.id && (p.status === 'uploading' || p.status === 'queued'))
+  )
+  queueItems.value = next
+  if (finished) fetchVideos()
+})
+queueItems.value = [...uploadQueue.items]
+
+/** 列表行关联：当前是否有在传任务及其进度（视频行状态列展示） */
+const queueProgressOf = (videoId) => {
+  const q = uploadQueue.items.find(i => i.videoId === videoId && (i.status === 'uploading' || i.status === 'queued'))
+  return q ? `${q.progress}%` : ''
+}
+
+const cancelQueueItem = (q) => {
+  uploadQueue.cancel(q.id)
+}
+
+/** 失败重试：重新选择文件（同文件自动断点续传） */
+const retryQueueItem = (q) => {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'video/*,.mp4,.mov,.webm,.mkv,.avi,.flv,.wmv,.m4v'
+  input.onchange = () => {
+    const file = input.files && input.files[0]
+    if (file) {
+      uploadQueue.retry(q.id, file)
+      ElMessage.success(`已选择 ${file.name}，重新传输中（断点续传）`)
+    }
+  }
+  input.click()
+}
 
 const videoList = ref([])
 const storageNodes = ref([])
@@ -211,6 +315,8 @@ const enableDirectUpload = ref(true)
 
 const modalVisible = ref(false)
 const isEdit = ref(false)
+/** 提交中标记（防重复提交；按钮 loading 展示在弹窗内部） */
+const submitLoading = ref(false)
 const videoForm = ref({
   id: '',
   taskId: null,
@@ -276,6 +382,10 @@ onMounted(() => {
   fetchStorageNodes()
   fetchVideos()
   fetchUploadTasks()
+})
+
+onBeforeUnmount(() => {
+  unsubscribeQueue()
 })
 
 /** 状态筛选：'' = 全部 / SCHEDULED = 待发布队列 */
@@ -346,7 +456,7 @@ const openAddModalFromTask = (task) => {
   videoForm.value.taskId = task.id
 }
 
-/** 取消任务：删任务记录 + 删已上传文件 */
+/** 取消任务：删任务记录 + 删已上传文件；若关联 UPLOADING/FAILED 视频一并删除（未发布成功） */
 const cancelTask = async (task) => {
   try {
     await ElMessageBox.confirm(`取消任务并删除已上传文件？\n${task.fileName || task.fileUrl}`, '取消任务', { type: 'warning' })
@@ -354,6 +464,14 @@ const cancelTask = async (task) => {
   try {
     const res = await apiFetch(`/api/v1/admin/upload-tasks/${task.id}`, { method: 'DELETE' })
     if (res.ok) {
+      // 关联的未发布成功视频（UPLOADING/FAILED）一并删除，避免悬挂记录
+      if (task.videoId) {
+        const v = videoList.value.find(x => x.id === task.videoId)
+        if (v && (v.status === 'UPLOADING' || v.status === 'FAILED')) {
+          await apiFetch(`/api/v1/admin/videos/${task.videoId}`, { method: 'DELETE' }).catch(() => {})
+          videoList.value = videoList.value.filter(x => x.id !== task.videoId)
+        }
+      }
       ElMessage.success('任务已取消，文件已删除')
       fetchUploadTasks()
     } else {
@@ -406,7 +524,7 @@ const resetFormForQueue = () => {
     taskId: null,
     title: '',
     description: '',
-    author: '?????',
+    author: '官方创作者',
     storageNodeId: defaultNode ? defaultNode.id : 'node-01',
     videoUrl: '',
     referer: '',
@@ -414,7 +532,7 @@ const resetFormForQueue = () => {
     poster: '',
     isVip: true,
     previewDuration: 120,
-    tags: ['??'],
+    tags: ['新增'],
     status: 'SCHEDULED',
     scheduled: true,
     publishAtMs: nextPublishDefaultTs()
@@ -458,7 +576,7 @@ const openEditModal = (video) => {
   modalVisible.value = true
 }
 
-const handleModalSubmit = async () => {
+const handleModalSubmit = async (stagedFile) => {
   const headersJson = buildHeadersJson(videoForm.value.referer, videoForm.value.userAgent)
 
   // 发布策略：scheduled=true → SCHEDULED；publishAtMs 非空用指定时间，留空不传 publishAt（后端默认下个 UTC+8 00:00）
@@ -469,18 +587,80 @@ const handleModalSubmit = async () => {
     publishAt: scheduled
       ? (publishAtMs ? new Date(publishAtMs).toISOString() : undefined)
       : null,
-    status: scheduled ? 'SCHEDULED' : 'PUBLISHED',
     headers: headersJson
   }
 
+  // 本地文件 → 流程反转：先以 UPLOADING 入库（C 端不可见），后台传输完成自动上线
+  if (stagedFile && !isEdit.value) {
+    try {
+      const res = await apiFetch('/api/v1/admin/videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, status: 'UPLOADING', videoUrl: '' })
+      })
+      const json = await res.json()
+      if (!json.data) {
+        ElMessage.error(json.message || '创建视频记录失败')
+        return
+      }
+
+      const video = json.data
+      videoList.value.unshift(video)
+
+      // 任务登记：无 taskId 时自动建占位任务（供取消/展示），并关联 videoId
+      let taskId = videoForm.value.taskId
+      if (!taskId) {
+        try {
+          const tRes = await apiFetch('/api/v1/admin/upload-tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileName: stagedFile.name })
+          })
+          const tJson = await tRes.json()
+          if (tRes.ok && tJson.data) taskId = tJson.data.id
+        } catch (e) { /* 登记失败不影响发布 */ }
+      }
+      if (taskId) {
+        apiFetch(`/api/v1/admin/upload-tasks/${taskId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: video.id })
+        }).catch(() => {})
+        fetchUploadTasks()
+      }
+
+      // 入队后台传输
+      uploadQueue.enqueue({
+        videoId: video.id,
+        taskId,
+        fileName: stagedFile.name,
+        file: stagedFile,
+        nodeId: videoForm.value.storageNodeId
+      })
+
+      modalVisible.value = false
+      ElMessage.success(`已直接发布【${video.title}】，文件后台传输中（完成自动上线）`)
+      return
+    } catch (e) {
+      ElMessage.error('发布失败: ' + e.message)
+      return
+    }
+  }
+
   // 计划时间必须晚于当前时间（过去时间 = 立即发布，容易误操作）
+  payload.status = scheduled ? 'SCHEDULED' : 'PUBLISHED'
   if (payload.status === 'SCHEDULED' && payload.publishAt && new Date(payload.publishAt).getTime() <= Date.now()) {
     ElMessage.warning('计划发布时间必须晚于当前时间')
     return
   }
 
+  submitLoading.value = true
   try {
     if (isEdit.value) {
+      // UPLOADING/FAILED 视频编辑保存：无 URL 不允许转 PUBLISHED（避免空视频泄漏到 C 端）
+      if ((videoForm.value.status === 'UPLOADING' || videoForm.value.status === 'FAILED') && !payload.videoUrl) {
+        payload.status = videoForm.value.status
+      }
       const res = await apiFetch(`/api/v1/admin/videos/${videoForm.value.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -523,6 +703,8 @@ const handleModalSubmit = async () => {
     }
   } catch (e) {
     ElMessage.error('操作失败')
+  } finally {
+    submitLoading.value = false
   }
 }
 

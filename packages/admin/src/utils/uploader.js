@@ -41,10 +41,10 @@ const buildMultipartBody = async (fields, fileBlob, filename) => {
 // the OS TCP window is already past slow-start initial period, enabling
 // full-speed delivery from the very first chunk.
 // ==============================================================================
-const warmConnections = async (baseUrl, count, headers = {}) => {
+const warmConnections = async (baseUrl, count, headers = {}, signal) => {
   const cleanBase = baseUrl.replace(/\/$/, '')
   const probes = Array.from({ length: count }, () =>
-    fetch(`${cleanBase}/api/v1/storage/status`, { headers }).catch(() => null)
+    fetch(`${cleanBase}/api/v1/storage/status`, { headers, signal }).catch(() => null)
   )
   await Promise.all(probes)
 }
@@ -52,7 +52,7 @@ const warmConnections = async (baseUrl, count, headers = {}) => {
 // ==============================================================================
 // Proxy Upload (中转模式): XHR with onprogress — used only as fallback
 // ==============================================================================
-export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = {}) => {
+export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = {}, signal) => {
   const { uploadProgress, uploadSpeed, uploadDetailText, uploadStatusLabel } = stateRefs
 
   return new Promise((resolve, reject) => {
@@ -63,6 +63,17 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
 
     let lastLoaded = 0
     let lastTime = Date.now()
+
+    const onAbort = () => {
+      xhr.abort()
+      const err = new Error('上传已取消')
+      err.name = 'AbortError'
+      reject(err)
+    }
+    if (signal) {
+      if (signal.aborted) return onAbort()
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
@@ -114,7 +125,6 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
     xhr.send(formData)
   })
 }
-
 // ==============================================================================
 // Hysteria2-style Aggressive Parallel Chunk Upload Engine
 //
@@ -129,11 +139,18 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
 // ==============================================================================
 export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, options = {}) => {
   const { uploadProgress, uploadSpeed, uploadDetailText, uploadStatusLabel } = stateRefs
+  const signal = options.signal || null
   const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB per chunk
   // Clamp to the 2-8 channel range enforced by the admin settings UI
   const CONCURRENCY = Math.min(8, Math.max(2, Number(options.concurrency) || 4))
   const MAX_RETRIES = 3
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+
+  const abortError = () => {
+    const e = new Error('上传已取消')
+    e.name = 'AbortError'
+    return e
+  }
 
   // Deterministic uploadId — stable across page reloads for resumable upload
   const safeName = file.name.replace(/[^a-zA-Z0-9_\.-]/g, '_')
@@ -145,11 +162,20 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
 
   const cleanBase = (ticket.baseUrl || '').replace(/\/$/, '')
 
+  // 取消标记：中止后不再调度新分片、不重试（failed 在下方与 active 一起声明）
+  let aborted = false
+  if (signal) {
+    if (signal.aborted) aborted = true
+    else signal.addEventListener('abort', () => { aborted = true; failed = true }, { once: true })
+  }
+
   // ── Phase 1: TCP Pre-Warming ──────────────────────────────────────────────
   if (uploadStatusLabel) {
     uploadStatusLabel.value = `⚡ [TCP预热] 正在建立 ${CONCURRENCY} 条独立高速通道 (Hysteria2 模式)...`
   }
-  await warmConnections(cleanBase, CONCURRENCY, ticket.headers || {})
+  await warmConnections(cleanBase, CONCURRENCY, ticket.headers || {}, signal)
+
+  if (aborted) throw abortError()
 
   // ── Phase 2: Resumable Upload Check ──────────────────────────────────────
   let resumedChunks = new Set()
@@ -158,7 +184,8 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
     // Pass fileSize/totalChunks so the node can size-validate resumed chunks
     // (0-byte or partial chunks from a crashed session are discarded → self-healing resume)
     const checkRes = await fetch(`${cleanBase}/api/v1/storage/check-chunks?uploadId=${uploadId}&fileSize=${file.size}&totalChunks=${totalChunks}`, {
-      headers: ticket.headers || {}
+      headers: ticket.headers || {},
+      signal
     })
     if (checkRes.ok) {
       const cj = await checkRes.json()
@@ -234,6 +261,10 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
 
       // All chunks complete → Phase 4: merge
       if (queue.length === 0 && active === 0) {
+        if (aborted) {
+          failed = true
+          return reject(abortError())
+        }
         if (uploadStatusLabel) {
           uploadStatusLabel.value = `⚡ [缝合中] ${CONCURRENCY}通道传输完毕，存储节点缝合文件并提取第50帧封面...`
         }
@@ -245,7 +276,7 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
           headers: { 'Content-Type': 'application/json', ...(ticket.headers || {}) },
           body: JSON.stringify(mergePayload),
           // 10 min: includes FFmpeg frame-50 poster extraction on the storage node
-          signal: AbortSignal.timeout(600000)
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(600000)]) : AbortSignal.timeout(600000)
         }).then(r => r.json())
 
         // Merge is idempotent on the storage node (merge_result_<uploadId> record):
@@ -261,12 +292,14 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
             }
             throw new Error(mj.message || '分片拼接失败')
           } catch (err) {
+            if (aborted) return reject(abortError())
             if (attempt < 2) {
               console.warn(`[MergeRetry] merge attempt ${attempt}/2 failed (${err.message}), retrying...`)
               if (uploadStatusLabel) {
                 uploadStatusLabel.value = `⚡ [缝合重试] 第 ${attempt + 1}/2 次...`
               }
               await new Promise(r => setTimeout(r, 2000))
+              if (aborted) return reject(abortError())
               return attemptMerge(attempt + 1)
             }
             reject(new Error('merge-chunks 请求失败: ' + err.message))
@@ -300,8 +333,15 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
             const resp = await fetch(ticket.chunkUploadUrl, {
               method: 'POST',
               headers: { 'Content-Type': contentType, ...(ticket.headers || {}) },
-              body // ArrayBuffer → browser sends Content-Length, TCP window grows freely
+              body, // ArrayBuffer → browser sends Content-Length, TCP window grows freely
+              signal
             })
+
+            if (aborted) {
+              active--
+              failed = true
+              return reject(abortError())
+            }
 
             if (resp.status === 413) {
               active--
@@ -318,6 +358,11 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
             reportProgress(false)
             next()
           } catch (err) {
+            if (aborted) {
+              active--
+              failed = true
+              return reject(abortError())
+            }
             if (retry < MAX_RETRIES) {
               const delay = 800 * Math.pow(2, retry) // 800ms, 1.6s, 3.2s
               console.warn(`[ChunkRetry] chunk_${chunkIndex} → retry ${retry + 1}/${MAX_RETRIES} in ${delay}ms (${err.message})`)
