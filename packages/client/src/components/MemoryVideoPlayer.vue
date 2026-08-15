@@ -132,6 +132,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { logger } from '../services/logger'
 import Plyr from 'plyr'
 import Hls from 'hls.js'
 import { createPlaybackId, trackEvent } from '../services/analyticsService'
@@ -234,7 +235,7 @@ const handleLoadedMetadata = (e?: Event) => {
     const h = el.videoHeight
     isPortrait.value = h > w
     videoAspectRatio.value = `${w} / ${h}`
-    console.log(`[MemoryVideoPlayer Debug] 📐 Dynamic aspect ratio detected: ${w}x${h} (${videoAspectRatio.value}), isPortrait: ${isPortrait.value}`)
+    logger.debug(`[MemoryVideoPlayer] Dynamic aspect ratio detected`)
   }
 }
 
@@ -552,7 +553,7 @@ const loadVideoToMemory = async () => {
   if (hasHeaders) params.append('headers', JSON.stringify(customHeaders))
   const proxyUrl = `/api/v1/proxy/video?${params.toString()}`
 
-  console.log(`[StreamPlayer] 模式: ${isM3u8 ? 'HLS' : 'MP4 直接流'} | URL: ${proxyUrl}`)
+  logger.debug(`[StreamPlayer] load mode | URL: ${proxyUrl}`)
 
   if (!videoRef.value) {
     errorMessage.value = t('player.initFailed')
