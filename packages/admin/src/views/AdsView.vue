@@ -156,7 +156,25 @@
         </div>
 
         <el-form-item label="图片素材 URL（信息流卡主图）">
-          <el-input v-model="form.imageUrl" placeholder="https://.../ad.jpg 或 /uploads/..." />
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
+            <el-input v-model="form.imageUrl" placeholder="https://.../ad.jpg 或 /uploads/..." />
+            <input
+              type="file"
+              ref="imageFileInput"
+              accept="image/*"
+              class="hidden"
+              @change="handleImageUpload($event)"
+            />
+            <el-button
+              type="primary"
+              plain
+              icon="Upload"
+              :loading="imageUploading"
+              @click="$refs.imageFileInput.click()"
+            >
+              {{ imageUploading ? '上传中...' : '上传本地图片' }}
+            </el-button>
+          </div>
         </el-form-item>
 
         <el-form-item label="视频素材 URL（前贴片/中插预留）">
@@ -235,6 +253,39 @@ const emptyForm = () => ({
 })
 
 const form = ref(emptyForm())
+const imageFileInput = ref(null)
+const imageUploading = ref(false)
+
+/** 广告主图：multipart 直传主控（复用 /api/v1/upload） */
+const handleImageUpload = (event) => {
+  const file = event.target.files[0]
+  event.target.value = ''
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('请选择图片文件')
+    return
+  }
+  imageUploading.value = true
+  const upload = async () => {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await apiFetch('/api/v1/upload', { method: 'POST', body: formData })
+      const json = await res.json()
+      if (res.ok && json.data && json.data.url) {
+        form.value.imageUrl = json.data.url
+        ElMessage.success(`图片上传成功！路径: ${json.data.url}`)
+      } else {
+        ElMessage.error(json.message || '图片上传失败')
+      }
+    } catch (err) {
+      ElMessage.error('图片上传失败: ' + err.message)
+    } finally {
+      imageUploading.value = false
+    }
+  }
+  upload()
+}
 
 const fetchAds = async () => {
   try {

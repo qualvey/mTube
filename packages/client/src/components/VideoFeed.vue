@@ -155,7 +155,8 @@ const fetchAdConfig = async () => {
     console.warn('Failed to fetch ad config:', e)
   }
   if (adsEnabled.value) {
-    ads.value = await videoService.getAds('feed', false)
+    // vip=props.isVip：VIP 用户（paywall 关闭场景）不投放「仅免费用户」广告
+    ads.value = await videoService.getAds('feed', props.isVip)
   }
 }
 
