@@ -188,6 +188,7 @@ import { authService } from './services/authService'
 import AuthModal from './components/AuthModal.vue'
 import { initAnalytics, shutdownAnalytics } from './services/analyticsService'
 import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT, applySiteOverrides } from './i18n'
+import { setServerDebug } from './services/logger'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -470,6 +471,8 @@ const fetchSiteConfig = async () => {
       const json = await res.json()
       if (json && json.data) {
         if (json.data.siteTitle) document.title = json.data.siteTitle
+        // 服务端调试开关（管理端控制）：enableClientDebug=true 时生产也输出 debug 日志
+        setServerDebug(json.data.enableClientDebug === true)
         // 白标文案覆盖：merge 进当前语言 messages（未覆盖 key 保持默认）
         if (json.data.i18n) applySiteOverrides(json.data.i18n, lang)
       }

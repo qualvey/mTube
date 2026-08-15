@@ -143,6 +143,13 @@
       <el-form :model="settings" label-position="top">
         <el-form-item label="启用拖拽进度条实时截图预览 (Seek Preview)">
           <el-switch v-model="settings.enableSeekPreview" active-text="开启悬浮缩略图" inactive-text="关闭缩略图" />
+        </el-form-item><el-form-item label="启用拖拽进度条实时截图预览 (Seek Preview)">
+          <el-switch v-model="settings.enableSeekPreview" active-text="开启悬浮缩略图" inactive-text="关闭缩略图" />
+        </el-form-item>
+
+        <el-form-item label="C 端调试日志 (Client Debug)">
+          <el-switch v-model="settings.enableClientDebug" active-text="开启" inactive-text="关闭" />
+          <div class="text-xs text-slate-400 mt-1">开启后 C 端浏览器 Console 输出全量 debug 日志（含播放器/代理地址），排查问题用；默认关闭</div>
         </el-form-item>
 
         <el-form-item label="默认全局备用存储节点地址">
@@ -226,6 +233,7 @@ const settings = ref({
   heroTitle: '极致诱惑',
   heroSubtitle: '滑动探索更多独家无删减内容',
   enableSeekPreview: true,
+  enableClientDebug: false,
   uploadChunkConcurrency: 4,
   activeStorageNodeUrl: 'https://storage02.91cso.com',
   adsEnabled: false,

@@ -900,9 +900,7 @@ app.get('/api/v1/settings', (req, res) => {
     enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true,
     paywallNotice: settings.paywallNotice,
     userAgreement: settings.userAgreement,
-    customerServiceText: settings.customerServiceText,
-    // i18n 文案覆盖（白标定制）：仅返回当前语言有覆盖的 key，前端 mergeLocaleMessage 合并
-    i18n: db.getSiteI18nOverrides(req.query.lang)
+    customerServiceText: settings.customerServiceText
   })
 })
 
@@ -977,7 +975,9 @@ app.get(['/api/v1/site-config', '/api/v1/paywall/config', '/api/v1/settings'], (
     userAgreement: settings.userAgreement,
     customerServiceText: settings.customerServiceText,
     // i18n 文案覆盖（白标定制）：仅返回当前语言有覆盖的 key，前端 mergeLocaleMessage 合并
-    i18n: db.getSiteI18nOverrides(req.query.lang)
+    i18n: db.getSiteI18nOverrides(req.query.lang),
+    // C 端调试日志开关（管理端控制）
+    enableClientDebug: settings.enableClientDebug === true,
   })
 })
 

@@ -1825,6 +1825,8 @@ export const db = {
       // 信息流广告间隔：每 N 条视频插 1 条广告（2-20）
       adsFeedInterval: 6,
       enableSeekPreview: true,
+      // C 端调试日志开关（管理端控制；true = 生产也输出 debug 日志）
+      enableClientDebug: false,
       uploadChunkConcurrency: 4,
       heroImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
       heroTitle: '极致诱惑',
@@ -1837,7 +1839,7 @@ export const db = {
       customerServiceText: '如有支付问题或需要协助，请联系官方客服 Telegram: @StreamVIP_Support'
     }
     for (const r of rows) {
-      if (r.key === 'enableSeekPreview' || r.key === 'enableNotice' || r.key === 'paywallEnabled' || r.key === 'adsEnabled') {
+      if (r.key === 'enableSeekPreview' || r.key === 'enableNotice' || r.key === 'paywallEnabled' || r.key === 'adsEnabled' || r.key === 'enableClientDebug') {
         settings[r.key] = r.value === 'true'
       } else if (r.key === 'uploadChunkConcurrency' || r.key === 'adsFeedInterval') {
         settings[r.key] = Number(r.value) || (r.key === 'adsFeedInterval' ? 6 : 4)

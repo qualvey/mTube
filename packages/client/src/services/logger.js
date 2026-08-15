@@ -5,6 +5,12 @@
 const LEVELS = { debug: 0, log: 1, info: 2, warn: 3, error: 4 }
 
 let cachedLevel = null
+// 服务端开关（管理端控制）：true 时生产环境也输出 debug
+let serverDebug = false
+export const setServerDebug = (v) => {
+  serverDebug = !!v
+  cachedLevel = null // 重置级别缓存
+}
 
 const getLevel = () => {
   if (cachedLevel !== null) return cachedLevel
@@ -16,6 +22,7 @@ const getLevel = () => {
     const q = new URLSearchParams(location.search).get('debug')
     if (q === '1' || q === 'true') level = LEVELS.debug
   }
+  if (level === undefined && serverDebug) level = LEVELS.debug
   if (level === undefined) level = import.meta.env.DEV ? LEVELS.debug : LEVELS.warn
   cachedLevel = level
   return level
