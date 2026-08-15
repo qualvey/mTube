@@ -367,6 +367,11 @@ const handleSave = async () => {
     ElMessage.warning('请填写广告名称')
     return
   }
+  // 拒绝 base64 粘贴入库（应走上传按钮）
+  if (form.value.imageUrl && form.value.imageUrl.startsWith('data:')) {
+    ElMessage.warning('图片素材不能直接粘贴 base64，请使用「上传本地图片」按钮')
+    return
+  }
   saving.value = true
   try {
     const body = { ...form.value }

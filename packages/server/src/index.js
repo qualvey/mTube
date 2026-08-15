@@ -1300,12 +1300,25 @@ app.get('/api/v1/admin/ads', (req, res) => {
   sendResponse(res, db.getAllAds())
 })
 
+/** 广告素材校验：拒绝 base64 data URI 直接入库（应走上传接口拿 URL，避免库膨胀/无法缓存） */
+const validateAdMedia = (body = {}) => {
+  const bad = ['imageUrl', 'videoUrl'].find(k => typeof body[k] === 'string' && body[k].startsWith('data:'))
+  if (bad) {
+    return `${bad} 不能直接粘贴 base64 数据，请使用「上传本地图片」或填写 http(s)/uploads 地址`
+  }
+  return null
+}
+
 app.post('/api/v1/admin/ads', (req, res) => {
+  const err = validateAdMedia(req.body)
+  if (err) return sendResponse(res, null, 400, err)
   const ad = db.addAd(req.body)
   sendResponse(res, ad, 201, '广告已创建')
 })
 
 app.put('/api/v1/admin/ads/:id', (req, res) => {
+  const err = validateAdMedia(req.body)
+  if (err) return sendResponse(res, null, 400, err)
   const updated = db.updateAd(req.params.id, req.body)
   if (!updated) {
     return sendResponse(res, null, 404, '广告不存在')
