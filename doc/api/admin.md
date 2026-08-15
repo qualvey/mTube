@@ -658,3 +658,30 @@ DELETE /api/v1/admin/site-i18n?key=feed.loadingMore&locale=zh
 删除覆盖恢复默认文案；返回 `200`；不存在返回 `404`。
 
 C 端消费：`GET /api/v1/site-config?lang=zh` 返回 `data.i18n`（当前语言覆盖），前端 `mergeLocaleMessage` 深合并（未覆盖 key 保持语言包默认）。
+
+### 上传任务队列（upload-tasks）
+
+视频文件上传成功即入队（未发布的任务在管理端「上传任务队列」可见，可完善发布或取消；杜绝「文件传了看不见」）。
+
+```
+GET /api/v1/admin/upload-tasks
+```
+待完善任务列表（status='uploaded'，按创建时间倒序）；已转正式视频的任务自动出队。
+
+```
+POST /api/v1/admin/upload-tasks
+```
+Body: `{ "fileName": "xxx.mp4", "fileUrl": "/uploads/xxx.mp4" }`（fileUrl 必填）
+返回 `201` + 任务对象（`id` 后续用于关联/取消）。
+
+```
+PUT /api/v1/admin/upload-tasks/:id
+```
+Body（部分更新）: `{ "fileName"?, "fileUrl"?, "posterUrl"?, "videoId"?, "status"? }`
+- 创建视频成功后传 `{ "status": "completed", "videoId": "vid_xxx" }` 完成任务（出队）
+- 返回 `200`；任务不存在 `404`
+
+```
+DELETE /api/v1/admin/upload-tasks/:id
+```
+取消任务：删除任务记录 + 删除已上传文件（本地 uploads 直删 / 存储节点调 `POST /api/v1/storage/delete`），不浪费空间。返回 `200`。

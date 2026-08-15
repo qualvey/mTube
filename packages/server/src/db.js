@@ -348,6 +348,17 @@ database.exec(`
     verifiedAt TEXT DEFAULT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS upload_tasks (
+    id TEXT PRIMARY KEY,
+    fileName TEXT DEFAULT '',
+    fileUrl TEXT DEFAULT '',
+    posterUrl TEXT DEFAULT '',
+    status TEXT DEFAULT 'uploaded',
+    videoId TEXT DEFAULT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS storage_nodes (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -1524,6 +1535,49 @@ export const db = {
    * C 端：启用中的菜单树。
    * 未配置任何菜单时，自动生成默认菜单（全部视频 + 最热 8 个 tag），保证上线即可用。
    */
+  // ── 上传任务队列（上传即入队，可编辑/取消）────────────
+  createUploadTask({ fileName, fileUrl, posterUrl = '' }) {
+    const id = `task_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const now = new Date().toISOString()
+    database.prepare(
+      'INSERT INTO upload_tasks (id, fileName, fileUrl, posterUrl, status, videoId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)'
+    ).run(id, String(fileName || ''), String(fileUrl || ''), String(posterUrl || ''), 'uploaded', now, now)
+    return this.getUploadTask(id)
+  },
+
+  getUploadTask(id) {
+    return database.prepare('SELECT * FROM upload_tasks WHERE id = ?').get(id) || null
+  },
+
+  /** 待完善任务（未转正式视频） */
+  getUploadTasks() {
+    return database.prepare(
+      "SELECT * FROM upload_tasks WHERE status = 'uploaded' ORDER BY createdAt DESC"
+    ).all()
+  },
+
+  updateUploadTask(id, data) {
+    const existing = this.getUploadTask(id)
+    if (!existing) return null
+    const now = new Date().toISOString()
+    database.prepare(
+      'UPDATE upload_tasks SET fileName = ?, fileUrl = ?, posterUrl = ?, videoId = ?, status = ?, updatedAt = ? WHERE id = ?'
+    ).run(
+      data.fileName !== undefined ? String(data.fileName || '') : existing.fileName,
+      data.fileUrl !== undefined ? String(data.fileUrl || '') : existing.fileUrl,
+      data.posterUrl !== undefined ? String(data.posterUrl || '') : existing.posterUrl,
+      data.videoId !== undefined ? String(data.videoId || '') : null,
+      data.status !== undefined ? String(data.status) : existing.status,
+      now,
+      id
+    )
+    return this.getUploadTask(id)
+  },
+
+  deleteUploadTask(id) {
+    return database.prepare('DELETE FROM upload_tasks WHERE id = ?').run(id).changes > 0
+  },
+
   getMenuTree(lang = null) {
     const rows = database.prepare('SELECT * FROM menus WHERE enabled = 1 ORDER BY sortOrder ASC, createdAt ASC').all()
       .map(r => this.formatMenuRow(r))

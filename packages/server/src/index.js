@@ -1301,6 +1301,59 @@ app.delete('/api/v1/admin/ads/:id', (req, res) => {
 })
 
 // ── 菜单管理（CRUD）──────────────────────────────────────────────────────
+// ── 上传任务队列（上传即入队；可编辑/取消；取消时删除已上传文件）──
+app.get('/api/v1/admin/upload-tasks', (req, res) => {
+  sendResponse(res, db.getUploadTasks())
+})
+
+app.post('/api/v1/admin/upload-tasks', (req, res) => {
+  const { fileName, fileUrl, posterUrl } = req.body || {}
+  if (!fileUrl) return sendResponse(res, null, 400, '缺少已上传文件 URL')
+  const task = db.createUploadTask({ fileName, fileUrl, posterUrl })
+  sendResponse(res, task, 201, '已加入上传任务队列')
+})
+
+app.put('/api/v1/admin/upload-tasks/:id', (req, res) => {
+  const updated = db.updateUploadTask(req.params.id, req.body || {})
+  if (!updated) return sendResponse(res, null, 404, '任务不存在')
+  sendResponse(res, updated, 200, '任务已更新')
+})
+
+/** 删除已上传文件（本地 uploads 直删；存储节点调 DELETE 接口） */
+const removeUploadedFile = async (url) => {
+  if (!url || typeof url !== 'string') return
+  // 本地
+  if (url.startsWith('/uploads/')) {
+    const rel = url.slice('/uploads/'.length)
+    const p = path.join(uploadsDir, rel)
+    try { if (fs.existsSync(p)) { fs.unlinkSync(p); logger.info(`[Cleanup] 删除本地文件: ${rel}`) } } catch (e) { logger.warn('[Cleanup] 删除本地文件失败:', e.message) }
+    return
+  }
+  // 存储节点 URL（如 https://host/uploads/videos/xxx.mp4）——定位节点并调删除
+  try {
+    const nodes = db.getStorageNodes()
+    const target = nodes.find((nd) => nd.baseUrl && url.startsWith(nd.baseUrl))
+    if (!target) return
+    const rel = url.slice(url.indexOf('/uploads/'))
+    const res = await fetch(`${target.baseUrl}/api/v1/storage/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...createClusterSignedHeaders(target.id || 'node-01') },
+      body: JSON.stringify({ path: rel.replace(/^\/uploads\//, '') })
+    }).catch(() => null)
+    if (res && res.ok) logger.info(`[Cleanup] 存储节点删除文件: ${rel}`)
+  } catch (e) { logger.warn('[Cleanup] 存储节点删除失败:', e.message) }
+}
+
+// 取消任务：删任务记录 + 删已上传文件（不再等 24h 孤儿回收）
+app.delete('/api/v1/admin/upload-tasks/:id', async (req, res) => {
+  const task = db.getUploadTask(req.params.id)
+  if (!task) return sendResponse(res, null, 404, '任务不存在')
+  db.deleteUploadTask(req.params.id)
+  await removeUploadedFile(task.fileUrl)
+  if (task.posterUrl) await removeUploadedFile(task.posterUrl)
+  sendResponse(res, { success: true }, 200, '任务已取消，已上传文件已删除')
+})
+
 app.get('/api/v1/admin/menus', (req, res) => {
   sendResponse(res, db.getAllMenus())
 })

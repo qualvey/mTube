@@ -171,6 +171,7 @@ const modalVisible = ref(false)
 const isEdit = ref(false)
 const videoForm = ref({
   id: '',
+  taskId: null,
   title: '',
   description: '',
   author: '官方创作者',
@@ -232,6 +233,7 @@ onMounted(() => {
   fetchUploadConfig()
   fetchStorageNodes()
   fetchVideos()
+  fetchUploadTasks()
 })
 
 /** 状态筛选：'' = 全部 / SCHEDULED = 待发布队列 */
@@ -268,6 +270,7 @@ const openAddModal = () => {
   const scheduled = getPublishPref()
   videoForm.value = {
     id: '',
+    taskId: null,
     title: '',
     description: '',
     author: '官方创作者',
@@ -291,6 +294,7 @@ const resetFormForQueue = () => {
   const defaultNode = storageNodes.value.find(n => n.isDefault) || storageNodes.value[0]
   videoForm.value = {
     id: '',
+    taskId: null,
     title: '',
     description: '',
     author: '?????',
@@ -326,6 +330,7 @@ const openEditModal = (video) => {
 
   videoForm.value = {
     id: video.id,
+    taskId: null,
     title: video.title || '',
     description: video.description || '',
     author: video.author || '官方创作者',

@@ -257,6 +257,29 @@ watch(() => props.visible, (newVal) => {
   }
 })
 
+/** 视频上传成功后登记到任务队列（同一次编辑内不重复登记） */
+const registerTaskIfVideo = (file, url) => {
+  if (fieldName === 'videoUrl' && url && !props.form.taskId) {
+    registerUploadTask(file?.name || '', url)
+  }
+}
+
+const registerUploadTask = async (fileName, fileUrl) => {
+  try {
+    const res = await apiFetch('/api/v1/admin/upload-tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, fileUrl })
+    })
+    const json = await res.json()
+    if (res.ok && json.data) {
+      props.form.taskId = json.data.id
+    }
+  } catch (e) {
+    console.warn('任务登记失败:', e)
+  }
+}
+
 const handleFileUpload = async (event, fieldName) => {
   const file = event.target.files[0]
   if (!file) return
@@ -305,6 +328,8 @@ const handleFileUpload = async (event, fieldName) => {
 
               if (result.ok && directJson.data && directJson.data.videoUrl) {
                 props.form[fieldName] = directJson.data.videoUrl
+              registerTaskIfVideo(file, directJson.data.videoUrl)
+              registerTaskIfVideo(file, directJson.data.videoUrl)
                 if (ticket.storageNodeId) props.form.storageNodeId = ticket.storageNodeId
                 if (directJson.data.posterUrl && !props.form.poster) props.form.poster = directJson.data.posterUrl
                 ElMessage.success(`⚡ [${concurrencyLimit}通道并发直传成功] 已自动关联播放地址：${directJson.data.videoUrl}`)
@@ -320,6 +345,8 @@ const handleFileUpload = async (event, fieldName) => {
 
               if (result.ok && directJson.data && directJson.data.videoUrl) {
                 props.form[fieldName] = directJson.data.videoUrl
+              registerTaskIfVideo(file, directJson.data.videoUrl)
+              registerTaskIfVideo(file, directJson.data.videoUrl)
                 if (ticket.storageNodeId) props.form.storageNodeId = ticket.storageNodeId
                 if (directJson.data.posterUrl && !props.form.poster) props.form.poster = directJson.data.posterUrl
                 ElMessage.success(`⚡ [直传成功] 已自动关联播放地址：${directJson.data.videoUrl}`)
@@ -348,6 +375,7 @@ const handleFileUpload = async (event, fieldName) => {
 
           if (result.ok && json.data && json.data.videoUrl) {
             props.form[fieldName] = json.data.videoUrl
+              registerTaskIfVideo(file, json.data.videoUrl)
             if (json.data.storageNodeId) props.form.storageNodeId = json.data.storageNodeId
             if (json.data.posterUrl && !props.form.poster) props.form.poster = json.data.posterUrl
             ElMessage.success(`视频上传完成！已关联播放地址：${json.data.videoUrl}`)
@@ -370,6 +398,7 @@ const handleFileUpload = async (event, fieldName) => {
         const json = await res.json()
         if (res.ok && json.data && json.data.url) {
           props.form[fieldName] = json.data.url
+              registerTaskIfVideo(file, json.data.url)
           ElMessage.success(`图片上传成功！路径: ${json.data.url}`)
         } else {
           ElMessage.error(json.message || '图片上传失败')

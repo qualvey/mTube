@@ -181,6 +181,31 @@ export const createApp = () => {
     res.json({ code: 200, message: 'cleanup done', data: { removed, count: removed.length } })
   })
 
+  // POST /api/v1/storage/delete - 删除单个已上传文件（任务取消时主服务器调用）
+  // body: { path: "videos/xxx.mp4" }（相对 uploads 根）
+  app.post('/api/v1/storage/delete', (req, res) => {
+    const rel = String(req.body?.path || '').trim()
+    // 路径穿越防护：只允许 videos/posters 前缀，不允许 ..
+    if (!rel || !/^[a-z_]+\/[^./][^.]*$/.test(rel) || rel.includes('..')) {
+      return res.status(400).json({ code: 400, message: 'invalid path' })
+    }
+    const safe = path.resolve(path.join(dirs.publicDir, 'uploads', rel))
+    const base = path.resolve(path.join(dirs.publicDir, 'uploads'))
+    if (!safe.startsWith(base + path.sep)) {
+      return res.status(400).json({ code: 400, message: 'invalid path' })
+    }
+    try {
+      if (fs.existsSync(safe) && fs.statSync(safe).isFile()) {
+        fs.unlinkSync(safe)
+        console.log(`[Storage Node] Deleted file: ${rel}`)
+        return res.json({ code: 200, data: { path: rel } })
+      }
+      return res.status(404).json({ code: 404, message: 'file not found' })
+    } catch (e) {
+      return res.status(500).json({ code: 500, message: e.message })
+    }
+  })
+
   app.post('/api/v1/storage/upload', uploadSingle.single('video'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ code: 400, message: 'Missing video file parameter (field: video)' })
