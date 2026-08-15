@@ -1844,6 +1844,86 @@ app.listen(PORT, () => {
 })
 // ── 定时发布清扫任务 ──────────────────────────────────────────────────
 // 每 30s 将已到时间的 SCHEDULED 视频刷为 PUBLISHED（C 端读取时也有懒晋升兜底）
+// ── 孤儿上传文件清理（上传未提交/视频已删除 = 死档文件，24h 后自动清除）──
+const ORPHAN_AGE_MS = 24 * 3600 * 1000
+
+/** 收集所有被引用的上传文件相对路径（本地 /uploads/xxx → xxx；存储节点 …/uploads/videos/xxx → videos/xxx） */
+const collectReferencedUploads = () => {
+  const refs = new Set()
+  const extract = (url) => {
+    if (!url || typeof url !== 'string') return
+    const m = url.match(/\/uploads\/(.+)$/)
+    if (m) refs.add(m[1])
+  }
+  try {
+    for (const v of db.getVideos()) {
+      extract(v.videoUrl)
+      extract(v.poster)
+    }
+    for (const a of db.getAllAds()) extract(a.imageUrl)
+  } catch (e) {
+    logger.warn('[Cleanup] 引用收集失败:', e.message)
+  }
+  return refs
+}
+
+/** 清理本地 uploads + 通知各存储节点清理；返回本地删除数 */
+const cleanupOrphanUploads = async () => {
+  const refs = collectReferencedUploads()
+  const cutoff = Date.now() - ORPHAN_AGE_MS
+  let removed = 0
+
+  try {
+    // 本地 uploads 根
+    for (const name of fs.readdirSync(uploadsDir)) {
+      const p = path.join(uploadsDir, name)
+      const st = fs.statSync(p)
+      if (st.isFile() && st.mtimeMs < cutoff && !refs.has(name)) {
+        fs.unlinkSync(p)
+        removed++
+        logger.info(`[Cleanup] 删除本地孤儿文件: ${name}`)
+      }
+    }
+    // 本地 posters（ffmpeg 抽帧生成；视频删除后成孤儿）
+    for (const name of fs.readdirSync(postersDir)) {
+      const p = path.join(postersDir, name)
+      const st = fs.statSync(p)
+      if (st.isFile() && st.mtimeMs < cutoff && !refs.has(`posters/${name}`)) {
+        fs.unlinkSync(p)
+        removed++
+        logger.info(`[Cleanup] 删除本地孤儿海报: ${name}`)
+      }
+    }
+  } catch (e) {
+    logger.warn('[Cleanup] 本地清理失败:', e.message)
+  }
+
+  // 存储节点（直传模式的文件所在地）
+  try {
+    const nodes = db.getStorageNodes()
+    for (const node of nodes) {
+      if (!node.baseUrl) continue
+      const res = await fetch(`${node.baseUrl}/api/v1/storage/cleanup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...createClusterSignedHeaders(node.id || 'node-01') },
+        body: JSON.stringify({ referenced: [...refs] })
+      }).catch(() => null)
+      if (res && res.ok) {
+        const j = await res.json().catch(() => null)
+        if (j && j.data && j.data.count) {
+          logger.info(`[Cleanup] 存储节点 [${node.name}] 清理 ${j.data.count} 个孤儿文件`)
+        }
+      } else {
+        logger.warn(`[Cleanup] 存储节点 [${node.name || node.id}] 清理调用失败`)
+      }
+    }
+  } catch (e) {
+    logger.warn('[Cleanup] 存储节点清理失败:', e.message)
+  }
+
+  return removed
+}
+
 const publishScheduler = setInterval(() => {
   try {
     db.publishDueVideos()
@@ -1852,3 +1932,10 @@ const publishScheduler = setInterval(() => {
   }
 }, 30 * 1000)
 publishScheduler.unref?.()
+
+// 孤儿文件清理：启动时跑一次，之后每 24 小时
+const cleanupScheduler = setInterval(() => {
+  cleanupOrphanUploads().catch(() => {})
+}, 24 * 3600 * 1000)
+cleanupScheduler.unref?.()
+cleanupOrphanUploads().catch(() => {})

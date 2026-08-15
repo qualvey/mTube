@@ -149,6 +149,38 @@ export const createApp = () => {
   })
 
   // ── POST /api/v1/storage/upload (full single file) ──
+  // POST /api/v1/storage/cleanup - 孤儿文件清理（上传未提交/视频已删除 = 死档）
+  // body: { referenced: string[] } - 主服务器下发的被引用相对路径（videos/xxx.mp4, posters/yyy.jpg）
+  // 规则: 未引用 + 超过 24h 的文件删除；temp_chunks 超时全清（未 merge 必是孤儿）
+  app.post('/api/v1/storage/cleanup', (req, res) => {
+    const ORPHAN_AGE_MS = 24 * 3600 * 1000
+    const referenced = new Set(Array.isArray(req.body?.referenced) ? req.body.referenced : [])
+    const cutoff = Date.now() - ORPHAN_AGE_MS
+    const removed = []
+
+    const sweep = (dir, prefix) => {
+      let files = []
+      try { files = fs.readdirSync(dir) } catch { return }
+      for (const name of files) {
+        const p = path.join(dir, name)
+        let st
+        try { st = fs.statSync(p) } catch { continue }
+        if (st.isFile() && st.mtimeMs < cutoff && !referenced.has(prefix + name)) {
+          try { fs.unlinkSync(p); removed.push(prefix + name) } catch { /* ignore */ }
+        }
+      }
+    }
+
+    sweep(dirs.videosDir, 'videos/')
+    sweep(dirs.postersDir, 'posters/')
+    sweep(dirs.tempChunksDir, 'temp_chunks/')
+
+    if (removed.length) {
+      console.log(`[Storage Node] Cleanup removed ${removed.length} orphan files: ${removed.slice(0, 5).join(', ')}...`)
+    }
+    res.json({ code: 200, message: 'cleanup done', data: { removed, count: removed.length } })
+  })
+
   app.post('/api/v1/storage/upload', uploadSingle.single('video'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ code: 400, message: 'Missing video file parameter (field: video)' })
