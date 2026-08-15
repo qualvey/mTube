@@ -47,6 +47,48 @@
       </div>
     </div>
 
+    <!-- 发布任务队列（常驻；新建任务可先占位后上传，可完善发布 / 取消） -->
+    <el-card class="rounded-2xl shadow-sm border-slate-200">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-800">发布任务队列（{{ uploadTasks.length }}）</span>
+          <div class="flex items-center gap-2">
+            <el-button size="small" type="warning" plain icon="Plus" @click="createEmptyTask">新建任务</el-button>
+            <el-button size="small" icon="Refresh" @click="fetchUploadTasks">刷新</el-button>
+          </div>
+        </div>
+      </template>
+      <el-table :data="uploadTasks" size="small" stripe>
+        <el-table-column label="文件" min-width="180">
+          <template #default="{ row }">
+            <span class="font-mono text-xs text-slate-600">{{ row.fileName || row.fileUrl || '（未命名）' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.fileUrl ? 'success' : 'warning'" size="small" effect="light">
+              {{ row.fileUrl ? '待完善' : '待上传' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="140">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" align="right">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" plain @click="openAddModalFromTask(row)">完善并发布</el-button>
+            <el-button size="small" type="danger" plain @click="cancelTask(row)">取消</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="!uploadTasks.length" class="text-center py-6 text-slate-400 text-sm">
+        暂无任务。点击「新建任务」先占位（无需先上传文件），或上传视频会自动入队。
+      </div>
+      <div class="text-xs text-slate-400 mt-2">
+        「完善并发布」打开编辑弹窗（已上传文件自动预填）；「取消」同时删除已上传文件（不浪费空间）。
+      </div>
+    </el-card>
+
     <!-- Video List Table Card -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
@@ -263,6 +305,73 @@ const getStorageNodeName = (nodeId) => {
   return node ? `${node.name} (${node.id})` : (nodeId || '默认节点')
 }
 
+// ── 发布任务队列 ─────────────────────────────────────────
+const uploadTasks = ref([])
+
+const fetchUploadTasks = async () => {
+  try {
+    const res = await apiFetch('/api/v1/admin/upload-tasks')
+    if (res.ok) {
+      const json = await res.json()
+      if (json && Array.isArray(json.data)) uploadTasks.value = json.data
+    }
+  } catch (e) { /* ignore */ }
+}
+
+/** 新建任务：无需文件先占位入队 */
+const createEmptyTask = async () => {
+  try {
+    const res = await apiFetch('/api/v1/admin/upload-tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: '新任务' })
+    })
+    const json = await res.json()
+    if (res.ok && json.data) {
+      ElMessage.success('已创建任务，可上传文件后发布')
+      fetchUploadTasks()
+      openAddModalFromTask(json.data)
+    } else {
+      ElMessage.error(json?.message || '创建失败')
+    }
+  } catch (e) {
+    ElMessage.error('创建失败: ' + e.message)
+  }
+}
+
+/** 任务 → 完善并发布：打开添加弹窗（有文件则预填） */
+const openAddModalFromTask = (task) => {
+  openAddModal()
+  if (task.fileUrl) videoForm.value.videoUrl = task.fileUrl
+  videoForm.value.taskId = task.id
+}
+
+/** 取消任务：删任务记录 + 删已上传文件 */
+const cancelTask = async (task) => {
+  try {
+    await ElMessageBox.confirm(`取消任务并删除已上传文件？\n${task.fileName || task.fileUrl}`, '取消任务', { type: 'warning' })
+  } catch { return }
+  try {
+    const res = await apiFetch(`/api/v1/admin/upload-tasks/${task.id}`, { method: 'DELETE' })
+    if (res.ok) {
+      ElMessage.success('任务已取消，文件已删除')
+      fetchUploadTasks()
+    } else {
+      ElMessage.error('取消失败')
+    }
+  } catch (e) {
+    ElMessage.error('取消失败: ' + e.message)
+  }
+}
+
+/** 时间格式化（表格用） */
+const formatTime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 const openAddModal = () => {
   isEdit.value = false
   const defaultNode = storageNodes.value.find(n => n.isDefault) || storageNodes.value[0]
@@ -393,6 +502,15 @@ const handleModalSubmit = async () => {
       const json = await res.json()
       if (json.data) {
         videoList.value.unshift(json.data)
+        // 任务队列：上传任务 → 已转正式视频
+        if (videoForm.value.taskId) {
+          apiFetch(`/api/v1/admin/upload-tasks/${videoForm.value.taskId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'completed', videoId: json.data.id })
+          }).catch(() => {})
+          fetchUploadTasks()
+        }
         if (payload.status === 'SCHEDULED') {
           // 任务队列：保持弹窗打开，可继续添加下一个
           resetFormForQueue()

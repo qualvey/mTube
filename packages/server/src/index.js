@@ -1307,9 +1307,10 @@ app.get('/api/v1/admin/upload-tasks', (req, res) => {
 })
 
 app.post('/api/v1/admin/upload-tasks', (req, res) => {
+  // fileUrl 可选：允许「先建任务占位，后上传文件」
   const { fileName, fileUrl, posterUrl } = req.body || {}
-  if (!fileUrl) return sendResponse(res, null, 400, '缺少已上传文件 URL')
-  const task = db.createUploadTask({ fileName, fileUrl, posterUrl })
+  if (!fileUrl && !fileName) return sendResponse(res, null, 400, '缺少任务信息（fileName / fileUrl）')
+  const task = db.createUploadTask({ fileName, fileUrl: fileUrl || '', posterUrl })
   sendResponse(res, task, 201, '已加入上传任务队列')
 })
 
