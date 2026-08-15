@@ -930,11 +930,29 @@ app.get('/api/v1/notice', (req, res) => {
 })
 
 // Local File Upload API (Support uploading local MP4 videos, covers, and hero GIFs)
-app.post('/api/v1/upload', (req, res) => {
+// 支持两种格式：multipart/form-data（file 字段，推荐，前端封面上传已切换）与 base64 JSON（向后兼容）
+const uploadLocalImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } })
+app.post('/api/v1/upload', uploadLocalImage.single('file'), (req, res) => {
   try {
+    // ── multipart 分支（去 base64：体积无 +33% 膨胀，无需 FileReader 读内存）──
+    if (req.file) {
+      const ext = path.extname(req.file.originalname) || '.bin'
+      const safeName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`
+      const filePath = path.join(uploadsDir, safeName)
+      fs.writeFileSync(filePath, req.file.buffer)
+      const publicUrl = `/uploads/${safeName}`
+      logger.info(`[Upload] File saved to server: ${publicUrl} (${req.file.size} bytes)`)
+      return sendResponse(res, {
+        url: publicUrl,
+        originalName: req.file.originalname,
+        size: req.file.size
+      })
+    }
+
+    // ── base64 JSON 分支（兼容旧调用）──
     const { filename, fileData, contentBase64 } = req.body || {}
     if (!filename || (!fileData && !contentBase64)) {
-      return sendResponse(res, null, 400, '缺少 filename 或文件内容数据 (fileData / contentBase64)')
+      return sendResponse(res, null, 400, '缺少 filename 或文件内容数据 (fileData / contentBase64 / multipart file)')
     }
 
     const base64Str = contentBase64 || fileData.replace(/^data:[^;]+;base64,/, '')
@@ -1305,8 +1323,11 @@ app.delete('/api/v1/admin/ads/:id', (req, res) => {
 
 // ── 菜单管理（CRUD）──────────────────────────────────────────────────────
 // ── 上传任务队列（上传即入队；可编辑/取消；取消时删除已上传文件）──
+// 支持筛选/分页：?keyword=&status=uploaded|completed|failed&limit=&offset=
 app.get('/api/v1/admin/upload-tasks', (req, res) => {
-  sendResponse(res, db.getUploadTasks())
+  const { keyword, status, limit, offset } = req.query || {}
+  const data = db.getUploadTasks({ keyword, status, limit, offset })
+  sendResponse(res, data)
 })
 
 app.post('/api/v1/admin/upload-tasks', (req, res) => {

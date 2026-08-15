@@ -107,9 +107,24 @@
     <!-- 发布任务队列（常驻；新建任务可先占位后上传，可完善发布 / 取消） -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
-        <div class="flex items-center justify-between">
-          <span class="font-bold text-slate-800">发布任务队列（{{ uploadTasks.length }}）</span>
-          <div class="flex items-center gap-2">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <span class="font-bold text-slate-800">发布任务队列（{{ uploadTasksTotal }}）</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <el-input
+              v-model="taskKeyword"
+              placeholder="搜索文件名/地址/视频ID"
+              clearable
+              size="small"
+              style="width: 200px"
+              @keyup.enter="fetchUploadTasks"
+              @clear="fetchUploadTasks"
+            />
+            <el-select v-model="taskStatusFilter" size="small" style="width: 110px" @change="fetchUploadTasks">
+              <el-option label="全部状态" value="" />
+              <el-option label="待完善" value="uploaded" />
+              <el-option label="已完成" value="completed" />
+              <el-option label="失败" value="failed" />
+            </el-select>
             <el-button size="small" type="warning" plain icon="Plus" @click="createEmptyTask">新建任务</el-button>
             <el-button size="small" icon="Refresh" @click="fetchUploadTasks">刷新</el-button>
           </div>
@@ -121,9 +136,11 @@
             <span class="font-mono text-xs text-slate-600">{{ row.fileName || row.fileUrl || '（未命名）' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90">
+        <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.fileUrl ? 'success' : 'warning'" size="small" effect="light">
+            <el-tag v-if="row.status === 'completed'" type="success" size="small" effect="light">已完成</el-tag>
+            <el-tag v-else-if="row.status === 'failed'" type="danger" size="small" effect="light">失败</el-tag>
+            <el-tag v-else :type="row.fileUrl ? 'success' : 'warning'" size="small" effect="light">
               {{ row.fileUrl ? '待完善' : '待上传' }}
             </el-tag>
           </template>
@@ -133,13 +150,26 @@
         </el-table-column>
         <el-table-column label="操作" width="200" align="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" plain @click="openAddModalFromTask(row)">完善并发布</el-button>
-            <el-button size="small" type="danger" plain @click="cancelTask(row)">取消</el-button>
+            <template v-if="row.status === 'uploaded'">
+              <el-button size="small" type="primary" plain @click="openAddModalFromTask(row)">完善并发布</el-button>
+              <el-button size="small" type="danger" plain @click="cancelTask(row)">取消</el-button>
+            </template>
+            <el-button v-else size="small" plain @click="openAddModalFromTask(row)">查看</el-button>
           </template>
         </el-table-column>
       </el-table>
       <div v-if="!uploadTasks.length" class="text-center py-6 text-slate-400 text-sm">
-        暂无任务。点击「新建任务」先占位（无需先上传文件），或上传视频会自动入队。
+        暂无匹配任务。点击「新建任务」先占位（无需先上传文件），或上传视频会自动入队。
+      </div>
+      <div v-if="uploadTasksTotal > taskPageSize" class="flex justify-end mt-3">
+        <el-pagination
+          layout="prev, pager, next"
+          :total="uploadTasksTotal"
+          :page-size="taskPageSize"
+          :current-page="taskPage"
+          small
+          @current-change="(p) => { taskPage = p; fetchUploadTasks() }"
+        />
       </div>
       <div class="text-xs text-slate-400 mt-2">
         「完善并发布」打开编辑弹窗（已上传文件自动预填）；「取消」同时删除已上传文件（不浪费空间）。
@@ -417,13 +447,31 @@ const getStorageNodeName = (nodeId) => {
 
 // ── 发布任务队列 ─────────────────────────────────────────
 const uploadTasks = ref([])
+const uploadTasksTotal = ref(0)
+const taskPage = ref(1)
+const taskPageSize = 8
+const taskKeyword = ref('')
+const taskStatusFilter = ref('')
 
 const fetchUploadTasks = async () => {
   try {
-    const res = await apiFetch('/api/v1/admin/upload-tasks')
+    const params = new URLSearchParams()
+    if (taskKeyword.value.trim()) params.set('keyword', taskKeyword.value.trim())
+    if (taskStatusFilter.value) params.set('status', taskStatusFilter.value)
+    params.set('limit', String(taskPageSize))
+    params.set('offset', String((taskPage.value - 1) * taskPageSize))
+
+    const res = await apiFetch(`/api/v1/admin/upload-tasks?${params.toString()}`)
     if (res.ok) {
       const json = await res.json()
-      if (json && Array.isArray(json.data)) uploadTasks.value = json.data
+      if (json && Array.isArray(json.data)) {
+        // 兼容无分页旧响应
+        uploadTasks.value = json.data
+        uploadTasksTotal.value = json.data.length
+      } else if (json && json.data && Array.isArray(json.data.items)) {
+        uploadTasks.value = json.data.items
+        uploadTasksTotal.value = json.data.total ?? json.data.items.length
+      }
     }
   } catch (e) { /* ignore */ }
 }

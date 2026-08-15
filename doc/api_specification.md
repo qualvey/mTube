@@ -277,9 +277,13 @@
 }
 ```
 
-### 2.13 直接上传视频（主站入口）
+### 2.13 通用文件上传（管理员鉴权）
 - **请求方式**：`POST /api/v1/upload`
-- **说明**：需管理员鉴权（同 `/api/v1/admin/*` 的 Bearer Token 体系）。用于浏览器直传场景的入口，内部会代理到存储节点或生成直传凭证。
+- **鉴权**：需管理员 Bearer Token（同 `/api/v1/admin/*` 体系）
+- **格式**（两种，推荐 multipart）：
+  - `multipart/form-data`：字段 `file`（File），浏览器自动带 boundary；主控存本地 `uploads/` 目录，返回相对路径（封面等小图场景）
+  - `application/json`（向后兼容）：`{ filename, fileData }`（base64）或 `{ filename, contentBase64 }`
+- **响应**：`{ code: 200, data: { url: "/uploads/xxx.jpg", originalName, size } }`；单文件限 20MB
 
 ### 2.14 埋点上报（Legacy C 端统计）
 - **请求方式**：`POST /api/v1/analytics/track`

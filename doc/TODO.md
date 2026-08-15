@@ -15,8 +15,8 @@
 
 - [x] **直传凭证 scope 化（P1-2）**：已实施（2026-08-14）。签名绑定 uploadId（`X-Cluster-Scope`），存储节点限定路径白名单 + uploadId 一致性校验，浏览器凭证无法重放到 delete/cleanup；upload-ticket 增加健康探测（不可达自动回退默认节点）与能力协商（capability/chunkSize/maxSingleSize）；uploadId 改由主控签发（确定性指纹，断点续传保留）；分片请求 uploadId 同时放 query（鉴权先于 multer 执行）
 - [x] **上传后试播预览**：已实施（2026-08-14）。编辑弹窗内嵌 `<video>` 试播（仅验证可播性；防盗链 Referer/UA 需 C 端验证，文档已注明）
-- [ ] 任务队列分页/搜索/状态筛选
-- [ ] 封面上传去 base64（改 multipart）
+- [x] **任务队列分页/搜索/状态筛选**：已实施（2026-08-14）。后端 `getUploadTasks` 支持 keyword/status/limit/offset（无 limit 返回数组向后兼容）；前端搜索框 + 状态筛选 + 分页（8条/页），completed/failed 任务可查看
+- [x] **封面上传去 base64（改 multipart）**：已实施（2026-08-14）。`/api/v1/upload` 支持 multipart（file 字段，20MB 上限，base64 分支保留兼容）；前端 `handlePosterUpload` 改 FormData，去掉 FileReader 内存读取
 
 ## 其他（非上传）
 

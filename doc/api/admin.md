@@ -707,11 +707,12 @@ C 端消费：`GET /api/v1/site-config?lang=zh` 返回 `data.i18n`（当前语�
 GET /api/v1/admin/upload-tasks
 ```
 待完善任务列表（status='uploaded'，按创建时间倒序）；已转正式视频的任务自动出队。
+查询参数（均可选）：`keyword`（文件名/地址/视频ID 模糊搜索）、`status`（`uploaded` 待完善 / `completed` 已完成 / `failed` 失败）、`limit` / `offset`（分页，传入 limit 时返回 `{ items, total, page, limit }`；不传返回数组，向后兼容）。
 
 ```
 POST /api/v1/admin/upload-tasks
 ```
-Body: `{ "fileName": "xxx.mp4", "fileUrl": "/uploads/xxx.mp4" }`（fileUrl 必填）
+Body: `{ "fileName": "xxx.mp4" }`（fileName/fileUrl 至少其一；fileUrl 可后补，支持先占位）
 返回 `201` + 任务对象（`id` 后续用于关联/取消）。
 
 ```

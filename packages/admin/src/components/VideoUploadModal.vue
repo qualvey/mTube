@@ -302,7 +302,7 @@ const clearStagedFile = () => {
   fileWarnings.value = []
 }
 
-/** 封面小图：仍走主控 base64 直传（图片小，无性能问题） */
+/** 封面小图：multipart 直传主控（去 base64，无 +33% 膨胀） */
 const handlePosterUpload = (event) => {
   const file = event.target.files[0]
   event.target.value = ''
@@ -313,15 +313,11 @@ const handlePosterUpload = (event) => {
   }
 
   posterUploading.value = true
-  const reader = new FileReader()
-  reader.onload = async (e) => {
+  const upload = async () => {
     try {
-      const base64Data = e.target.result
-      const res = await apiFetch('/api/v1/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name, fileData: base64Data })
-      })
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await apiFetch('/api/v1/upload', { method: 'POST', body: formData })
       const json = await res.json()
       if (res.ok && json.data && json.data.url) {
         props.form.poster = json.data.url
@@ -335,11 +331,7 @@ const handlePosterUpload = (event) => {
       posterUploading.value = false
     }
   }
-  reader.onerror = () => {
-    posterUploading.value = false
-    ElMessage.error('图片读取失败')
-  }
-  reader.readAsDataURL(file)
+  upload()
 }
 
 /** 定时发布：禁止选择过去时间 */

@@ -1615,11 +1615,37 @@ export const db = {
     return database.prepare('SELECT * FROM upload_tasks WHERE id = ?').get(id) || null
   },
 
-  /** 待完善任务（未转正式视频） */
-  getUploadTasks() {
+  /** 待完善任务（未转正式视频）；支持 keyword/status 过滤 + limit/offset 分页 */
+  getUploadTasks(options = {}) {
+    const keyword = String(options.keyword || '').trim()
+    const status = options.status ? String(options.status) : ''
+    const limit = parseInt(options.limit) > 0 ? parseInt(options.limit) : null
+    const offset = parseInt(options.offset) > 0 ? parseInt(options.offset) : 0
+
+    let where = "WHERE status = 'uploaded'"
+    const params = []
+    if (status && status !== 'all' && ['uploaded', 'completed', 'failed'].includes(status)) {
+      where += ' AND status = ?'
+      params.push(status)
+    }
+    if (keyword) {
+      where += ' AND (fileName LIKE ? OR fileUrl LIKE ? OR videoId LIKE ?)'
+      const like = `%${keyword}%`
+      params.push(like, like, like)
+    }
+
+    // 分页模式：返回 { items, total, page, limit }；无 limit 时返回数组（向后兼容）
+    if (limit !== null) {
+      const total = database.prepare(`SELECT COUNT(*) AS c FROM upload_tasks ${where}`).get(...params).c
+      const rows = database.prepare(
+        `SELECT * FROM upload_tasks ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`
+      ).all(...params, limit, offset)
+      return { items: rows, total, page: Math.floor(offset / limit) + 1, limit }
+    }
+
     return database.prepare(
-      "SELECT * FROM upload_tasks WHERE status = 'uploaded' ORDER BY createdAt DESC"
-    ).all()
+      `SELECT * FROM upload_tasks ${where} ORDER BY createdAt DESC`
+    ).all(...params)
   },
 
   updateUploadTask(id, data) {
