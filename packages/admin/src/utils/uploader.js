@@ -85,7 +85,7 @@ export const uploadFileWithProgress = (url, formData, headers = {}, stateRefs = 
         if (uploadProgress) uploadProgress.value = percent
 
         if (percent >= 100 && uploadStatusLabel) {
-          uploadStatusLabel.value = '📦 [中转模式] 浏览器文件已发送完毕，主控正在向存储节点二次传输与生成封面...'
+          uploadStatusLabel.value = '📦 文件已发送完毕，等待存储节点处理（缝合/封面抽帧）...'
         }
 
         const now = Date.now()

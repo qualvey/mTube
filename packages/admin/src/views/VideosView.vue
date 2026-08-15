@@ -23,7 +23,7 @@
 
       <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
         <el-tag v-if="enableDirectUpload" type="success" size="large" effect="light" class="font-bold justify-center">
-          ⚡ 4通道直传模式 (已激活)
+          ⚡ 浏览器直传模式 (已激活)
         </el-tag>
         <el-tag v-else type="info" size="large" effect="light" class="justify-center">
           📦 主控中转模式
@@ -89,7 +89,7 @@
             </div>
           </div>
           <el-progress
-            v-if="q.status === 'uploading' || q.status === 'queued'"
+            v-if="q.status === 'uploading'"
             :percentage="q.progress"
             :stroke-width="6"
             striped
@@ -116,10 +116,10 @@
               clearable
               size="small"
               style="width: 200px"
-              @keyup.enter="fetchUploadTasks"
-              @clear="fetchUploadTasks"
+              @keyup.enter="onTaskFilterChange"
+              @clear="onTaskFilterChange"
             />
-            <el-select v-model="taskStatusFilter" size="small" style="width: 110px" @change="fetchUploadTasks">
+            <el-select v-model="taskStatusFilter" size="small" style="width: 110px" @change="onTaskFilterChange">
               <el-option label="全部状态" value="" />
               <el-option label="待完善" value="uploaded" />
               <el-option label="已完成" value="completed" />
@@ -258,10 +258,11 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
             <div class="flex items-center gap-2">
               <el-button v-if="row.status === 'SCHEDULED'" size="small" type="success" plain @click="publishNow(row)">立即发布</el-button>
+              <el-button v-if="row.status === 'FAILED'" size="small" type="warning" plain @click="openEditModal(row)">重传</el-button>
               <el-button size="small" type="primary" plain icon="Edit" @click="openEditModal(row)">编辑</el-button>
               <el-button size="small" type="danger" plain icon="Delete" @click="handleDeleteVideo(row.id)">删除</el-button>
             </div>
@@ -477,13 +478,19 @@ const fetchUploadTasks = async () => {
   } catch (e) { /* ignore */ }
 }
 
+/** 筛选/搜索变化：重置到第一页再拉取（避免停留在大页码导致空页） */
+const onTaskFilterChange = () => {
+  taskPage.value = 1
+  fetchUploadTasks()
+}
+
 /** 新建任务：无需文件先占位入队 */
 const createEmptyTask = async () => {
   try {
     const res = await apiFetch('/api/v1/admin/upload-tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: '新任务' })
+      body: JSON.stringify({ fileName: `新任务 ${formatTime(Date.now())}` })
     })
     const json = await res.json()
     if (res.ok && json.data) {
@@ -521,10 +528,12 @@ const cancelTask = async (task) => {
   try {
     const res = await apiFetch(`/api/v1/admin/upload-tasks/${task.id}`, { method: 'DELETE' })
     if (res.ok) {
-      // 关联的未发布成功视频（UPLOADING/FAILED）一并删除，避免悬挂记录
+      // 关联的未发布成功视频（UPLOADING/FAILED）一并删除，避免悬挂记录。
+      // uploaded 状态任务关联的视频必未发布（完成会置 completed 出队），
+      // 本地列表可能因筛选不含该视频，不能依赖 find 结果
       if (task.videoId) {
         const v = videoList.value.find(x => x.id === task.videoId)
-        if (v && (v.status === 'UPLOADING' || v.status === 'FAILED')) {
+        if (!v || v.status === 'UPLOADING' || v.status === 'FAILED') {
           await apiFetch(`/api/v1/admin/videos/${task.videoId}`, { method: 'DELETE' }).catch(() => {})
           videoList.value = videoList.value.filter(x => x.id !== task.videoId)
         }
@@ -647,27 +656,44 @@ const handleModalSubmit = async (stagedFile) => {
     headers: headersJson
   }
 
-  // 本地文件 → 流程反转：先以 UPLOADING 入库（C 端不可见），后台传输完成自动上线
-  if (stagedFile && !isEdit.value) {
+  // 本地文件 → 流程反转：先以 UPLOADING 入库（C 端不可见），后台传输完成自动上线；
+  // 编辑模式（FAILED/UPLOADING 重传）：重置为 UPLOADING + 清空旧 URL 后入队
+  if (stagedFile) {
     submitLoading.value = true
     try {
-      const res = await apiFetch('/api/v1/admin/videos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, status: 'UPLOADING', videoUrl: '' })
-      })
-      const json = await res.json()
-      if (!json.data) {
-        ElMessage.error(json.message || '创建视频记录失败')
-        return
+      let video
+      if (isEdit.value) {
+        const res = await apiFetch(`/api/v1/admin/videos/${videoForm.value.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, status: 'UPLOADING', videoUrl: '' })
+        })
+        const json = await res.json()
+        if (!json.data) {
+          ElMessage.error(json.message || '重置上传状态失败')
+          return
+        }
+        video = json.data
+        const index = videoList.value.findIndex(v => v.id === video.id)
+        if (index !== -1) videoList.value[index] = { ...videoList.value[index], ...video }
+      } else {
+        const res = await apiFetch('/api/v1/admin/videos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, status: 'UPLOADING', videoUrl: '' })
+        })
+        const json = await res.json()
+        if (!json.data) {
+          ElMessage.error(json.message || '创建视频记录失败')
+          return
+        }
+        video = json.data
+        videoList.value.unshift(video)
       }
 
-      const video = json.data
-      videoList.value.unshift(video)
-
-      // 任务登记：无 taskId 时自动建占位任务（供取消/展示），并关联 videoId
+      // 新建流程：任务登记（无 taskId 时自动建占位任务），并关联 videoId
       let taskId = videoForm.value.taskId
-      if (!taskId) {
+      if (!isEdit.value && !taskId) {
         try {
           const tRes = await apiFetch('/api/v1/admin/upload-tasks', {
             method: 'POST',
@@ -690,17 +716,19 @@ const handleModalSubmit = async (stagedFile) => {
         fetchUploadTasks()
       }
 
-      // 入队后台传输
+      // 入队后台传输（编辑重传：upload-complete 按 videoId 更新原任务，无需传 taskId）
       uploadQueue.enqueue({
         videoId: video.id,
-        taskId,
+        taskId: isEdit.value ? null : taskId,
         fileName: stagedFile.name,
         file: stagedFile,
         nodeId: videoForm.value.storageNodeId
       })
 
       modalVisible.value = false
-      ElMessage.success(`已直接发布【${video.title}】，文件后台传输中（完成自动上线）`)
+      ElMessage.success(isEdit.value
+        ? `已重置为上传中，文件后台传输中（完成自动上线）`
+        : `已直接发布【${video.title}】，文件后台传输中（完成自动上线）`)
       return
     } catch (e) {
       ElMessage.error('发布失败: ' + e.message)
@@ -772,6 +800,7 @@ const handleModalSubmit = async (stagedFile) => {
 }
 
 const toggleVipStatus = async (video) => {
+  const prev = video.isVip
   try {
     await apiFetch(`/api/v1/admin/videos/${video.id}`, {
       method: 'PUT',
@@ -780,6 +809,7 @@ const toggleVipStatus = async (video) => {
     })
     ElMessage.success(`视频 [${video.title}] 权限修改为: ${video.isVip ? 'VIP专属' : '免费'}`)
   } catch (e) {
+    video.isVip = prev // 失败回滚开关状态
     ElMessage.error('更新 VIP 权限失败')
   }
 }

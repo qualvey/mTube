@@ -261,10 +261,4 @@ export const uploadQueue = {
     }
     notify()
   },
-
-  /** 从队列移除（失败项丢弃，不通知服务端） */
-  discard(itemId) {
-    state.items = state.items.filter(i => i.id !== itemId)
-    notify()
-  },
 }

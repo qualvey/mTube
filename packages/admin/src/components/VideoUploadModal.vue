@@ -227,7 +227,7 @@
           :disabled="submitting"
           @click="handleSubmit"
         >
-          {{ isEdit ? '保存更新' : (stagedFile ? '直接发布（后台传输）' : '立即提交发布') }}
+          {{ isEdit ? (stagedFile ? '保存并后台重传' : '保存更新') : (stagedFile ? '直接发布（后台传输）' : '立即提交发布') }}
         </el-button>
       </div>
     </template>
@@ -377,9 +377,9 @@ const handleSubmit = () => {
     ElMessage.warning('请选择本地视频文件，或填写视频播放地址')
     return
   }
-  if (!props.isEdit && stagedFile.value) {
-    props.form.videoUrl = '' // 本地文件走后台传输，清掉可能残留的旧 URL
+  if (stagedFile.value) {
+    props.form.videoUrl = '' // 本地文件走后台传输（新增发布 / FAILED 重传都适用），清掉旧 URL
   }
-  emit('submit', !props.isEdit ? (stagedFile.value || null) : null)
+  emit('submit', stagedFile.value || null)
 }
 </script>
