@@ -24,6 +24,10 @@ RUN pnpm install --frozen-lockfile --filter server --prod
 # ---------- Stage 2: Runtime（精简运行镜像） ----------
 FROM node:22-alpine
 
+# Poster 抽帧需要 ffmpeg（spawn ffmpeg，缺失会抛 ENOENT 崩溃）
+RUN apk add --no-cache ffmpeg
+
+
 # Build version metadata (injected by CI): docker build --build-arg GIT_SHA=<sha>
 ARG GIT_SHA=unknown
 ENV GIT_SHA=$GIT_SHA

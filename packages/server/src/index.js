@@ -568,6 +568,11 @@ const generateFrame50Poster = (videoUrl, customHeaders = {}) => {
 
     logger.info(`[Poster Generator 🎬] Extracting 50th frame via FFmpeg from: ${cleanUrl}`)
     const ff = spawn('ffmpeg', ffmpegArgs)
+    // ffmpeg 缺失/启动失败：不抛 Uncaught Exception，回退空海报
+    ff.on('error', (err) => {
+      logger.error('[Poster Generator] FFmpeg spawn error: ' + err.message)
+      resolve('')
+    })
 
     let stderr = ''
     if (ff.stderr) {
@@ -582,6 +587,10 @@ const generateFrame50Poster = (videoUrl, customHeaders = {}) => {
         logger.warn(`[Poster Generator 🎬] Frame 50 extraction returned exit code ${code}, attempting fallback frame 0 / 1s...`)
         const fallbackArgs = ['-ss', '00:00:01', '-i', cleanUrl, '-vframes', '1', '-y', outputPath]
         const ffFb = spawn('ffmpeg', fallbackArgs)
+        ffFb.on('error', (err) => {
+          logger.error('[Poster Generator] FFmpeg fallback spawn error: ' + err.message)
+          resolve('')
+        })
         ffFb.on('close', (fbCode) => {
           if (fbCode === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
             logger.info(`[Poster Generator 🎬] Fallback poster generated: ${publicUrl}`)

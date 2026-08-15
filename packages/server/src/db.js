@@ -997,11 +997,13 @@ export const db = {
   },
 
   // ── 站点 i18n 文案覆盖（白标定制）────────────────────────
-  /** 指定语言的覆盖（拍平 { key: value }），无覆盖返回 {} */
+  /** 指定语言的覆盖（拍平 { key: value }），无覆盖或未指定语言返回 {} */
   getSiteI18nOverrides(locale) {
+    const lang = String(locale || '').trim().toLowerCase()
+    if (!lang) return {} // 未指定语言：不返回覆盖（避免 undefined 绑定 SQLite 参数）
     const rows = database.prepare(
       "SELECT field, value FROM translations WHERE entityType = 'site_i18n' AND entityId = 'site' AND locale = ?"
-    ).all(locale)
+    ).all(lang)
     const out = {}
     for (const r of rows) out[r.field] = r.value
     return out
