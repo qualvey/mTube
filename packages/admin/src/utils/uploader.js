@@ -152,12 +152,16 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
     return e
   }
 
-  // Deterministic uploadId — stable across page reloads for resumable upload
-  const safeName = file.name.replace(/[^a-zA-Z0-9_\.-]/g, '_')
-  let uploadId = 'up_'
-  const seed = `${safeName}_${file.size}_${file.lastModified}`
-  for (let i = 0; i < seed.length && uploadId.length < 48; i++) {
-    uploadId += seed.charCodeAt(i).toString(16)
+  // uploadId 由主控签发（ticket.uploadId，确定性指纹，支持断点续传）；
+  // 兼容旧主控：无 uploadId 时回退本地确定性生成
+  let uploadId = ticket.uploadId
+  if (!uploadId) {
+    const safeName = file.name.replace(/[^a-zA-Z0-9_\.-]/g, '_')
+    uploadId = 'up_'
+    const seed = `${safeName}_${file.size}_${file.lastModified}`
+    for (let i = 0; i < seed.length && uploadId.length < 48; i++) {
+      uploadId += seed.charCodeAt(i).toString(16)
+    }
   }
 
   const cleanBase = (ticket.baseUrl || '').replace(/\/$/, '')
@@ -330,7 +334,7 @@ export const uploadFileParallelChunks = async (ticket, file, stateRefs = {}, opt
               `chunk_${chunkIndex}`
             )
 
-            const resp = await fetch(ticket.chunkUploadUrl, {
+            const resp = await fetch(`${ticket.chunkUploadUrl}${ticket.chunkUploadUrl.includes('?') ? '&' : '?'}uploadId=${encodeURIComponent(uploadId)}`, {
               method: 'POST',
               headers: { 'Content-Type': contentType, ...(ticket.headers || {}) },
               body, // ArrayBuffer → browser sends Content-Length, TCP window grows freely

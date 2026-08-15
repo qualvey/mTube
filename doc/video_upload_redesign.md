@@ -1,7 +1,7 @@
 # 视频上传功能分析与重新设计方案
 
 > 范围：`packages/admin`（前端）+ `packages/server`（主控 API）+ `packages/storage-node`（存储节点）
-> 状态：v1.1 已部分实施（2026-08-14）：§3.7 异步后台发布 + 流式中转已落地（admin/server），安全收敛（ticket scope 化）与体验增强未实施
+> 状态：v1.1 已部分实施（2026-08-14 两轮）：§3.7 异步后台发布 + 流式中转 + §3.3① 凭证 scope 化/健康探测/能力协商 + 试播预览已落地（admin/server/storage-node）；剩余：队列分页、封面去 base64
 > 关联文档：`doc/api/admin.md`、`doc/api_specification.md`、`doc/TODO.md`
 
 ---
@@ -269,7 +269,7 @@ upload_task 与 video 的关联已具备（`upload_tasks.videoId` 列已存在�
 - 后端：`videos.status` 支持 `UPLOADING`/`FAILED`（addVideo/updateVideo 放行，删除空 URL 占位视频兜底）；新增 `upload-complete`/`upload-failed`/`upload-retry`；6h 超时清扫；videos 表补 `updatedAt` 列；孤儿清理引用收集改用 `includeScheduled: true`（顺带修复 SCHEDULED 视频文件 24h 后被误删的存量 bug）
 - 后端：`POST /admin/videos/upload` 改为**流式透传**（req.pipe → 存储节点，主控零落盘零内存），nodeId 走 query/`X-Target-Node` 头；移除 multer memoryStorage 2GB 缓冲
 - 前端：新增 `src/services/uploadQueue.js`（模块级单例，单飞队列，AbortController 取消，失败/取消上报，断点续传复用）；`VideoUploadModal` 改为选文件暂存（预检：扩展名白名单/大小分级/m3u8 拒绝），发布后入队后台传输，移除组件内联上传与 `fieldName` bug（P0-1 随重构消除）；`VideosView` 新增后台传输队列卡片 + 视频行 `UPLOADING`/`FAILED` 状态、取消任务联动删除未发布视频、修复 `resetFormForQueue` 乱码（P0-2）
-- 待办：凭证 scope 化（P1-2）、中转/直传能力协商、上传后试播预览、队列分页筛选（见 `doc/TODO.md`）
+- 待办：队列分页筛选、封面上传去 base64（见 `doc/TODO.md`）
 
 ### 3.6 API 变更清单（需同步 `doc/api/admin.md` + `doc/api_specification.md`）
 

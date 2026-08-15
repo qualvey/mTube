@@ -87,6 +87,23 @@
             已填写播放地址，将直接发布（不走后台传输）
           </div>
         </div>
+
+        <!-- 试播预览（编辑模式）：验证地址可播性；防盗链 Referer/UA 需在 C 端验证（浏览器标签无法自定义请求头） -->
+        <div v-if="isEdit && form.videoUrl" class="mt-1 p-3 bg-slate-900 rounded-xl flex flex-col gap-1.5">
+          <video
+            :src="form.videoUrl"
+            controls
+            preload="metadata"
+            class="w-full rounded-lg bg-black"
+            style="max-height: 240px"
+          >
+            当前浏览器不支持视频预览
+          </video>
+          <div class="text-[11px] text-slate-400">
+            🎬 试播预览：仅验证地址可播性。防盗链 Referer/User-Agent 请求头在浏览器标签内无法自定义，
+            实际防盗链效果请在 C 端播放页验证（已配置的请求头会随视频播放请求下发）。
+          </div>
+        </div>
       </el-form-item>
 
       <!-- Predefined Request Headers UI Component Block -->

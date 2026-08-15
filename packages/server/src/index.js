@@ -74,21 +74,24 @@ app.use('/api/v1/upload', requireAdminAuth)
 // Cluster HMAC Ticket Signing (主站 → 存储节点 双向鉴权凭证)
 // payload = { nodeId, timestamp }, matches storage-node's verifyClusterTicketSignature
 // ─────────────────────────────────────────────────────────────────────────────
-const createClusterSignedHeaders = (nodeId) => {
+const createClusterSignedHeaders = (nodeId, scope) => {
   const configuredSecret = process.env.CLUSTER_SECRET || 'streamvip-cluster-secret'
   const timestamp = Date.now().toString()
   const nonce = crypto.randomBytes(16).toString('hex')
-  const payloadStr = JSON.stringify({ nodeId, timestamp })
+  // scope 存在 = 浏览器直传凭证：签名串纳入 scope（绑定 uploadId），storage-node 校验路径与 uploadId
+  const payloadStr = JSON.stringify(scope ? { nodeId, timestamp, scope } : { nodeId, timestamp })
   const signature = crypto
     .createHmac('sha256', configuredSecret)
     .update(`${payloadStr}.${timestamp}.${nonce}`)
     .digest('hex')
 
-  return {
+  const headers = {
     'X-Cluster-Timestamp': timestamp,
     'X-Cluster-Nonce': nonce,
     'X-Cluster-Signature': signature
   }
+  if (scope) headers['X-Cluster-Scope'] = scope
+  return headers
 }
 
 /**
@@ -1844,11 +1847,13 @@ app.get('/api/v1/admin/debug', async (req, res) => {
   }, 200, '系统 DEBUG 诊断报告已生成')
 })
 
-// POST /api/v1/admin/videos/upload-ticket - Generate Direct Upload Ticket for target storage node
-app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
+// POST /api/v1/admin/videos/upload-ticket - 生成直传凭证（scope 化 + 健康探测 + 能力协商）
+// scope = uploadId：签名绑定 uploadId，存储节点校验路径白名单 + uploadId 一致性，
+// 浏览器拿到的凭证无法重放到 delete/cleanup 等管理接口。
+app.post('/api/v1/admin/videos/upload-ticket', async (req, res) => {
   const enableDirectUpload = process.env.ENABLE_DIRECT_UPLOAD !== 'false'
   const targetNodeId = req.body.nodeId || req.query.nodeId
-  let targetNode = targetNodeId ? db.getStorageNodeById(targetNodeId) : db.getDefaultStorageNode()
+  let targetNode = targetNodeId ? db.getStorageNodeById(targetNodeId) : null
   if (!targetNode) {
     targetNode = db.getDefaultStorageNode()
   }
@@ -1856,21 +1861,60 @@ app.post('/api/v1/admin/videos/upload-ticket', (req, res) => {
     return sendResponse(res, null, 404, '无可用存储节点')
   }
 
-  const baseUrl = targetNode.baseUrl || 'http://localhost:3001'
-  const cleanBase = baseUrl.replace(/\/$/, '')
-  const uploadUrl = `${cleanBase}/api/v1/storage/upload`
-  const chunkUploadUrl = `${cleanBase}/api/v1/storage/upload-chunk`
-  const mergeUrl = `${cleanBase}/api/v1/storage/merge-chunks`
+  // 健康探测：指定节点不可达 → 回退默认节点；仍不可达 → 503（避免下发凭证后上传必败）
+  const probeNode = async (node) => {
+    try {
+      const cleanBase = (node.baseUrl || '').replace(/\/$/, '')
+      const r = await fetch(`${cleanBase}/api/v1/storage/status`, {
+        headers: createClusterSignedHeaders(node.id),
+        signal: AbortSignal.timeout(2500)
+      })
+      if (r.ok) {
+        const j = await r.json().catch(() => null)
+        return (j && j.data) ? j.data : null
+      }
+    } catch (e) { /* probe failed */ }
+    return null
+  }
+
+  let health = await probeNode(targetNode)
+  if (!health && targetNodeId) {
+    const fallback = db.getDefaultStorageNode()
+    if (fallback && fallback.id !== targetNode.id) {
+      targetNode = fallback
+      health = await probeNode(fallback)
+    }
+  }
+  if (!health) {
+    return sendResponse(res, null, 503, `存储节点 [${targetNode.name || targetNode.id}] 不可达，请检查节点状态`)
+  }
+
+  // 确定性 uploadId：filename+size+lastModified 指纹 → 同文件重传断点续传稳定；
+  // 并发同名同尺寸上传冲突为已知限制（概率低，冲突时重传即可）
+  const { filename, size, lastModified } = req.body || {}
+  const fingerprint = `${filename || 'video'}_${Number(size) || 0}_${Number(lastModified) || 0}`
+  const uploadId = 'up_' + crypto.createHash('sha1').update(fingerprint).digest('hex').substring(0, 24)
+
+  const cleanBase = targetNode.baseUrl.replace(/\/$/, '')
+  const cap = (health && health.capability) || {}
+  const capability = {
+    chunk: cap.chunk !== false,
+    maxSingleSize: Number(cap.maxSingleSize) || 2 * 1024 * 1024 * 1024,
+    chunkSize: Number(cap.chunkSize) || 5 * 1024 * 1024
+  }
 
   sendResponse(res, {
+    uploadId,
     enableDirectUpload,
     storageNodeId: targetNode.id,
     storageNodeName: targetNode.name,
     baseUrl: cleanBase,
-    uploadUrl,
-    chunkUploadUrl,
-    mergeUrl,
-    headers: createClusterSignedHeaders(targetNode.id)
+    uploadUrl: `${cleanBase}/api/v1/storage/upload`,
+    chunkUploadUrl: `${cleanBase}/api/v1/storage/upload-chunk`,
+    mergeUrl: `${cleanBase}/api/v1/storage/merge-chunks`,
+    headers: createClusterSignedHeaders(targetNode.id, uploadId),
+    expiresIn: 1800,
+    capability
   }, 200, '直传凭证生成成功')
 })
 

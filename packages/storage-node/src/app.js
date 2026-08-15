@@ -110,6 +110,12 @@ export const createApp = () => {
         posterCount,
         uptimeSeconds: Math.floor(process.uptime()),
         baseUrl: `http://localhost:${config.port}`,
+        // 能力协商：主控 upload-ticket 据此下发 capability（老节点无此字段 = 按默认处理）
+        capability: {
+          chunk: true,
+          chunkSize: CHUNK_SIZE,
+          maxSingleSize: 2 * 1024 * 1024 * 1024,
+        },
       },
     })
   })

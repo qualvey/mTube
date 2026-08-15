@@ -350,7 +350,7 @@ POST /api/v1/admin/videos/upload
 
 **实现**：主控**流式透传**（`req.pipe` 直通存储节点 `/api/v1/storage/upload`），主控零落盘、零内存缓冲。受网络层限制（如 Cloudflare 免费版 100MB POST 上限）约束，大文件应走直传凭证 + 切片模式。成功：`200`，`data` 含 `{ storageNodeId, storageNodeName, videoUrl, posterUrl }`（第 50 帧封面已生成）；节点不可达：`502`；无可用节点：`503`。
 
-### 生成直传凭证（Direct Upload Ticket）
+### 生成直传凭证（Direct Upload Ticket，scope 化）
 
 ```
 POST /api/v1/admin/videos/upload-ticket
@@ -359,11 +359,17 @@ POST /api/v1/admin/videos/upload-ticket
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | `nodeId` | body / query | string | 否 | 目标节点 ID，缺省用默认节点 |
+| `filename` / `size` / `lastModified` | body | string/number | 否 | 文件指纹，用于生成确定性 uploadId（同文件重传支持断点续传） |
+
+**健康探测**：下发凭证前探测节点 `/api/v1/storage/status`（2.5s 超时）；指定节点不可达自动回退默认节点，仍不可达返回 `503`。
+
+**安全（scope 化）**：凭证为浏览器直传专用——签名串纳入 `uploadId` 作为 `X-Cluster-Scope`，存储节点校验：路径仅限直传接口（upload / upload-chunk / check-chunks / merge-chunks / status），且 upload-chunk / check-chunks / merge-chunks 请求中的 uploadId 必须与 scope 一致。**浏览器凭证无法重放到 delete / cleanup 等管理接口**。
 
 成功响应 `data`：
 
 ```json
 {
+  "uploadId": "up_04277acaade1a84bbceeed23",
   "enableDirectUpload": true,
   "storageNodeId": "node-hk-02",
   "storageNodeName": "香港 8TB 存储节点 02",
@@ -371,9 +377,13 @@ POST /api/v1/admin/videos/upload-ticket
   "uploadUrl": "http://***REMOVED***:3001/api/v1/storage/upload",
   "chunkUploadUrl": "http://***REMOVED***:3001/api/v1/storage/upload-chunk",
   "mergeUrl": "http://***REMOVED***:3001/api/v1/storage/merge-chunks",
-  "headers": { "X-Cluster-Timestamp": "...", "X-Cluster-Nonce": "...", "X-Cluster-Signature": "..." }
+  "headers": { "X-Cluster-Timestamp": "...", "X-Cluster-Nonce": "...", "X-Cluster-Signature": "...", "X-Cluster-Scope": "up_..." },
+  "expiresIn": 1800,
+  "capability": { "chunk": true, "maxSingleSize": 2147483648, "chunkSize": 5242880 }
 }
 ```
+
+> 前端注意：分片上传时 uploadId 需同时放在 `upload-chunk` 的 **query** 中（鉴权中间件在 multer 解析 multipart 之前执行，body 里的 uploadId 读不到）。
 
 ---
 

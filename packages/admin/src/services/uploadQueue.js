@@ -73,7 +73,13 @@ const runUpload = async (item) => {
   const ticketRes = await apiFetch('/api/v1/admin/videos/upload-ticket', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nodeId: item.nodeId }),
+    body: JSON.stringify({
+      nodeId: item.nodeId,
+      // 文件指纹：主控据此生成确定性 uploadId（断点续传）
+      filename: item.file.name,
+      size: item.file.size,
+      lastModified: item.file.lastModified,
+    }),
     signal,
   })
   const ticketJson = await ticketRes.json()

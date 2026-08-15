@@ -44,6 +44,13 @@
 - `X-Cluster-Signature`: HMAC-SHA256 动态签名：
   $$\text{Signature} = \text{HMAC-SHA256}(\text{JSON.stringify(body)} + "." + \text{Timestamp} + "." + \text{Nonce}, \text{CLUSTER\_SECRET})$$
 
+**scope 化直传凭证（浏览器直传专用）**：主控签发直传凭证时，额外携带 `X-Cluster-Scope`（值为 uploadId），且签名串改为 `JSON.stringify({ nodeId, timestamp, scope })`。存储节点收到带 scope 的请求时：
+- 签名必须匹配带 scope 的串；
+- 路径仅限直传接口（`/api/v1/storage/upload` / `upload-chunk` / `check-chunks` / `merge-chunks` / `status`），其余（如 `delete` / `cleanup`）一律拒绝；
+- `upload-chunk` / `check-chunks` / `merge-chunks` 请求中的 uploadId 必须等于 scope。
+
+不带 `X-Cluster-Scope` 的请求走原签名逻辑（server-to-server 专用），向后兼容。
+
 ---
 
 ## 二、 C 端公开视频与播放接口

@@ -11,11 +11,10 @@
   - **状态：已实施**（2026-08-14）：`doc/video_upload_redesign.md` §3.7 / §3.7.6
   - 落地：admin `uploadQueue.js` 单飞队列 + 弹窗选文件暂存直接发布；server `UPLOADING`/`FAILED` 状态 + `upload-complete`/`upload-failed`/`upload-retry` + 6h 超时清扫；中转上传改流式透传（主控零落盘）
 
-## 视频上传 — 后续优化（未排期）
+## 视频上传 — 后续优化
 
-- [ ] 直传凭证 scope 化（P1-2）：签名绑定 uploadId + 短 TTL，浏览器凭证不可重放到 delete/cleanup 接口
-- [ ] 节点能力协商（老节点自动降级）+ 凭证下发前健康探测
-- [ ] 上传后试播预览（验证防盗链 headers）
+- [x] **直传凭证 scope 化（P1-2）**：已实施（2026-08-14）。签名绑定 uploadId（`X-Cluster-Scope`），存储节点限定路径白名单 + uploadId 一致性校验，浏览器凭证无法重放到 delete/cleanup；upload-ticket 增加健康探测（不可达自动回退默认节点）与能力协商（capability/chunkSize/maxSingleSize）；uploadId 改由主控签发（确定性指纹，断点续传保留）；分片请求 uploadId 同时放 query（鉴权先于 multer 执行）
+- [x] **上传后试播预览**：已实施（2026-08-14）。编辑弹窗内嵌 `<video>` 试播（仅验证可播性；防盗链 Referer/UA 需 C 端验证，文档已注明）
 - [ ] 任务队列分页/搜索/状态筛选
 - [ ] 封面上传去 base64（改 multipart）
 
