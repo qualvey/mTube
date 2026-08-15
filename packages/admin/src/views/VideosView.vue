@@ -497,8 +497,16 @@ const createEmptyTask = async () => {
   }
 }
 
-/** 任务 → 完善并发布：打开添加弹窗（有文件则预填） */
+/** 任务 → 完善并发布：打开添加弹窗（有文件则预填）；已关联视频的任务直接打开对应视频编辑 */
 const openAddModalFromTask = (task) => {
+  // 已完成/已关联视频：直接编辑对应视频（避免「完善并发布」重复创建新视频）
+  if (task.videoId) {
+    const v = videoList.value.find(x => x.id === task.videoId)
+    if (v) {
+      openEditModal(v)
+      return
+    }
+  }
   openAddModal()
   if (task.fileUrl) videoForm.value.videoUrl = task.fileUrl
   videoForm.value.taskId = task.id
@@ -669,11 +677,14 @@ const handleModalSubmit = async (stagedFile) => {
         } catch (e) { /* 登记失败不影响发布 */ }
       }
       if (taskId) {
-        apiFetch(`/api/v1/admin/upload-tasks/${taskId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: video.id })
-        }).catch(() => {})
+        // await 关联完成后再入队：避免 upload-complete 先于 videoId 关联到达（竞态导致任务残留队列）
+        try {
+          await apiFetch(`/api/v1/admin/upload-tasks/${taskId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoId: video.id })
+          })
+        } catch (e) { /* ignore */ }
         fetchUploadTasks()
       }
 

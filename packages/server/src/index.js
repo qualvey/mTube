@@ -1452,11 +1452,11 @@ app.put('/api/v1/admin/videos/:id', (req, res) => {
 // ── 异步后台上传（流程反转）：上传完成回填 + 状态流转 ────────────────────
 // UPLOADING → (publishAt 未来 ? SCHEDULED : PUBLISHED)；关联 upload_task 自动置 completed
 app.post('/api/v1/admin/videos/:id/upload-complete', (req, res) => {
-  const { videoUrl, posterUrl, storageNodeId } = req.body || {}
+  const { videoUrl, posterUrl, storageNodeId, taskId } = req.body || {}
   if (!videoUrl) {
     return sendResponse(res, null, 400, '缺少 videoUrl')
   }
-  const updated = db.completeVideoUpload(req.params.id, { videoUrl, posterUrl, storageNodeId })
+  const updated = db.completeVideoUpload(req.params.id, { videoUrl, posterUrl, storageNodeId, taskId })
   if (!updated) {
     return sendResponse(res, null, 404, '视频不存在')
   }

@@ -1278,7 +1278,7 @@ export const db = {
 
   // ── 异步后台上传（流程反转）状态流转 ──────────────────────────────
   /** 上传完成回填：videoUrl/posterUrl/storageNodeId，并按 publishAt 流转 PUBLISHED / SCHEDULED；关联任务置 completed */
-  completeVideoUpload(id, { videoUrl, posterUrl, storageNodeId }) {
+  completeVideoUpload(id, { videoUrl, posterUrl, storageNodeId, taskId }) {
     const existing = this.getVideoById(id)
     if (!existing) return null
     const now = new Date().toISOString()
@@ -1293,10 +1293,17 @@ export const db = {
       now,
       id
     )
-    // 关联上传任务置完成（任务可能不存在，忽略）
-    database.prepare(
-      "UPDATE upload_tasks SET status = 'completed', updatedAt = ? WHERE videoId = ? AND status != 'completed'"
-    ).run(now, id)
+    // 关联上传任务置完成。优先按 taskId（避免竞态：上传完成可能先于 videoId 关联到达）；
+    // 无 taskId 时退回按 videoId 匹配（任务可能不存在，忽略）
+    if (taskId) {
+      database.prepare(
+        "UPDATE upload_tasks SET status = 'completed', videoId = ?, updatedAt = ? WHERE id = ? AND status != 'completed'"
+      ).run(id, now, String(taskId))
+    } else {
+      database.prepare(
+        "UPDATE upload_tasks SET status = 'completed', updatedAt = ? WHERE videoId = ? AND status != 'completed'"
+      ).run(now, id)
+    }
     return this.getVideoById(id)
   },
 
@@ -1622,11 +1629,14 @@ export const db = {
     const limit = parseInt(options.limit) > 0 ? parseInt(options.limit) : null
     const offset = parseInt(options.offset) > 0 ? parseInt(options.offset) : 0
 
-    let where = "WHERE status = 'uploaded'"
+    let where = 'WHERE 1=1'
     const params = []
     if (status && status !== 'all' && ['uploaded', 'completed', 'failed'].includes(status)) {
       where += ' AND status = ?'
       params.push(status)
+    } else if (!status) {
+      // 默认只显示待完善任务（向后兼容）
+      where += " AND status = 'uploaded'"
     }
     if (keyword) {
       where += ' AND (fileName LIKE ? OR fileUrl LIKE ? OR videoId LIKE ?)'

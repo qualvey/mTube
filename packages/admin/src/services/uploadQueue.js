@@ -115,30 +115,25 @@ const runUpload = async (item) => {
     throw new Error(directJson.message || '存储节点上传失败')
   }
 
-  // 回填视频记录：upload-complete 内部自动流转 PUBLISHED / SCHEDULED
+  // 回填视频记录：upload-complete 内部自动流转 PUBLISHED / SCHEDULED，并按 taskId 置完成
   item.label = '📝 登记视频记录...'
   item.progress = 100
-  const completeRes = await apiFetch(`/api/v1/admin/videos/${item.videoId}/upload-complete`, {
+  const completeBody = {
+    videoUrl: directJson.data.videoUrl,
+    posterUrl: directJson.data.posterUrl || '',
+    storageNodeId: directJson.data.storageNodeId || ticket.storageNodeId || item.nodeId,
+    taskId: item.taskId || undefined,
+  }
+  const completeCall = () => apiFetch(`/api/v1/admin/videos/${item.videoId}/upload-complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      videoUrl: directJson.data.videoUrl,
-      posterUrl: directJson.data.posterUrl || '',
-      storageNodeId: directJson.data.storageNodeId || ticket.storageNodeId || item.nodeId,
-    }),
-  }).catch(() => null)
+    body: JSON.stringify(completeBody),
+  })
+  let completeRes = await completeCall().catch(() => null)
   if (!completeRes || !completeRes.ok) {
     // 文件已传成功但登记失败：重试一次，仍失败则提示（视频会由超时清扫转 FAILED，可重传）
-    const retryRes = await apiFetch(`/api/v1/admin/videos/${item.videoId}/upload-complete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        videoUrl: directJson.data.videoUrl,
-        posterUrl: directJson.data.posterUrl || '',
-        storageNodeId: directJson.data.storageNodeId || ticket.storageNodeId || item.nodeId,
-      }),
-    }).catch(() => null)
-    if (!retryRes || !retryRes.ok) {
+    completeRes = await completeCall().catch(() => null)
+    if (!completeRes || !completeRes.ok) {
       console.warn('[UploadQueue] upload-complete 回填失败（重试后）:', completeRes?.status)
     }
   }
