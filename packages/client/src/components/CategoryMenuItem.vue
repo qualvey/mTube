@@ -67,7 +67,7 @@ const emit = defineEmits(['select'])
 
 /** 子菜单展开/收起（默认展开一级菜单，深层默认收起） */
 // const expanded = ref(props.depth < 1)
-const expanded = ref(False) // 默认全部收起，避免首次渲染时菜单过长
+const expanded = ref(false) // 默认全部收起，避免首次渲染时菜单过长
 
 /** 选中态：category 类型且绑定的 tag 与当前选中一致（tags 空数组 = 全部） */
 const isActive = computed(() => {
