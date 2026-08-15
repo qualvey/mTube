@@ -57,7 +57,7 @@ export const createApp = () => {
   app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Cluster-Timestamp', 'X-Cluster-Nonce', 'X-Cluster-Signature'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Cluster-Timestamp', 'X-Cluster-Nonce', 'X-Cluster-Signature', 'X-Cluster-Scope'],
   }))
   app.use(express.json({ limit: '512kb' }))
   app.use(express.urlencoded({ limit: '512kb', extended: true }))
