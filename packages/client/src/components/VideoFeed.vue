@@ -155,8 +155,9 @@ const fetchAdConfig = async () => {
     console.warn('Failed to fetch ad config:', e)
   }
   if (adsEnabled.value) {
-    // vip=props.isVip：VIP 用户（paywall 关闭场景）不投放「仅免费用户」广告
-    ads.value = await videoService.getAds('feed', props.isVip)
+    // 仅在付费墙开启时传 VIP 状态：免费开放模式（paywall 关闭）没有付费用户，
+    // 「仅免费用户」定向应命中所有人；若此时传 VIP，服务端会把该类广告全部过滤掉
+    ads.value = await videoService.getAds('feed', props.paywallEnabled && props.isVip)
   }
 }
 
