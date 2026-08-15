@@ -361,7 +361,8 @@ const handleToggleLang = async () => {
   langToggleLabel.value = getToggleLabel()
 }
 
-const ageVerified = ref(false)
+// 年龄验证：setup 阶段同步读取（渲染前确定，避免刷新时 AgeGate 闪现后消失）
+const ageVerified = ref(localStorage.getItem('age_verified_18') === 'true')
 const showNotice = ref(false)
 const noticeTitle = ref('📢 官方重要公告')
 const noticeContent = ref('')
@@ -518,12 +519,6 @@ onMounted(async () => {
 
   // Trigger PV Analytics Tracking
   trackAnalytics('PV')
-
-  const verified = localStorage.getItem('age_verified_18')
-
-  if (verified === 'true') {
-    ageVerified.value = true
-  }
 
   // Check initial VIP status
   await fetchPaywallMode()
