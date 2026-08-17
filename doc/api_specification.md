@@ -362,6 +362,20 @@
 - **删除（仅本人）**:`DELETE /api/v1/comments/:id`（需登录；他人评论返回 404）
 - **状态**:`status` 字段预留审核流（`PUBLISHED`/`PENDING`/`HIDDEN`），当前默认直接发布，管理端审核后置
 
+
+### 2.21 版本信息（前端自动升级检测）
+- **接口**:`GET /api/v1/version`（无需登录）
+- **用途**:前端轮询此接口，对比本地构建版本（vite define 注入的 GIT_SHA），不一致时弹出「发现新版本」提示条，点击一键刷新，无需用户手动清缓存
+- **返回 data**：
+```json
+{
+  "gitSha": "a267f14...",   // CI 构建时注入（Dockerfile ARG GIT_SHA），本地 dev 为 "dev"
+  "version": "1.5.0",       // server package.json version
+  "buildTime": "2026-08-16T20:30:00Z"  // CI 注入，可为 null
+}
+```
+- **轮询策略**：client/admin 每 5 分钟 + 切回页面时即时检查；仅生产构建（GIT_SHA != dev）才触发提示
+
 ---
 
 ## 三、 付费墙、VIP 与支付引擎接口

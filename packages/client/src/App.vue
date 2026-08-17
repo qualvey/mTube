@@ -1,5 +1,7 @@
 <template>
   <div class="relative w-full h-screen bg-(--bg-page) overflow-hidden font-sans text-(--text-primary)">
+    <!-- 版本升级提示条：检测到新版本时置顶显示 -->
+    <UpdateBanner />
     <!-- Header Navbar -->
     <header class="fixed top-0 inset-x-0 z-30 bg-[image:var(--header-gradient)] backdrop-blur-md border-b border-(--border-subtle) flex flex-col">
       <!-- 第一行：菜单按钮 / logo / 搜索 / 右侧按钮 -->
@@ -189,6 +191,8 @@ import AuthModal from './components/AuthModal.vue'
 import { initAnalytics, shutdownAnalytics } from './services/analyticsService'
 import { getCurrentLocale, getToggleLabel, toggleLocale, LOCALE_CHANGED_EVENT, applySiteOverrides } from './i18n'
 import { setServerDebug } from './services/logger'
+import UpdateBanner from './components/UpdateBanner.vue'
+import { startVersionCheck, stopVersionCheck } from './services/versionService'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -543,12 +547,16 @@ onMounted(async () => {
   // Explicitly pull notice from backend REST API GET /api/v1/notice
   fetchNotice()
 
+  // 版本检测：发现新版本提示刷新（部署后无需用户手动清缓存）
+  startVersionCheck()
+
   window.addEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
 })
 
 onUnmounted(() => {
   window.removeEventListener(LOCALE_CHANGED_EVENT, onLocaleChanged)
   shutdownAnalytics()
+  stopVersionCheck()
 })
 
 const onAgeVerified = () => {

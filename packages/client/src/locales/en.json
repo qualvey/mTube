@@ -11,6 +11,10 @@
     "buttonLabel": "中",
     "buttonLabelAlt": "EN"
   },
+  "update": {
+    "available": "New version available. Click to refresh.",
+    "refreshNow": "Refresh"
+  },
   "ageGate": {
     "title": "Age Verification",
     "description": "This website contains adult content.\nIf you are under 18, or if such content is prohibited in your region, please leave immediately.",

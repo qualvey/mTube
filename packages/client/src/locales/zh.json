@@ -11,6 +11,10 @@
     "buttonLabel": "EN",
     "buttonLabelAlt": "中"
   },
+  "update": {
+    "available": "发现新版本，点击立即刷新",
+    "refreshNow": "立即刷新"
+  },
   "ageGate": {
     "title": "年龄确认",
     "description": "本站包含成人内容。\n如果您未满 18 岁，或者您所在地区的法律禁止查看此类内容，请立即离开。",

@@ -43,6 +43,7 @@ jobs:
             ${{ env.IMAGE_SERVER }}:sha-${{ github.sha }}
           build-args: |
             GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -74,6 +75,9 @@ jobs:
             ${{ env.IMAGE_CLIENT }}:${{ github.ref_name }}
             ${{ env.IMAGE_CLIENT }}:latest
             ${{ env.IMAGE_CLIENT }}:sha-${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -105,6 +109,9 @@ jobs:
             ${{ env.IMAGE_ADMIN }}:${{ github.ref_name }}
             ${{ env.IMAGE_ADMIN }}:latest
             ${{ env.IMAGE_ADMIN }}:sha-${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

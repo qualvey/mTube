@@ -28,9 +28,11 @@ FROM node:22-alpine
 RUN apk add --no-cache ffmpeg
 
 
-# Build version metadata (injected by CI): docker build --build-arg GIT_SHA=<sha>
+# Build version metadata (injected by CI): docker build --build-arg GIT_SHA=<sha> --build-arg BUILD_TIME=<iso>
 ARG GIT_SHA=unknown
 ENV GIT_SHA=$GIT_SHA
+ARG BUILD_TIME=
+ENV BUILD_TIME=$BUILD_TIME
 
 WORKDIR /app
 

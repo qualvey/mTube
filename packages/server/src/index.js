@@ -887,6 +887,17 @@ app.post('/api/v1/videos/:id/like', (req, res) => {
   sendResponse(res, null, 404, 'Video not found')
 })
 
+// 部署版本信息：前端轮询此接口实现「发现新版本 → 提示刷新」
+// GIT_SHA/BUILD_TIME 由 CI 构建时注入（见 packages/server/Dockerfile ARG）
+const serverPkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'))
+app.get('/api/v1/version', (req, res) => {
+  sendResponse(res, {
+    gitSha: process.env.GIT_SHA || 'dev',
+    version: serverPkg.version || '0.0.0',
+    buildTime: process.env.BUILD_TIME || null
+  })
+})
+
 app.get('/api/v1/settings', (req, res) => {
   // 公开接口只暴露 C 端展示所需配置项，绝不返回支付私钥等敏感字段
   const settings = db.getSettings(req.query.lang)

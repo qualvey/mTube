@@ -16,6 +16,13 @@ RUN pnpm install --frozen-lockfile --filter admin...
 
 COPY packages/admin ./packages/admin
 
+# Build version metadata (injected by CI): docker build --build-arg GIT_SHA=<sha> --build-arg BUILD_TIME=<iso>
+# vite define 在构建时将其编译进产物，供 versionService 对比 /api/v1/version
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+ARG BUILD_TIME=
+ENV BUILD_TIME=$BUILD_TIME
+
 # Build admin production bundle
 RUN pnpm --filter admin build
 
