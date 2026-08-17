@@ -218,6 +218,7 @@
     "enableNotice": true,
     "noticeTitle": "📢 官方重要公告",
     "noticeContent": "...",
+    "defaultTheme": "dark",   // C 端默认主题：dark=夜间(默认) | light=日间 | system=跟随系统
     "enableSeekPreview": true,
     "paywallNotice": "...",
     "userAgreement": "...",

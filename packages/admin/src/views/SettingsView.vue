@@ -176,6 +176,28 @@
       </el-form>
     </el-card>
 
+    <!-- Theme Default Card -->
+    <el-card class="rounded-2xl shadow-sm border-slate-200">
+      <template #header>
+        <span class="font-bold text-slate-800">🌗 外观与主题配置</span>
+      </template>
+
+      <el-form label-position="top">
+        <el-form-item label="C 端默认主题（仅对未手动切换过主题的用户生效）">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+            <el-select v-model="settings.defaultTheme" style="width: 180px">
+              <el-option label="夜间模式（默认）" value="dark" />
+              <el-option label="日间模式" value="light" />
+              <el-option label="跟随系统" value="system" />
+            </el-select>
+            <span class="text-xs text-slate-500">
+              用户手动切换后以其选择为准（localStorage 固定）；清除浏览器主题设置即恢复本默认值
+            </span>
+          </div>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <!-- Log Level Card -->
     <el-card class="rounded-2xl shadow-sm border-slate-200">
       <template #header>
@@ -248,7 +270,8 @@ const settings = ref({
   adsEnabled: false,
   adsFeedInterval: 6,
   adsPrerollEnabled: false,
-  adsMidrollEnabled: false
+  adsMidrollEnabled: false,
+  defaultTheme: 'dark'
 })
 
 const fetchSettings = async () => {

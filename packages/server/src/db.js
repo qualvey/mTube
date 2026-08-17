@@ -2015,6 +2015,8 @@ export const db = {
       enableSeekPreview: true,
       // C 端调试日志开关（管理端控制；true = 生产也输出 debug 日志）
       enableClientDebug: false,
+      // C 端默认主题（用户未手动切换时生效）：dark=夜间 | light=日间 | system=跟随系统
+      defaultTheme: 'dark',
       uploadChunkConcurrency: 4,
       heroImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
       heroTitle: '极致诱惑',

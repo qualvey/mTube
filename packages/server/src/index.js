@@ -912,6 +912,7 @@ app.get('/api/v1/settings', (req, res) => {
     noticeTitle: settings.noticeTitle,
     noticeContent: settings.noticeContent,
     enableSeekPreview: settings.enableSeekPreview === 'true' || settings.enableSeekPreview === true,
+    defaultTheme: settings.defaultTheme || 'dark',
     paywallNotice: settings.paywallNotice,
     userAgreement: settings.userAgreement,
     customerServiceText: settings.customerServiceText
