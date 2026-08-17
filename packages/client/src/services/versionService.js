@@ -8,6 +8,20 @@ const APP_BUILD_TIME = typeof __APP_BUILD_TIME__ !== 'undefined' ? __APP_BUILD_T
 
 const CHECK_INTERVAL = 5 * 60 * 1000 // 5 分钟轮询一次
 
+/** 构建版本信息（vite define 注入） */
+export const buildInfo = {
+  sha: APP_SHA,
+  buildTime: APP_BUILD_TIME,
+}
+
+/** 启动时打印当前构建版本（排查线上版本用，每次加载输出） */
+export const logVersion = () => {
+  console.info(
+    `%c[mTube] client build: ${APP_SHA}${APP_BUILD_TIME ? ' @ ' + APP_BUILD_TIME : ''}`,
+    'color:#f59e0b;font-weight:bold;font-size:12px'
+  )
+}
+
 const state = reactive({
   currentSha: APP_SHA,
   currentBuildTime: APP_BUILD_TIME,

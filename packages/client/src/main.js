@@ -4,6 +4,10 @@ import App from './App.vue'
 import router from './router'
 import { i18n, loadInitialLocale } from './i18n'
 import { initTheme } from './services/themeService'
+import { logVersion } from './services/versionService'
+
+// 每次加载在控制台打印当前构建版本（排查线上版本用）
+logVersion()
 
 // 明暗主题：手动选择（localStorage）优先，否则按管理员默认主题（/api/v1/settings defaultTheme），mount 前初始化避免闪烁
 initTheme('dark')
